@@ -1,0 +1,43 @@
+{
+  "name": "Energy Output Agent",
+  "description": "Retrieve simulation outputs such as annual site EUI and others",
+  "url": "http://localhost:10107/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "retrieve_eui",
+      "name": "energy use intensity",
+      "description": "Get the annual site energy use intensity (EUI) from simulation",
+      "tags": [
+        "EUI evaluation"
+      ],
+      "example": [
+        "Get the energy use intensity from the simulation",
+        "Retrieve EUI from the model"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

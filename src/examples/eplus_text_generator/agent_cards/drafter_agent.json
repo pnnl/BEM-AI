@@ -1,0 +1,42 @@
+{
+  "name": "EnergyPlus Object Drafter Agent",
+  "description": "Draft EnergyPlus objects based on user request",
+  "url": "http://localhost:10112/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "Draft EnergyPlus objects based on user requests.",
+      "name": "Draft objects",
+      "description": "Draft objects by performing needed calculations and resolving object relationships",
+      "tags": [
+        "Draft EnergyPlus objects"
+      ],
+      "example": [
+        "Generate a building that is 20 meters long and 20 meters wide, 5 meters high. It has a simple thermal zone."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

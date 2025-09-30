@@ -1,0 +1,56 @@
+{
+  "name": "EnergyPlus Object Resolver Agent",
+  "description": "Resolves inter-object references in EnergyPlus models by following object-list and reference relationships.",
+  "url": "http://localhost:10112/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "resolve_object_references",
+      "name": "Resolve Object Reference",
+      "description": "Identify and return related objects based on object-list or reference fields defined in the EnergyPlus schema.",
+      "tags": [
+        "Resolve EnergyPlus references"
+      ],
+      "example": [
+        "Find all material layers referenced in Construction 'WALL-1'"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "trace_reference_chain",
+      "name": "Trace Reference Chain",
+      "description": "Recursively follow schema-defined references between objects (e.g., Surface → Construction → Materials) to trace relationships in the EnergyPlus model.",
+      "tags": [
+        "Reference Chain",
+        "Multi-object dependency"
+      ],
+      "example": [
+        "Given a surface, list all material layers used by its construction."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

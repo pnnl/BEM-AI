@@ -1,0 +1,42 @@
+{
+  "name": "Energy Model Generator Agent",
+  "description": "Generate a typical energy model based on building type, standard and climate zone",
+  "url": "http://localhost:10105/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "generate_energy_model",
+      "name": "Generate energy model",
+      "description": "Generate a typical energy model based on building type, standard version and climate zone",
+      "tags": [
+        "Generate energy model"
+      ],
+      "example": [
+        "Generate an energy model for a primary school building."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

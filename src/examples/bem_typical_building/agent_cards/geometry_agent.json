@@ -1,0 +1,42 @@
+{
+  "name": "Energy Model Geometry Agent",
+  "description": "Modify energy model geometry including window to wall ratio",
+  "url": "http://localhost:10103/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "modify_model_geometry",
+      "name": "Modify Energy Model Geometry",
+      "description": "Modifies an energy model geometry including window to wall ratio",
+      "tags": [
+        "Modify energy model geometry"
+      ],
+      "example": [
+        "Adjust the window to wall ratio of the elementary school building"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

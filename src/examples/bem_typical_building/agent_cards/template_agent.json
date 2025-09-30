@@ -1,0 +1,42 @@
+{
+  "name": "Energy Model Template Agent",
+  "description": "Load the energy model template based on building type",
+  "url": "http://localhost:10104/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "load_energy_model_template",
+      "name": "Energy Model Template Agent",
+      "description": "Load an energy model template based on building type",
+      "tags": [
+        "Load energy model template"
+      ],
+      "example": [
+        "Load an elementary school building template."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

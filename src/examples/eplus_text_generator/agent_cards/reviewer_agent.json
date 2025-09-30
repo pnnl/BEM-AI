@@ -1,0 +1,38 @@
+{
+  "name": "EnergyPlus Object Reviewer Agent",
+  "description": "Review the drafted objects and approve or reject the draft.",
+  "url": "http://localhost:10111/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "review_energyplus_object",
+      "name": "Review EnergyPlus objects",
+      "description": "Review all generated EnergyPlus objects from the drafter.",
+      "tags": ["Review EnergyPlus objects"],
+      "example": ["Review all objects generated in the list"],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

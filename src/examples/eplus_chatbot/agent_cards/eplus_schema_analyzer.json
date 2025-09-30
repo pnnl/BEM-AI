@@ -1,0 +1,56 @@
+{
+  "name": "EnergyPlus Schema Analyst Agent",
+  "description": "Agent that interprets EnergyPlus object schemas to help explain, draft, or debug input objects using structured field and metadata information.",
+  "url": "http://localhost:10111/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "energyplus_object_schema",
+      "name": "EnergyPlus Object Schema",
+      "description": "Understand EnergyPlus model object based on its schema structure, including min-fields, data types, and extensibility.",
+      "tags": ["Explain an energyplus object"],
+      "example": ["Explain what is Sizing:Zone object?"],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "draft_energyplus_object",
+      "name": "Draft EnergyPlus Object",
+      "description": "Create a valid IDF object based on its schema, using required fields and filling fields up to the min_fields limit.",
+      "tags": ["Generate object", "EnergyPlus drafting"],
+      "example": ["Draft a Sizing:Zone object"],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "debug_energyplus_object",
+      "name": "Debug EnergyPlus Object",
+      "description": "Validate the structure, field order, and value types of an IDF object string using its schema.",
+      "tags": ["Validate IDF", "Error checking"],
+      "example": ["Check this Sizing:Zone object for correctness"],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

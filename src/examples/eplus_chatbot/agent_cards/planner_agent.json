@@ -1,0 +1,42 @@
+{
+  "name": "Planner Agent",
+  "description": "Helps breakdown a user request about EnergyPlus file or objects into actional tasks",
+  "url": "http://localhost:10113/",
+  "provider": null,
+  "version": "0.0.1",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "True",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "planner",
+      "name": "Task Planner",
+      "description": "Helps breakdown a user request into actionable tasks",
+      "tags": [
+        "planner"
+      ],
+      "examples": [
+        "Tell me what materials used in the a Construction object named 'Typical Wood Joist Attic Floor R-37.04 1'?"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}
