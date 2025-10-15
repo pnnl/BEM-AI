@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from json import JSONDecodeError
 from typing import Dict, AsyncIterable, Any
 
@@ -113,7 +114,9 @@ class GenericLangGraphReactAgent(BaseAgent):
                 if isinstance(message, AIMessage) and message.content:
                     content = message.content.strip()
                     # print(f"Streaming content: {content}")
-                    # if content.startswith("<think>") and content.endswith("</think>"):
+                    if content.startswith("<think>") or content.endswith("</think>"):
+                        # Remove <think>...</think> (including newlines and spaces around it)
+                        content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
                     # Skip ToolMessage and HumanMessage and make sure there is content in the AI message (not a tool calling AI message, which typically has no content.)
                     try:
                         _, parsed = extract_and_parse_json(content)
