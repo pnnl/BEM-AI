@@ -130,6 +130,8 @@ planner = AgentFactory(
 ```
 It is recommended using a large size model, for example, llama3.3:70b for planner agent and use reasoning models such as qwen3:4b for the specialized agents.
 
+See Live Demo of BEM-AI on [Youtube](https://youtu.be/eYhvig792Sc).
+
 ## 🔍 Development Guidelines
 
 ### Code Organization
