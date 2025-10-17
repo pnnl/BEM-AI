@@ -30,20 +30,23 @@ BEM A2A creates a distributed multi-agent system that enables intelligent agents
 ## 📁 Project Structure
 
 ```
-bem_a2a/
+BEM-AI/
+├── examples/                           # Example applications built with the foundational framework
 ├── src/
-│   ├── agent_card/           # All agent cards goes to here
-│   ├── agent_test/           # Test implementations and examples
-│   │   ├── run_orchestration_test.py  # Primary test runner
-│   │   └── ...               # Additional test files
-│   ├── agents/               # Generic agent classes
-│   ├── bem_mcp/              # MCP servers for the BEM.
-│   ├── client/               # Test implementations and examples
-│   ├── common/               # Util files or shared resources.
-│   └── prompt_engineering/   # Prompt engineering
-├── pyproject.toml            # Project configuration
-├── uv.lock                   # Dependency lock file
-└── README.md                 # This file
+│   ├── agent_test/                     # Test implementations and examples
+│   ├── agents/                         # Generic agent classes
+│   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
+│   │   ├── agent_factor.py             # Agent factory - recommend utility to initialize an agent
+│   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
+│   │   └── adk_agent.py                # Google ADK based agent
+│   ├── client/                         # Under development
+│   ├── mcp_servers/                    # MCP library
+│   ├── network/                        # Network
+│   ├── common/                         # Common utilities
+│   └── prompt_engineering/             # Under development
+├── pyproject.toml                      # Project configuration
+├── uv.lock                             # Dependency lock file
+└── README.md                           # This file
 ```
 
 ## 🔧 Installation
@@ -71,39 +74,18 @@ bem_a2a/
    ```
 
 ## 🧪 Running Tests
-
-The primary test suite is located in `src/agent_test/` with the main test runner being `run_orchestration_test.py`.
-
-### Execute Main Test Suite
-```bash
-uv run src/agent_test/run_orchestration_test.py
-```
-
-### Development Testing
-```bash
-# Run with uv
-uv run python src/agent_test/run_orchestration_test.py
-
-# Or activate shell first
-uv shell
-python src/agent_test/run_orchestration_test.py
-```
+TBD
 
 ## 🏗️ Architecture
+<img src="sources/architecture.png" alt="System Architecture" width="600">
 
-### Multi-Agent System Design
-The system implements a distributed architecture where:
-
-1. **Agents** communicate using Google's A2A protocol
-2. **Context** is managed through Anthropic's MCP protocol
-3. **Orchestration** is handled by LangChain frameworks
-4. **AI Models** are integrated via Google GenAI
-
-### Key Components
-- **Agent Network**: Distributed agent communication layer
-- **Context Manager**: MCP-based context sharing and management
-- **Orchestrator**: LangChain-based workflow coordination
-- **Model Interface**: Google GenAI integration layer
+- **Orchestrator**: Assemble workflow, access agent card storage
+- **Task Memory**: Task memory including shared blackboard and conversation history
+- **Planner**: A planner agent
+- **Summary**: A summary agent
+- **Specialized agents**: Domain specific agents
+- **Agent Card Service**: A RAG pipeline stores agent cards
+- **Tool and Resources**: External tool and resource access through MCPs.
 
 ## 📝 Configuration
 
@@ -115,6 +97,8 @@ Project configuration is managed through `pyproject.toml`. Key configuration are
 
 ## Examples
 #### Simple BEM typical building Network
+
+<img src="sources/bem-agentic.png" alt="BEM-Agents" width="400">
 
 To run this example, the user will need to provide your own language models when creating agents
 ```python
@@ -129,15 +113,37 @@ planner = AgentFactory(
 )
 ```
 It is recommended using a large size model, for example, llama3.3:70b for planner agent and use reasoning models such as qwen3:4b for the specialized agents.
+You can run the simple BEM agentic AI on the commandline:
+```shell
+~ BEM-AI > PYTHONPATH=/[YOUR DIRECTORY]/BEM-AI/src [YOUR PATH]/BEM-AI/.venv/bin/python [YOUR PATH]/BEM-AI/examples/simple_bem_network/sim_bem_network_app.py
+```
+If successful,  you should be able to see this message in your command line
+```bash
+
+    🛠️  🏢  🏗️  ╔════════════════════════╗
+    🟢           B E M - A I           
+    🛡️  ⚡  💡  ╚════════════════════════╝
+    
+🛠️ Thank you for using BEM-AI! I am your assistant to help analyze building performance 🏢
+💡 You can ask questions such as:
+   • 🔹 What is the energy savings from reducing window-to-wall ratio by 10%?
+   • 🔹 Create an energy model for a new office.
+
+✍️ Your question: 
+```
+
+Type your BEM tasks such as:
+```bash
+✍️ Your question: I have a model in local directory: /Users/[User Name]/ai/experiment/baseline.osm, I want to evaluate the energy savings by adding daylighting sensors
+```
+
 
 See Live Demo of BEM-AI on [Youtube](https://youtu.be/eYhvig792Sc).
 
 ## 🔍 Development Guidelines
 
 ### Code Organization
-- Place test code in `src/agent_test/`
-- Use `run_orchestration_test.py` as the primary test entry point
-- Follow the existing project structure for new components
+TBD
 
 ### Dependency Management
 - Use `uv add <package>` to add new dependencies
@@ -145,48 +151,26 @@ See Live Demo of BEM-AI on [Youtube](https://youtu.be/eYhvig792Sc).
 - Keep dependencies minimal and focused
 
 ### Testing Strategy
-- Focus testing efforts on `run_orchestration_test.py`
-- Test agent communication protocols thoroughly
-- Validate context management and sharing
-- Ensure orchestration workflows function correctly
-
-## 🚨 Known Limitations
-
-- **Stability**: Core functionality is under active development
-- **API Changes**: Interfaces may change without notice
-- **Documentation**: Limited due to early development stage
-- **Error Handling**: May be incomplete or inconsistent
+TBD
 
 ## 🤝 Contributing
-
-Since this project is in early development:
-
-1. **Fork** the repository
-2. **Create** a feature branch
-3. **Test** thoroughly using `run_orchestration_test.py`
-4. **Submit** a pull request with detailed description
+TBD
 
 ## 📄 License
 
-[License information to be added]
-
-## 📞 Support
-
-For development questions and issues:
-- Review test implementations in `src/agent_test/`
-- Check `run_orchestration_test.py` for usage examples
-- Examine `pyproject.toml` for configuration details
-
-## 🔮 Roadmap
-
-- [ ] Stabilize core agent communication protocols
-- [ ] Improve MCP context management
-- [ ] Enhanced error handling and logging
-- [ ] Comprehensive documentation
-- [ ] Production-ready deployment options
-- [ ] Performance optimization
-- [ ] Extended test coverage
+see [LICENSE](/LICENSE.md)
 
 ---
 
 **Note**: This project is experimental and under active development. Use in production environments is not recommended at this time.
+
+## 📚 Citation
+
+If you use this framework in your research or projects, please cite the following paper:
+
+```bibtex
+@article{xu5447218development,
+  title={Development of a dynamic multi-agent network for building energy modeling: A case study towards scalable and autonomous energy modeling},
+  author={Xu, Weili and Wan, Hanlong and Antonopoulos, Chrissi and Goel, Supriya},
+  journal={Available at SSRN 5447218}
+}
