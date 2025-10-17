@@ -34,7 +34,8 @@ class TaskServiceOrchestrator(ServiceOrchestrator):
                 # ✅ STEP 3: Final summary message from orchestrator
                 elif isinstance(chunk, dict):
                     results.append(chunk)
-                    print("✅ Final summary:", chunk)
+                    if chunk.get("content"):
+                        print("✅ Final summary:", chunk["content"])
                     if chunk.get("is_task_complete"):
                         break
                 elif isinstance(chunk.root, SendStreamingMessageResponse):

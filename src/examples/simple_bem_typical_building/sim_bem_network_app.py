@@ -358,7 +358,7 @@ orchestrator = OrchestratorAgent(
     model_base_url="http://rc-chat.pnl.gov:11434"
 )
 
-async def bem_agentic_network():
+async def bem_agentic_network(user_query:str):
     # Initialize agentic_network
     async with TaskServiceOrchestrator(orchestrator=orchestrator, agent_cards_dir = base_dir / "agent_cards") as agentic_network:
         # Starts with MCP first
@@ -387,7 +387,21 @@ async def bem_agentic_network():
         # await agentic_network.user_query("Create an energy model for a new office.", "ctx-001", "ctx-001")
         # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, I want to update the model window to wall ratio to 0.35", "ctx-001", "ctx-001")
         # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, Use this model to evaluate the energy savings from reducing window to wall ratio by 10%", "ctx-001", "ctx-001")
+        await agentic_network.user_query(user_query, "ctx-001", "ctx-001")
         # await agentic_network.user_query("I want to evaluate the energy savings from reducing window to wall ratio by 10% for a medium office building that is designed according to ASHRAE 90.1 2019 in Tampa Florida", "ctx-001", "ctx-001")
-        await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/experiment/baseline.osm, I want to evaluate the energy savings by adding daylighting sensors", "ctx-001", "ctx-001")
+        # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/experiment/baseline.osm, I want to evaluate the energy savings by adding daylighting sensors", "ctx-001", "ctx-001")
 if __name__ == "__main__":
-    asyncio.run(bem_agentic_network())
+    title = """
+    🛠️  🏢  🏗️  ╔════════════════════════╗
+    🟢           B E M - A I           
+    🛡️  ⚡  💡  ╚════════════════════════╝
+    """
+    print(title)
+    user_query = input(
+        "🛠️ Thank you for using BEM-AI! I am your assistant to help analyze building performance 🏢\n"
+        "💡 You can ask questions such as:\n"
+        "   • 🔹 What is the energy savings from reducing window-to-wall ratio by 10%?\n"
+        "   • 🔹 Create an energy model for a new office.\n\n"
+        "✍️ Your question: "
+    )
+    asyncio.run(bem_agentic_network(user_query))
