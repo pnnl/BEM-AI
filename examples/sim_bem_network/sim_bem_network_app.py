@@ -17,8 +17,7 @@ from agents.agent_factory import AgentFactory
 from agents.orchestrator_agent import OrchestratorAgent
 from common.agent_registry import A2AAgentServer
 from common.mcp_registry import MCPServerConfig
-from common.prompts import MODELER_SUMMARY_COT_INSTRUCTIONS
-from examples.simple_bem_typical_building.app_mcps import model_mcp, os_mcp
+from app_mcps import model_mcp, os_mcp
 from network.task_workflow import TaskServiceOrchestrator
 from common.types import TaskList
 
@@ -44,7 +43,7 @@ The agents in your team are:
 
 Always use chain-of-thought reasoning before generating tasks.
 ## QUESTION FORMAT
-You question should follow the example format below:
+You question should contain both status and question and formatted as the example below:
 {
     "status": "input_required",
     "question": {{add your question}}
@@ -354,7 +353,7 @@ output_agent = AgentFactory(
 orchestrator = OrchestratorAgent(
     chat_model=GenericLLM.OLLAMA,
     model_name="llama3.3:70b",
-    instruction=MODELER_SUMMARY_COT_INSTRUCTIONS,
+    instruction=SUMMARY_COT,
     model_base_url="http://rc-chat.pnl.gov:11434"
 )
 
