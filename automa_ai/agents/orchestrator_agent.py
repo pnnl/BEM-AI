@@ -7,7 +7,7 @@ from a2a.types import (
     TaskState,
     TaskArtifactUpdateEvent, DataPart, TextPart,
 )
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 
 from automa_ai.agents import GenericLLM
@@ -258,7 +258,6 @@ class OrchestratorAgent(BaseAgent):
 
                 if not should_resume_workflow:
                     logger.info("No workflow resume detected, yielding chunk")
-                    print(chunk)
                     # Yield partial execution
                     yield chunk
 

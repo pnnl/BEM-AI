@@ -16,6 +16,7 @@ class TaskServiceOrchestrator(ServiceOrchestrator):
             async for chunk in self.orchestrator.stream(
                 query, context_id, task_id
             ):
+                # print("Receiving chunks", chunk)
                 # ✅ STEP 1: Check if this is a wrapped streaming message
                 if hasattr(chunk, "root") and isinstance(
                     chunk.root, SendStreamingMessageSuccessResponse
@@ -38,7 +39,7 @@ class TaskServiceOrchestrator(ServiceOrchestrator):
                     if chunk.get("is_task_complete"):
                         break
                 elif isinstance(chunk.root, SendStreamingMessageResponse):
-                    print(SendStreamingMessageResponse)
+                    print("printing response: ", SendStreamingMessageResponse)
                 else:
                     print(f"⚠️ Unexpected chunk type: {type(chunk)}")
         finally:

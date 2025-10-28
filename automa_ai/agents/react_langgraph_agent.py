@@ -4,7 +4,7 @@ from json import JSONDecodeError
 from typing import Dict, AsyncIterable, Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
@@ -17,7 +17,6 @@ from automa_ai.common.types import ServerConfig
 memory = MemorySaver()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 class GenericLangGraphReactAgent(BaseAgent):
     """A generic LangGraph react agent"""
@@ -74,8 +73,8 @@ class GenericLangGraphReactAgent(BaseAgent):
             self.model,
             checkpointer=memory,
             system_prompt=self.instructions,
-            response_format=self.response_format,
-            tools=tools,
+            # response_format=self.response_format,
+            tools=tools
         )
 
     async def invoke(self, query, sessionId):
@@ -84,82 +83,108 @@ class GenericLangGraphReactAgent(BaseAgent):
         return self.get_agent_response(config)
 
     async def stream(self, query, sessionId, task_id) -> AsyncIterable[dict[str, Any]]:
-        inputs = {"messages": [("user", query)]}
+        inputs = {"messages": [{"role": "user", "content": query}]}
         config = {"configurable": {"thread_id": sessionId}}
-        print(
+        logger.info(
             f"Running planner agent stream for session {sessionId} {task_id} with input {query}"
         )
         if not self.graph:
             await self.init_graph()
         # seen_messages = set()
         # Collect all streaming messages first
-        last_item = None
-        async for item in self.graph.stream(inputs, config, stream_mode="values"):
-            print("items", item)
-            last_item = item
-            if "messages" in item:
-                # Take out the last AI Message
-                message = item["messages"][-1]
-                logger.info(f"Streaming message: {message}")
-                print(
-                   f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(item)}"
-                )
-                logger.info(
-                    f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(item)}"
-                )
-                if isinstance(message, AIMessage) and message.content:
-                    content = message.content.strip()
-                    # print(f"Streaming content: {content}")
-                    if content.startswith("<think>") or content.endswith("</think>"):
-                        # Remove <think>...</think> (including newlines and spaces around it)
-                        content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
-                    # Skip ToolMessage and HumanMessage and make sure there is content in the AI message (not a tool calling AI message, which typically has no content.)
-                    try:
-                        _, parsed = extract_and_parse_json(content)
-                        # This only works with the llama3.1:8b when it explicitly gives CHAIN OF THOUGHT PROCESS in the output
-                        # despite the prompts ask only JSON
-                        # print(self.agent_name, ": ", content)
-                        # print("parsed: ", parsed)
-                        logger.info(
-                            f"Loading the message json: {parsed}, status: {parsed.get('status')}"
+        async for chunk in self.graph.astream(inputs, config, stream_mode="updates"):
+            print("Getting the chunk", chunk)
+            for step, data in chunk.items():
+                if step == "model":
+                    print("Debug Event: ", data)
+                    if "messages" in data:
+                        # Take out the last AI Message
+                        message = data["messages"][-1]
+                        logger.info(f"Streaming message: {message}")
+                        print(
+                            f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(data)}"
                         )
-                        # print(
-                        #    f"Loading the message json: {parsed}, status: {parsed.get('status')}"
-                        #)
-                        if isinstance(parsed, dict):
-                            if parsed.get("type") == "function":
-                                # I dont know why but I am keep getting this from AI messages.
-                                # Skip this because we need to force this into function call.
-                                continue
-                            if not parsed.get("status"):
-                                # case when work is completed and AI is giving the json
-                                # BIG ASSUMPTION HERE! This means unless its output, all recursive generation
-                                # including MCPs shall returning in String format.
-                                yield {
-                                    "response_type": "data",
-                                    "is_task_complete": True,
-                                    "require_user_input": False,
-                                    "content": parsed,
-                                }
-                            if parsed.get("status") == "completed":
-                                logger.info(f"completed task: {parsed}")
-                                yield {
-                                    "response_type": "data",
-                                    "is_task_complete": True,
-                                    "require_user_input": False,
-                                    "content": parsed,
-                                }
-                            elif parsed.get("status") == "input_required":
-                                logger.info(f"input required task: {parsed}")
-                                yield {
-                                    "response_type": "text",
-                                    "is_task_complete": False,
-                                    "require_user_input": True,
-                                    "content": parsed["question"],
-                                }
-                            else:
-                                # we dont know what is the status, it could be just thinking or asking user to clarify
+                        logger.info(
+                            f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(data)}"
+                        )
+                        if isinstance(message, AIMessage) and message.content:
+                            content = message.content.strip()
+                            # print(f"Streaming content: {content}")
+                            if content.startswith("<think>") or content.endswith("</think>"):
+                                # Remove <think>...</think> (including newlines and spaces around it)
+                                content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
+                            # Skip ToolMessage and HumanMessage and make sure there is content in the AI message (not a tool calling AI message, which typically has no content.)
+                            try:
+                                _, parsed = extract_and_parse_json(content)
+                                # This only works with the llama3.1:8b when it explicitly gives CHAIN OF THOUGHT PROCESS in the output
+                                # despite the prompts ask only JSON
+                                # print(self.agent_name, ": ", content)
+                                # print("parsed: ", parsed)
+                                #print(
+                                #    f"Loading the message json: {parsed}, status: {parsed.get('status')}"
+                                #)
+                                # print(
+                                #    f"Loading the message json: {parsed}, status: {parsed.get('status')}"
+                                #)
+                                if isinstance(parsed, dict):
+                                    if parsed.get("type") == "function":
+                                        # I dont know why but I am keep getting this from AI messages.
+                                        # Skip this because we need to force this into function call.
+                                        continue
+                                    if not parsed.get("status"):
+                                        # case when work is completed and AI is giving the json
+                                        # BIG ASSUMPTION HERE! This means unless its output, all recursive generation
+                                        # including MCPs shall returning in String format.
+                                        yield {
+                                            "response_type": "data",
+                                            "is_task_complete": True,
+                                            "require_user_input": False,
+                                            "content": parsed,
+                                        }
+                                    if parsed.get("status") == "completed":
+                                        logger.info(f"completed task: {parsed}")
+                                        yield {
+                                            "response_type": "data",
+                                            "is_task_complete": True,
+                                            "require_user_input": False,
+                                            "content": parsed,
+                                        }
+                                    elif parsed.get("status") == "input_required":
+                                        yield {
+                                            "response_type": "text",
+                                            "is_task_complete": False,
+                                            "require_user_input": True,
+                                            "content": parsed["question"],
+                                        }
+                                    else:
+                                        # we dont know what is the status, it could be just thinking or asking user to clarify
+                                        if content.startswith("<think>"):
+                                            yield {
+                                                "response_type": "text",
+                                                "is_task_complete": False,
+                                                "require_user_input": False,
+                                                "content": content,
+                                            }
+                                        else:
+                                            yield {
+                                                "response_type": "text",
+                                                "is_task_complete": False,
+                                                "require_user_input": True,
+                                                "content": parsed["question"],
+                                            }
+                                else:
+                                    yield {
+                                        "response_type": "text",
+                                        "is_task_complete": False,
+                                        "require_user_input": False,
+                                        "content": content,
+                                    }
+                            except JSONDecodeError as jde:
+                                logger.info(f"Failed parsing JSON data, error message: {jde}")
+                                print(f"Failed parsing JSON data, error message: {jde}")
                                 if content.startswith("<think>"):
+                                    # There should be a better way to handle this through network but
+                                    # Let's just settle with a simple print for now.
                                     yield {
                                         "response_type": "text",
                                         "is_task_complete": False,
@@ -171,57 +196,31 @@ class GenericLangGraphReactAgent(BaseAgent):
                                         "response_type": "text",
                                         "is_task_complete": False,
                                         "require_user_input": True,
-                                        "content": parsed["question"],
+                                        "content": content,
                                     }
-                        else:
+                            except Exception as e:
+                                logger.info(f"Failed matching the ai message, error message: {e}")
+                                # print(f"Failed matching the ai message, error message: {e}")
+                                if content.startswith("<think>"):
+                                    # There should be a better way to handle this through network but
+                                    # Let's just settle with a simple print for now.
+                                    yield {
+                                        "response_type": "text",
+                                        "is_task_complete": False,
+                                        "require_user_input": False,
+                                        "content": content,
+                                    }
+                                else:
+                                    yield {
+                                        "response_type": "text",
+                                        "is_task_complete": False,
+                                        "require_user_input": True,
+                                        "content": content,
+                                    }
+                            # Fall back
                             yield {
-                                "response_type": "text",
-                                "is_task_complete": False,
-                                "require_user_input": False,
-                                "content": content,
-                            }
-                    except JSONDecodeError as jde:
-                        logger.info(f"Failed parsing JSON data, error message: {jde}")
-                        print(f"Failed parsing JSON data, error message: {jde}")
-                        if content.startswith("<think>"):
-                            # There should be a better way to handle this through network but
-                            # Let's just settle with a simple print for now.
-                            yield {
-                                "response_type": "text",
-                                "is_task_complete": False,
-                                "require_user_input": False,
-                                "content": content,
-                            }
-                        else:
-                            yield {
-                                "response_type": "text",
-                                "is_task_complete": False,
-                                "require_user_input": True,
-                                "content": content,
-                            }
-                    except Exception as e:
-                        logger.info(f"Failed matching the ai message, error message: {e}")
-                        # print(f"Failed matching the ai message, error message: {e}")
-                        if content.startswith("<think>"):
-                            # There should be a better way to handle this through network but
-                            # Let's just settle with a simple print for now.
-                            yield {
-                                "response_type": "text",
-                                "is_task_complete": False,
-                                "require_user_input": False,
-                                "content": content,
-                            }
-                        else:
-                            yield {
-                                "response_type": "text",
                                 "is_task_complete": False,
                                 "require_user_input": True,
-                                "content": content,
+                                "content": f"Unable to determine next steps. Please try again. item {data['messages'][-1]}",
                             }
-                    # Fall back
-                    yield {
-                        "is_task_complete": False,
-                        "require_user_input": True,
-                        "content": f"Unable to determine next steps. Please try again. item {last_item}",
-                    }
 

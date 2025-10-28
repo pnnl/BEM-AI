@@ -72,7 +72,7 @@ class MCPServerManager:
             self.servers[name] = process
 
             # Wait for the server to be ready
-            from common.utils import wait_for_port
+            from automa_ai.common.utils import wait_for_port
             wait_for_port(config.host, config.port)
             logger.info(
                 f"Server {name} started successfully on {config.host}:{config.port}"

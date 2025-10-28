@@ -91,7 +91,7 @@ class WorkflowNode:
 
         #print(f"In the node, check out the blackboard: {blackboard}")
 
-        async with httpx.AsyncClient() as httpx_client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as httpx_client:
             # alternatively, a url would work too.
             a2a_client = A2AClient(httpx_client, agent_card)
             payload: dict[str, any] = {
@@ -99,7 +99,7 @@ class WorkflowNode:
                     "messageId": str(uuid.uuid4()),
                     "role": "user",
                     "parts": [{"kind": "text", "text": str({"query": query, "blackboard": blackboard})}],
-                    "taskId": task_id,
+                    "taskId": None,
                     "contextId": context_id,
                 }
             }
