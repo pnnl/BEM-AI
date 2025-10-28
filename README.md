@@ -32,7 +32,7 @@ BEM A2A creates a distributed multi-agent system that enables intelligent agents
 ```
 BEM-AI/
 ├── examples/                           # Example applications built with the foundational framework
-├── src/
+├── automa_ai/
 │   ├── agent_test/                     # Test implementations and examples
 │   ├── agents/                         # Generic agent classes
 │   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
@@ -50,6 +50,12 @@ BEM-AI/
 ```
 
 ## 🔧 Installation
+We recommend install BEM-AI through PYPI:
+```shell
+pip install automa-ai
+```
+This will install all packages needed under automa_ai folder.
+
 
 ### Prerequisites
 - Python 3.12+
