@@ -109,7 +109,7 @@ planner = AgentFactory(
     agent_type=GenericAgentType.LANGGRAPH,
     chat_model=GenericLLM.OLLAMA,
     response_format=ResponseFormat,
-    model_base_url="http://rc-chat.pnl.gov:11434" # if needed, provide the base URL.
+    model_base_url="http://..." # if needed, provide the base URL.
 )
 ```
 It is recommended using a large size model, for example, llama3.3:70b for planner agent and use reasoning models such as qwen3:4b for the specialized agents.
