@@ -2,19 +2,11 @@
   "name": "Energy Simulation Agent",
   "description": "Perform an annual simulation to evaluate energy consumption of an OpenStudio model",
   "url": "http://localhost:10106/",
-  "provider": null,
   "version": "0.0.1",
-  "documentationUrl": null,
   "capabilities": {
-    "streaming": "True",
-    "pushNotification": "True",
-    "stateTransitionHistory": "False"
-  },
-  "authentication": {
-    "credentials": null,
-    "schemes": [
-      "public"
-    ]
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": false
   },
   "defaultInputModes": [
     "text",
@@ -35,9 +27,7 @@
       "example": [
         "Evaluate the energy consumption of the openstudio model",
         "Run an annual simulation "
-      ],
-      "inputModes": null,
-      "outputModes": null
+      ]
     }
   ]
 }

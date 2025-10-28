@@ -3,11 +3,11 @@ import re
 from json import JSONDecodeError
 from typing import Dict, AsyncIterable, Any
 
-from langchain_core.language_models import BaseChatModel, LanguageModelLike
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from pydantic import BaseModel
 
 from automa_ai.common.base_agent import BaseAgent
@@ -27,7 +27,7 @@ class GenericLangGraphReactAgent(BaseAgent):
         agent_name: str,
         description: str,
         instructions: str,
-        chat_model: LanguageModelLike,
+        chat_model: BaseChatModel,
         response_format: type[BaseModel] | None,
         mcp_servers: Dict[str, ServerConfig] | None = None,
     ):
@@ -70,10 +70,10 @@ class GenericLangGraphReactAgent(BaseAgent):
                 # print(self.agent_name, f"Loaded tools {tool.name}")
                 logger.info(f"Loaded tools {tool.name}")
 
-        self.graph = create_react_agent(
+        self.graph = create_agent(
             self.model,
             checkpointer=memory,
-            prompt=self.instructions,
+            system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
         )
@@ -86,7 +86,7 @@ class GenericLangGraphReactAgent(BaseAgent):
     async def stream(self, query, sessionId, task_id) -> AsyncIterable[dict[str, Any]]:
         inputs = {"messages": [("user", query)]}
         config = {"configurable": {"thread_id": sessionId}}
-        logger.info(
+        print(
             f"Running planner agent stream for session {sessionId} {task_id} with input {query}"
         )
         if not self.graph:
@@ -94,25 +94,19 @@ class GenericLangGraphReactAgent(BaseAgent):
         # seen_messages = set()
         # Collect all streaming messages first
         last_item = None
-        async for item in self.graph.astream(inputs, config, stream_mode="values"):
+        async for item in self.graph.stream(inputs, config, stream_mode="values"):
+            print("items", item)
             last_item = item
             if "messages" in item:
                 # Take out the last AI Message
                 message = item["messages"][-1]
-                if isinstance(message, AIMessage):
-                    print(self.agent_name, " message: ", message.content)
-                if isinstance(message, ToolMessage):
-                    print(self.agent_name, " tool call: ", message)
                 logger.info(f"Streaming message: {message}")
-                # print(
-                #    f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(item)}"
-                #)
+                print(
+                   f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(item)}"
+                )
                 logger.info(
                     f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(item)}"
                 )
-                if isinstance(message, AIMessage) and message.tool_calls:
-                    # this is a tool call AI Message, do not yield
-                    continue
                 if isinstance(message, AIMessage) and message.content:
                     content = message.content.strip()
                     # print(f"Streaming content: {content}")

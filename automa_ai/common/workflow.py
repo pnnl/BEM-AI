@@ -6,7 +6,7 @@ from typing import AsyncIterable, Any
 
 import httpx
 import networkx as nx
-from a2a.client import A2AClient
+from a2a.client import A2AClient, create_text_message_object
 from a2a.types import (
     AgentCard,
     SendStreamingMessageRequest,
@@ -103,12 +103,14 @@ class WorkflowNode:
                     "contextId": context_id,
                 }
             }
+            msg = create_text_message_object(content=str({"query": query, "blackboard": blackboard}))
             request = SendStreamingMessageRequest(
                 id=str(uuid.uuid4()), params=MessageSendParams(**payload)
             )
             response_stream = a2a_client.send_message_streaming(request)
             async for chunk in response_stream:
-                logger.info(f"chunk returned {chunk}")
+                # print(f"this is error chunk: {chunk}")
+                logger.error(f"chunk returned {chunk}")
                 # Save the artifact as a result of the node
                 if isinstance(chunk.root, SendStreamingMessageResponse) and isinstance(
                     chunk.root.result, TaskArtifactUpdateEvent
@@ -121,7 +123,7 @@ class WorkflowNode:
 class WorkflowGraph:
     """Represents a graph of workflow nodes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.graph = nx.DiGraph()
         self.nodes = {}
         self.latest_node = None
@@ -146,7 +148,7 @@ class WorkflowGraph:
         #print(self.blackboard)
 
     async def run_workflow(
-        self, start_node_id: str = None
+        self, start_node_id: str | None = None
     ) -> AsyncIterable[dict[str, any]]:
         logger.info("Executing workflow graph")
         if not start_node_id or start_node_id not in self.nodes:
@@ -179,7 +181,7 @@ class WorkflowGraph:
                         isinstance(chunk.root.result, TaskStatusUpdateEvent)
                     ):
                         task_status_event = chunk.root.result
-                        context_id = task_status_event.contextId
+                        context_id = task_status_event.context_id
                         logger.info(
                             "🧠 Workflow task status update event: %s",
                             task_status_event,
@@ -200,10 +202,10 @@ class WorkflowGraph:
         if self.state == Status.RUNNING:
             self.state = Status.COMPLETED
 
-    def set_node_attribute(self, node_id, attribute, value):
+    def set_node_attribute(self, node_id, attribute, value) -> None:
         nx.set_node_attributes(self.graph, {node_id: value}, attribute)
 
-    def set_node_attributes(self, node_id, attr_val):
+    def set_node_attributes(self, node_id, attr_val) -> None:
         nx.set_node_attributes(self.graph, {node_id: attr_val})
 
     def is_empty(self) -> bool:

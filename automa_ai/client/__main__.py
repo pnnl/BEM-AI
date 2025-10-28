@@ -119,9 +119,9 @@ async def completeTask(
     message = Message(
         role="user",
         parts=[TextPart(text=prompt)],
-        messageId=str(uuid4()),
-        taskId=taskId,
-        contextId=contextId,
+        message_id=str(uuid4()),
+        task_id=taskId,
+        context_id=contextId,
     )
 
     file_path = click.prompt(

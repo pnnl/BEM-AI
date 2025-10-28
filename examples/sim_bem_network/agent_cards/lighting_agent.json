@@ -2,19 +2,11 @@
   "name": "Energy Model Lighting Agent",
   "description": "Modify energy model lighting information, including adjust lighting power density (LPD) and add or remove daylighting sensors in a space",
   "url": "http://localhost:10104/",
-  "provider": null,
   "version": "0.0.1",
-  "documentationUrl": null,
   "capabilities": {
-    "streaming": "True",
-    "pushNotification": "True",
-    "stateTransitionHistory": "False"
-  },
-  "authentication": {
-    "credentials": null,
-    "schemes": [
-      "public"
-    ]
+    "streaming": true,
+    "pushNotification": true,
+    "stateTransitionHistory": false
   },
   "defaultInputModes": [
     "text",
@@ -35,9 +27,7 @@
       "example": [
         "Reduce office spaces' lighting power density to 0.6 W/ft2",
         "Increase the energy model lighting power density by 5%"
-      ],
-      "inputModes": null,
-      "outputModes": null
+      ]
     },
     {
       "id": "daylighting_sensor",
@@ -49,9 +39,7 @@
       "example": [
         "Install daylighting sensors to the building",
         "Remove all daylighting sensors in this building"
-      ],
-      "inputModes": null,
-      "outputModes": null
+      ]
     }
   ]
 }

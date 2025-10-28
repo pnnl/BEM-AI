@@ -44,10 +44,9 @@ class GenericAgentExecutor(AgentExecutor):
             task = new_task(context.message)
             await event_queue.enqueue_event(task)
 
-        updater = TaskUpdater(event_queue, task.id, task.contextId)
-
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
         last_text_sent = None  # outside loop
-        async for item in self.agent.stream(query, task.contextId, task.id):
+        async for item in self.agent.stream(query, task.context_id, task.id):
             # Agent to Agent call will return events,
             # Update the relevant ids to proxy back.
             if hasattr(item, "root") and isinstance(
@@ -80,7 +79,7 @@ class GenericAgentExecutor(AgentExecutor):
                 # logger.info(f"-----Requires User Updates!: {item['content']}")
                 await updater.update_status(
                     TaskState.input_required,
-                    new_agent_text_message(item["content"], task.contextId, task.id),
+                    new_agent_text_message(item["content"], task.context_id, task.id),
                     final=True,
                 )
                 # Stop the execution and waiting for user inputs.
@@ -93,7 +92,7 @@ class GenericAgentExecutor(AgentExecutor):
                     TaskState.working,
                     new_agent_text_message(
                         item["content"],
-                        task.contextId,
+                        task.context_id,
                         task.id,
                     ),
                 )

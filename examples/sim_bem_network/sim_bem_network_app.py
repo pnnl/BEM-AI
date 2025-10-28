@@ -386,7 +386,7 @@ async def bem_agentic_network(user_query:str):
         # await agentic_network.user_query("Create an energy model for a new office.", "ctx-001", "ctx-001")
         # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, I want to update the model window to wall ratio to 0.35", "ctx-001", "ctx-001")
         # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, Use this model to evaluate the energy savings from reducing window to wall ratio by 10%", "ctx-001", "ctx-001")
-        await agentic_network.user_query(user_query, "ctx-001", "ctx-001")
+        await agentic_network.user_query(user_query, "ctx-001", None)
         # await agentic_network.user_query("I want to evaluate the energy savings from reducing window to wall ratio by 10% for a medium office building that is designed according to ASHRAE 90.1 2019 in Tampa Florida", "ctx-001", "ctx-001")
         # await agentic_network.user_query("I have a model in local directory: /Users/xuwe123/ai/experiment/baseline.osm, I want to evaluate the energy savings by adding daylighting sensors", "ctx-001", "ctx-001")
 if __name__ == "__main__":

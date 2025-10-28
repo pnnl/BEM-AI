@@ -16,10 +16,10 @@ from a2a.server.agent_execution import RequestContext
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
-from agents.react_langgraph_agent import GenericLangGraphReactAgent
-from common import prompts
-from common.types import TaskList
-from autoflow_ai.common.agent_executor import GenericAgentExecutor
+from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
+from automa_ai.common import prompts
+from automa_ai.common.types import TaskList
+from automa_ai.common.agent_executor import GenericAgentExecutor
 
 
 class ResponseFormat(BaseModel):
@@ -39,8 +39,8 @@ async def interactive_loop(agent_executor, context_id, task_id):
         user_message = Message(
             role=Role.user,
             parts=[Part(root=TextPart(text=str(user_input)))],
-            contextId=context_id,
-            messageId=message_id,
+            context_id=context_id,
+            message_id=message_id,
         )
 
         message = MessageSendParams(message=user_message)
@@ -124,8 +124,8 @@ async def executor():
                 root=TextPart(text="Create an energy model task list for a new school")
             )
         ],
-        contextId="test-context-id",
-        messageId=latest_message_id,
+        context_id="test-context-id",
+        message_id=latest_message_id,
     )
 
     message = MessageSendParams(message=user_message)

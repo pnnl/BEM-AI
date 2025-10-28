@@ -2,19 +2,11 @@
   "name": "Energy Model Envelope Agent",
   "description": "Modify energy model envelope including window to wall ratio, and surface insulation properties",
   "url": "http://localhost:10103/",
-  "provider": null,
   "version": "0.0.1",
-  "documentationUrl": null,
   "capabilities": {
-    "streaming": "True",
-    "pushNotification": "True",
-    "stateTransitionHistory": "False"
-  },
-  "authentication": {
-    "credentials": null,
-    "schemes": [
-      "public"
-    ]
+    "streaming": true,
+    "pushNotification": true,
+    "stateTransitionHistory": false
   },
   "defaultInputModes": [
     "text",
@@ -34,9 +26,7 @@
       ],
       "example": [
         "Adjust the window to wall ratio of the elementary school building"
-      ],
-      "inputModes": null,
-      "outputModes": null
+      ]
     },
     {
       "id": "modify_surface_insulation",
@@ -47,9 +37,7 @@
       ],
       "example": [
         "Modify surface insulation level"
-      ],
-      "inputModes": null,
-      "outputModes": null
+      ]
     }
   ]
 }
