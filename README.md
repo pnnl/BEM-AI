@@ -115,7 +115,7 @@ planner = AgentFactory(
 It is recommended using a large size model, for example, llama3.3:70b for planner agent and use reasoning models such as qwen3:4b for the specialized agents.
 You can run the simple BEM agentic AI on the commandline:
 ```shell
-~ BEM-AI > PYTHONPATH=/[YOUR DIRECTORY]/BEM-AI/src [YOUR PATH]/BEM-AI/.venv/bin/python [YOUR PATH]/BEM-AI/examples/simple_bem_network/sim_bem_network_app.py
+~ BEM-AI > PYTHONPATH=/[YOUR DIRECTORY]/BEM-AI/automa_ai [YOUR PATH]/BEM-AI/.venv/bin/python [YOUR PATH]/BEM-AI/examples/simple_bem_network/sim_bem_network_app.py
 ```
 If successful,  you should be able to see this message in your command line
 ```bash

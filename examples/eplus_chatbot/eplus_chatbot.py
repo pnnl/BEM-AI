@@ -8,14 +8,14 @@ from a2a.types import AgentCard
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from agents import GenericAgentType, GenericLLM
-from agents.agent_factory import AgentFactory
-from agents.orchestrator_agent import OrchestratorAgent
-from common.agent_registry import A2AAgentServer
-from common.mcp_registry import MCPServerConfig
-from common.types import PlannerTask
-from mcp_servers.eplus_schema.eplus_server import serve
-from network.chat_network import ChatServiceOrchestrator
+from automa_ai.agents import GenericAgentType, GenericLLM
+from automa_ai.agents.agent_factory import AgentFactory
+from automa_ai.agents.orchestrator_agent import OrchestratorAgent
+from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.mcp_registry import MCPServerConfig
+from automa_ai.common.types import PlannerTask
+from automa_ai.mcp_servers.eplus_schema.eplus_server import serve
+from automa_ai.network.chat_network import ChatServiceOrchestrator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -268,7 +268,7 @@ summary_cot_prompt = """
 """
 
 # Find the directory where this script is located
-# Pointing to src
+# Pointing to automa_ai
 base_dir = Path(__file__).resolve().parent
 
 load_dotenv()

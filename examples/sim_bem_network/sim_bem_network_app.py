@@ -12,20 +12,20 @@ from a2a.types import AgentCard
 from pydantic import BaseModel, Field
 from typing import Literal
 
-from agents import GenericLLM, GenericAgentType
-from agents.agent_factory import AgentFactory
-from agents.orchestrator_agent import OrchestratorAgent
-from common.agent_registry import A2AAgentServer
-from common.mcp_registry import MCPServerConfig
+from automa_ai.agents import GenericLLM, GenericAgentType
+from automa_ai.agents.agent_factory import AgentFactory
+from automa_ai.agents.orchestrator_agent import OrchestratorAgent
+from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.mcp_registry import MCPServerConfig
 from app_mcps import model_mcp, os_mcp
-from network.task_workflow import TaskServiceOrchestrator
-from common.types import TaskList
+from automa_ai.network.task_workflow import TaskServiceOrchestrator
+from automa_ai.common.types import TaskList
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Find the directory where this script is located
-# Pointing to src
+# Pointing to automa_ai
 base_dir = Path(__file__).resolve().parent
 
 ########################################################################################
@@ -393,7 +393,7 @@ if __name__ == "__main__":
     title = """
     🛠️  🏢  🏗️  ╔════════════════════════╗
     🟢           B E M - A I           
-    🛡️  ⚡  💡  ╚════════════════════════╝
+    🛡️  ⚡  💡   ╚════════════════════════╝
     """
     print(title)
     user_query = input(

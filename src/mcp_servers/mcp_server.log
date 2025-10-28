@@ -1,9 +1,0 @@
-2025-07-01 09:00:04,380 [INFO] src.bem_mcp.server: Starting Agent Cards MCP Server
-2025-07-01 09:00:04,394 [INFO] src.bem_mcp.server: Loading agent cards from card repo: /Users/xuwe123/ai/bem_a2a/src/agent_cards
-2025-07-01 09:00:04,395 [INFO] src.bem_mcp.server: Reading file: geometry_agent.json
-2025-07-01 09:00:04,402 [INFO] src.bem_mcp.server: Reading file: orchestrator_agent.json
-2025-07-01 09:00:04,408 [INFO] src.bem_mcp.server: Reading file: planner_agent.json
-2025-07-01 09:00:04,413 [INFO] src.bem_mcp.server: Reading file: template_agent.json
-2025-07-01 09:00:04,418 [INFO] src.bem_mcp.server: Finished loading agent cards. Found 4 cards.
-2025-07-01 09:00:06,191 [INFO] httpx: HTTP Request: POST http://127.0.0.1:11434/api/embed "HTTP/1.1 200 OK"
-2025-07-01 09:00:06,200 [INFO] src.bem_mcp.server: Agent cards MCP Server at localhost:10100 and transport sse
