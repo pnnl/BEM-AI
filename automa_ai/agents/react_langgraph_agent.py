@@ -101,9 +101,6 @@ class GenericLangGraphReactAgent(BaseAgent):
                         # Take out the last AI Message
                         message = data["messages"][-1]
                         logger.info(f"Streaming message: {message}")
-                        print(
-                            f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(data)}"
-                        )
                         logger.info(
                             f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(data)}"
                         )
@@ -120,12 +117,6 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 # despite the prompts ask only JSON
                                 # print(self.agent_name, ": ", content)
                                 # print("parsed: ", parsed)
-                                #print(
-                                #    f"Loading the message json: {parsed}, status: {parsed.get('status')}"
-                                #)
-                                # print(
-                                #    f"Loading the message json: {parsed}, status: {parsed.get('status')}"
-                                #)
                                 if isinstance(parsed, dict):
                                     if parsed.get("type") == "function":
                                         # I dont know why but I am keep getting this from AI messages.
@@ -181,7 +172,6 @@ class GenericLangGraphReactAgent(BaseAgent):
                                     }
                             except JSONDecodeError as jde:
                                 logger.info(f"Failed parsing JSON data, error message: {jde}")
-                                print(f"Failed parsing JSON data, error message: {jde}")
                                 if content.startswith("<think>"):
                                     # There should be a better way to handle this through network but
                                     # Let's just settle with a simple print for now.
@@ -198,9 +188,17 @@ class GenericLangGraphReactAgent(BaseAgent):
                                         "require_user_input": True,
                                         "content": content,
                                     }
+                            except AssertionError as ae:
+                                # cannot parse the message to JSON. return raw msg and ask for user input
+                                logger.info(f"Failed matching the ai message, error message: {ae}")
+                                yield {
+                                    "response_type": "text",
+                                    "is_task_complete": False,
+                                    "require_user_input": True,
+                                    "content": content,
+                                }
                             except Exception as e:
                                 logger.info(f"Failed matching the ai message, error message: {e}")
-                                # print(f"Failed matching the ai message, error message: {e}")
                                 if content.startswith("<think>"):
                                     # There should be a better way to handle this through network but
                                     # Let's just settle with a simple print for now.

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from automa_ai.common.response_parser import extract_and_parse_json
 
 
@@ -213,3 +215,22 @@ class TestJSONExtractor:
         assert len(last_json["tasks"]) == 2
         assert last_json["tasks"][0]["id"] == 1
         assert last_json["tasks"][1]["id"] == 2
+
+
+    def test_real_world_conversation(self):
+        # This test is expecting the function to raise exception
+        text = """
+        ### Task
+The user has asked to know more about me, seeking information about my capabilities, purpose, or background.
+
+### Building Energy Modeling Task
+Since there are no specific results provided related to building energy modeling, it appears this query does not pertain to that domain directly. The task seems to be a general inquiry about myself.
+
+### Modeling Meta Data
+Without access to specific meta data (blackboard), the summary relies on understanding the nature of the query itself. The user's question implies a desire for self-description or an explanation of my functions and limitations.
+
+### Summary
+This task involves providing a personal description in response to the user's inquiry about me. Given the context, I am an artificial intelligence designed to process and respond to natural language inputs, capable of answering questions, generating text, and engaging in conversation on a wide range of topics. My purpose is to assist users by offering information, solving problems, and providing entertainment through text-based interactions.
+        """
+        with pytest.raises(AssertionError) as e:
+            json_list, last_json = extract_and_parse_json(text)

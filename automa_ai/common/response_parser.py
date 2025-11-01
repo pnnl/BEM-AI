@@ -74,6 +74,10 @@ def extract_and_parse_json(text: str, parse_first: bool = False) -> Tuple[List[s
 
         i += 1
 
+    # If empty, raise exception
+    assert target_parsed_json is not None
+    assert json_strings
+
     return json_strings, target_parsed_json
 
 
