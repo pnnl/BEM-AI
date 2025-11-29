@@ -1,0 +1,81 @@
+{
+  "name": "gbXML Agent",
+  "description": "Calls gbXML MCP tools to list surfaces/constructions and retrieve surface properties (area, tilt, insulation), then writes results back to the blackboard.",
+  "url": "http://localhost:10104/",
+  "provider": null,
+  "version": "0.0.2",
+  "documentationUrl": null,
+  "authentication": {
+    "credentials": null,
+    "schemes": ["public"]
+  },
+  "capabilities": {
+    "streaming": "True",
+    "pushNotifications": "True",
+    "stateTransitionHistory": "False"
+  },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "list_surfaces",
+      "name": "List Surfaces",
+      "description": "Enumerate all surfaces with ids and basic properties. Uses blackboard: gbxml_path. Optional: save_response_as.",
+      "tags": ["gbxml", "geometry", "surfaces", "mcp"],
+      "examples": [
+        "gbxml_path=./gbxml_file/SF_model_Output_OS.xml",
+        "gbxml_path=/data/models/siteA.os.xml, save_response_as=responses/surfaces_siteA.json"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "list_constructions",
+      "name": "List Constructions",
+      "description": "Enumerate construction IDs in the file. Uses blackboard: gbxml_path. Optional: save_response_as.",
+      "tags": ["gbxml", "constructions", "mcp"],
+      "examples": [
+        "gbxml_path=./gbxml_file/SF_model_Output_OS.xml",
+        "gbxml_path=/projects/b1/export.xml, save_response_as=responses/constructions_b1.json"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "get_surface_area",
+      "name": "Get Surface Area",
+      "description": "Retrieve area (m²) for a specific surface. Uses blackboard: gbxml_path, surface_id. Optional: save_response_as.",
+      "tags": ["gbxml", "geometry", "area", "mcp"],
+      "examples": [
+        "gbxml_path=./gbxml_file/SF_model_Output_OS.xml, surface_id=ceiling_unit1_Reversed",
+        "gbxml_path=/models/bldg.os.xml, surface_id=Srf-123, save_response_as=responses/area_Srf-123.json"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "get_surface_tilt",
+      "name": "Get Surface Tilt",
+      "description": "Retrieve tilt (degrees) for a specific surface. Uses blackboard: gbxml_path, surface_id. Optional: save_response_as.",
+      "tags": ["gbxml", "geometry", "tilt", "mcp"],
+      "examples": [
+        "gbxml_path=./gbxml_file/SF_model_Output_OS.xml, surface_id=ceiling_unit1_Reversed",
+        "gbxml_path=/models/siteC.xml, surface_id=Roof-NE-01"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    },
+    {
+      "id": "get_surface_insulation",
+      "name": "Get Surface Insulation (R-value)",
+      "description": "Compute total R-value (m²·K/W) for a surface via its construction layers. Uses blackboard: gbxml_path, surface_id. Optional: save_response_as.",
+      "tags": ["gbxml", "construction", "r-value", "insulation", "mcp"],
+      "examples": [
+        "gbxml_path=./gbxml_file/SF_model_Output_OS.xml, surface_id=ceiling_unit1_Reversed",
+        "gbxml_path=/exports/openstudio.xml, surface_id=Wall-101, save_response_as=responses/r_wall_101.json"
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

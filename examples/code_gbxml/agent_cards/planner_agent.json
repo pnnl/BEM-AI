@@ -1,0 +1,34 @@
+{
+  "name": "gbXML Planner Agent",
+  "description": "Plans and gathers the minimal inputs for gbXML geometry/construction queries, selects ONE MCP tool (list_surfaces, list_constructions, get_surface_area, get_surface_tilt, or get_surface_insulation), then emits a task list for the network.",
+  "url": "http://localhost:10105/",
+  "provider": null,
+  "version": "0.0.2",
+  "documentationUrl": null,
+  "authentication": {
+    "credentials": null,
+    "schemes": ["public"]
+  },
+  "capabilities": {
+    "streaming": "True",
+    "pushNotifications": "True",
+    "stateTransitionHistory": "False"
+  },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "planner",
+      "name": "Task Planner",
+      "description": "Breaks a gbXML request into actionable steps, asks for any missing fields, and prepares tasks for the gbXML and Summary agents. Collects: gbxml_path (all tools) and surface_id (for get_surface_* tools).",
+      "tags": ["planner", "gbxml", "mcp", "geometry", "constructions"],
+      "examples": [
+        "List all surfaces in ./gbxml_file/SF_model_Output_OS.xml.",
+        "Get surface area for surface_id=ceiling_unit1_Reversed in ./gbxml_file/SF_model_Output_OS.xml.",
+        "Compute R-value for surface_id=Wall-101 in ./gbxml_file/SF_model_Output_OS.xml."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

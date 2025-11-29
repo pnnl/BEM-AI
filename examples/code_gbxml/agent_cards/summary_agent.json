@@ -1,0 +1,36 @@
+{
+  "id": "summary_agent",
+  "name": "gbXML Summary Agent",
+  "description": "Creates a concise, user-facing summary of the gbXML MCP result and writes it to blackboard.summary.",
+  "url": "http://localhost:10106/",
+  "provider": null,
+  "version": "0.0.2",
+  "documentationUrl": null,
+  "authentication": {
+    "credentials": null,
+    "schemes": ["public"]
+  },
+  "capabilities": {
+    "streaming": "True",
+    "pushNotifications": "True",
+    "stateTransitionHistory": "False"
+  },
+  "defaultInputModes": ["text", "text/plain"],
+  "defaultOutputModes": ["text", "text/plain"],
+  "skills": [
+    {
+      "id": "summarize",
+      "name": "Summarize gbXML Result",
+      "description": "Reads blackboard fields (tool_name, gbxml_path, surface_id, construction_id, gbxml_result_msg). Produces a one-paragraph summary at blackboard.summary that restates the tool invoked and identifiers, and—when present—extracts and reports key numbers (area in m², tilt in degrees, R-value in m²·K/W). If numeric parsing is not possible, include gbxml_result_msg verbatim with concise context.",
+      "tags": ["summary", "gbxml", "geometry", "constructions", "mcp"],
+      "examples": [
+        "Summarize: tool_name=list_surfaces, gbxml_path=./gbxml_file/SF_model_Output_OS.xml.",
+        "Summarize: tool_name=get_surface_area, gbxml_path=./gbxml_file/SF_model_Output_OS.xml, surface_id=ceiling_unit1_Reversed, gbxml_result_msg='Surface ID: ceiling_unit1_Reversed\\nArea: 152.4 m²'.",
+        "Summarize: tool_name=get_surface_tilt, surface_id=Srf-123, gbxml_result_msg='Surface ID: Srf-123\\nTilt: 15 degrees'.",
+        "Summarize: tool_name=get_surface_insulation, surface_id=Wall-101, gbxml_result_msg='Surface ID: Wall-101\\nR-value: 2.35 m²·K/W'."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}
