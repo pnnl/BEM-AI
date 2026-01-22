@@ -144,7 +144,7 @@ class GenericLangGraphChatAgent(BaseAgent):
             checkpointer=memory,
             system_prompt=self.instructions,
             response_format=self.response_format,
-            tools=tools
+            tools=tools,
         )
 
     def _clear_active_skill_if_requested(self) -> None:
@@ -173,7 +173,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         if not self.graph:
             await self.init_graph(emit_subagent_event)
         self._clear_active_skill_if_requested()
-        self._apply_active_skill_tool_gating()
         inputs = await self._build_stream_inputs(query, session_id)
         response = await self.graph.ainvoke(inputs, config)
         self._capture_skill_tool_outputs(response)
@@ -202,7 +201,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         if not self.graph:
             await self.init_graph(emit_subagent_event)
         self._clear_active_skill_if_requested()
-        self._apply_active_skill_tool_gating()
         inputs = await self._build_stream_inputs(query, session_id)
         config = {"configurable": {"thread_id": session_id}}
         logger.info(
@@ -410,7 +408,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         messages.append({"role": "user", "content": query})
         inputs = {"messages": messages}
 
-        logger.debug("Inputs to the LLM: %s", inputs)
+        logger.info("Inputs to the LLM: %s", inputs)
         return inputs
 
     def _capture_skill_tool_outputs(self, response: dict[str, Any]) -> None:
@@ -420,19 +418,6 @@ class GenericLangGraphChatAgent(BaseAgent):
                     self._active_skill_state.pending_skill_name,
                     message.content,
                 )
-
-    def _apply_active_skill_tool_gating(self) -> None:
-        if not self.graph:
-            return
-        if self._active_skill_state.skill_loaded:
-            self.graph.tools = [
-                tool for tool in self.graph.tools if getattr(tool, "name", None) != "load_skill"
-            ]
-            return
-        if self.skill_manager and self.skill_manager.enabled:
-            if any(getattr(tool, "name", None) == "load_skill" for tool in self.graph.tools):
-                return
-            self.graph.tools.append(build_load_skill_tool(self.skill_manager))
 
     def _get_tools_for_testing(self) -> list[Any]:
         if not self.graph:
