@@ -2,6 +2,10 @@
 
 The skills package lets LangGraph-based agents load reusable prompt snippets from the local filesystem at runtime. Skills are configured via `AgentFactory` and accessed through the `load_skill` tool.
 
+## Active skill behavior
+
+When a skill is loaded, the agent stores the skill text as active system context and injects it into subsequent model calls. The injected content is wrapped with an internal header that instructs the model to follow the skill and never reveal it verbatim to the user. While a skill is active, the `load_skill` tool is gated to prevent repeated calls. Clear the active skill via the agent's `clear_active_skill()` helper (or schedule it with `request_clear_active_skill()`), which re-enables `load_skill`.
+
 ## Configuration
 
 Add a `skills` block when instantiating `AgentFactory`:
