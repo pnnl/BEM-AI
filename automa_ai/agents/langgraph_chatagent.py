@@ -22,6 +22,7 @@ from automa_ai.metrics.collector import MetricsCollector
 from automa_ai.metrics.extractor import extract_metrics_from_chunk
 from automa_ai.prompt_engineering.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
+from automa_ai.skills.active_skill import ActiveSkillState, format_active_skill_message
 from automa_ai.skills.tools import build_load_skill_tool
 
 memory = MemorySaver()
@@ -67,6 +68,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         if enable_metrics:
             self.metrics = MetricsCollector()
         self.subagents = subagents
+        self._active_skill_state = ActiveSkillState()
 
         # Memory queue - object scope
         self._memory_write_queue: asyncio.Queue = asyncio.Queue()
@@ -145,6 +147,18 @@ class GenericLangGraphChatAgent(BaseAgent):
             tools=tools
         )
 
+    def _clear_active_skill_if_requested(self) -> None:
+        if self._active_skill_state.clear_active_skill_next_turn:
+            self._active_skill_state.clear()
+
+    def clear_active_skill(self) -> None:
+        """Clear any active skill and re-enable skill loading next turn."""
+        self._active_skill_state.clear()
+
+    def request_clear_active_skill(self) -> None:
+        """Schedule the active skill to be cleared at the start of the next turn."""
+        self._active_skill_state.clear_active_skill_next_turn = True
+
     async def invoke(self, query, session_id: str) -> Any:
         config = {"configurable": {"thread_id": session_id}}
         # queue for tool/subagent streaming
@@ -158,7 +172,11 @@ class GenericLangGraphChatAgent(BaseAgent):
 
         if not self.graph:
             await self.init_graph(emit_subagent_event)
-        response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
+        self._clear_active_skill_if_requested()
+        self._apply_active_skill_tool_gating()
+        inputs = await self._build_stream_inputs(query, session_id)
+        response = await self.graph.ainvoke(inputs, config)
+        self._capture_skill_tool_outputs(response)
         return response
 
     async def stream(self, query, session_id, task_id) -> AsyncIterable[dict[str, Any]]:
@@ -181,13 +199,15 @@ class GenericLangGraphChatAgent(BaseAgent):
                 # If a new task, write out the previous task.
                 print(self.metrics.summary_for_query(self.metrics.current_query_id))
             self.metrics.start_query(task_id)
+        if not self.graph:
+            await self.init_graph(emit_subagent_event)
+        self._clear_active_skill_if_requested()
+        self._apply_active_skill_tool_gating()
         inputs = await self._build_stream_inputs(query, session_id)
         config = {"configurable": {"thread_id": session_id}}
         logger.info(
             f"Running planner agent stream for session {session_id} {task_id} with input {query}"
         )
-        if not self.graph:
-            await self.init_graph(emit_subagent_event)
         # seen_messages = set()
         # Collect all streaming messages first
         # At the start of the stream
@@ -249,6 +269,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                             active_tool_calls += len(ck.tool_calls)
                             tool_call_str = ""
                             for tool_call in ck.tool_calls:
+                                if tool_call.get("name") == "load_skill":
+                                    args = tool_call.get("args") or {}
+                                    if isinstance(args, dict):
+                                        self._active_skill_state.pending_skill_name = args.get("skill_name")
                                 tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
                                 tool_call_str += f"**Arguments**: {tool_call.get('args')}\n\n"
 
@@ -270,6 +294,12 @@ class GenericLangGraphChatAgent(BaseAgent):
                     elif isinstance(ck, ToolMessage):
                         active_tool_calls -= 1
                         if ck.content:
+                            if ck.name == "load_skill":
+                                self._active_skill_state.mark_loaded(
+                                    self._active_skill_state.pending_skill_name,
+                                    ck.content,
+                                )
+                                continue
                             # stream_buffer.append(ck.content)
                             content = f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
                             await output_queue.put( {
@@ -360,13 +390,57 @@ class GenericLangGraphChatAgent(BaseAgent):
                     {formatted_memories}
                     """
 
-        messages = [{"role": "user", "content": query}]
+        messages = []
+        # Order: base system prompt (handled by graph), then active skill, then retrieved/memory context, then user.
+        system_messages = []
+        if self._active_skill_state.active_skill_text:
+            system_messages.append(
+                {
+                    "role": "system",
+                    "content": format_active_skill_message(
+                        self._active_skill_state.active_skill_text
+                    ),
+                },
+            )
         if additional_system_query.strip():
-            messages.insert(0, {"role": "system", "content": additional_system_query})
+            system_messages.append(
+                {"role": "system", "content": additional_system_query}
+            )
+        messages.extend(system_messages)
+        messages.append({"role": "user", "content": query})
         inputs = {"messages": messages}
 
         logger.debug("Inputs to the LLM: %s", inputs)
         return inputs
+
+    def _capture_skill_tool_outputs(self, response: dict[str, Any]) -> None:
+        for message in response.get("messages", []):
+            if isinstance(message, ToolMessage) and message.name == "load_skill":
+                self._active_skill_state.mark_loaded(
+                    self._active_skill_state.pending_skill_name,
+                    message.content,
+                )
+
+    def _apply_active_skill_tool_gating(self) -> None:
+        if not self.graph:
+            return
+        if self._active_skill_state.skill_loaded:
+            self.graph.tools = [
+                tool for tool in self.graph.tools if getattr(tool, "name", None) != "load_skill"
+            ]
+            return
+        if self.skill_manager and self.skill_manager.enabled:
+            if any(getattr(tool, "name", None) == "load_skill" for tool in self.graph.tools):
+                return
+            self.graph.tools.append(build_load_skill_tool(self.skill_manager))
+
+    def _get_tools_for_testing(self) -> list[Any]:
+        if not self.graph:
+            return []
+        return list(self.graph.tools)
+
+    def _get_active_skill_text_for_testing(self) -> str | None:
+        return self._active_skill_state.active_skill_text
 
     async def _forward_subagent_events(
         self,
