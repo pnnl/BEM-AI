@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "osstd-mcp-server": {
+      "type": "stdio",
+      "command": "C:\\git\\osstd-mcp-server\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "src"
+      ],
+      "env": {
+        "PYTHONPATH": "C:\\git\\osstd-mcp-server"
+      }
+    }
+  }
+}

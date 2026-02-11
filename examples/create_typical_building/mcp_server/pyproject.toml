@@ -1,0 +1,11 @@
+[project]
+name = "osstd-mcp-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.10.1",
+    "openstudio>=3.10.0",
+    "pydantic>=2.11.7",
+]
