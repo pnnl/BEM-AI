@@ -1,0 +1,1081 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: pnnl/bem-ai
+    source: https://github.com/pnnl/bem-ai
+    branch: master
+    commit: "d52a63c1"
+    scope: [automa_ai/agents/__init__.py, automa_ai/agents/adk_agent.py, automa_ai/agents/agent_factory.py, automa_ai/agents/langgraph_chatagent.py,
+      automa_ai/agents/orchestrator_local_agent.py, automa_ai/agents/orchestrator_network_agent.py, automa_ai/agents/react_langgraph_agent.py,
+      automa_ai/agents/remote_agent.py, automa_ai/common/agent_runner.py, automa_ai/common/base_agent.py, automa_ai/common/mcp_registry.py,
+      automa_ai/common/message_accumulator.py, automa_ai/common/response_parser.py, automa_ai/common/setup_logging.py, automa_ai/common/types.py,
+      automa_ai/common/utils.py, automa_ai/common/workflow.py, automa_ai/memory/manager.py, automa_ai/memory/memory_types.py,
+      automa_ai/metrics/collector.py, automa_ai/metrics/extractor.py, automa_ai/prompt_engineering/prompt_template.py, automa_ai/retrieval/__init__.py,
+      automa_ai/retrieval/base.py, automa_ai/skills/__init__.py, automa_ai/skills/tools.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T16:43:37Z'
+    url: https://a2as.org/certified/agents/pnnl/bem-ai
+  signatures:
+    digest: sha256:gDK4ZTga1dd01YhUfDT-le29WHVZfo9OqMut4gNcPA0
+    key: ed25519:yWGl6SL6rTRbz91D9e2oMOFQFGCoT5xEle6CWBBPyNA
+    sig: ed25519:5T5-IipN_dR28ZCZeMIpp0e794cO7WBIDq62z47jKUtvVGSQMl5eseJiV49bnZAHr7NIrdhZFlthFyyBmepgDg
+
+agents:
+  agent.__call__.0:
+    type: factory
+    models: [gemini-2.5-flash]
+    params:
+      agent_name: self.card.name
+      description: self.card.description
+      instructions: self.instructions
+      response_format: self.response_format
+      chat_model: chat_model
+      mcp_servers: mcp_servers
+      retriever: ''
+      subagents: ''
+      skills_manager: skill_manager
+      memory_manager: memory_manager
+      enable_metrics: self.enable_metrics
+      debug: self.debug
+      function: __call__
+      instance: agent.__call__
+  agent.__call__.1:
+    type: factory
+    models: [gemini-2.5-flash]
+    params:
+      agent_name: self.card.name
+      description: self.card.description
+      instructions: self.instructions
+      response_format: self.response_format
+      chat_model: chat_model
+      mcp_servers: mcp_servers
+      enable_metrics: self.enable_metrics
+      debug: self.debug
+      function: __call__
+      instance: agent.__call__
+  agent.GenericADKAgent:
+    type: class
+    models: [gemini-2.5-flash]
+    params:
+      class: GenericADKAgent
+      base: BaseAgent
+      agent_name: agent_name
+      description: description
+      content_types: [text, text/plain]
+  agent.GenericADKAgent.agent:
+    type: class
+    models: [self.chat_model]
+    params:
+      name: self.agent_name
+      instruction: self.instructions
+      disallow_transfer_to_parent: "True"
+      disallow_transfer_to_peers: "True"
+      generate_content_config:
+        ref: generate_content_config
+      class: GenericADKAgent
+  agent.GenericLangGraphChatAgent:
+    type: class
+    models: [gemini-2.5-flash]
+    params:
+      class: GenericLangGraphChatAgent
+      base: BaseAgent
+      agent_name: agent_name
+      description: description
+      content_types: [text, text/plain]
+  agent.GenericLangGraphReactAgent:
+    type: class
+    models: [gemini-2.5-flash]
+    params:
+      class: GenericLangGraphReactAgent
+      base: BaseAgent
+      agent_name: agent_name
+      description: description
+      content_types: [text, text/plain]
+  agent.OrchestratorLocalAgent:
+    type: class
+    models: [gemini-2.5-flash]
+    params:
+      class: OrchestratorLocalAgent
+      base: BaseAgent
+      agent_name: OrchestratorAgent
+      description: Facilitate inter agent communication
+      content_types: [text, text/plain]
+  agent.OrchestratorNetworkAgent:
+    type: class
+    models: [gemini-2.5-flash]
+    params:
+      class: OrchestratorNetworkAgent
+      base: BaseAgent
+      agent_name: agent_name
+      description: description
+      content_types: [text, text/plain]
+  subagent:
+    type: instance
+    models: [gemini-2.5-flash]
+    params:
+      class: RemoteAgent
+      base: BaseAgent
+      agent_name: agent_name
+      description: description
+      content_types: [text, text/plain]
+
+models:
+  gemini-2.5-flash:
+    type: default
+    agents: [agent.__call__.0, agent.__call__.1, agent.GenericLangGraphChatAgent, agent.GenericLangGraphReactAgent, agent.OrchestratorLocalAgent,
+      agent.OrchestratorNetworkAgent, agent.GenericADKAgent, subagent]
+  self.chat_model:
+    type: literal
+    agents: [agent.GenericADKAgent.agent]
+
+mcp:
+  MCPToolset:
+    type: network
+    url: '{config.url}/sse'
+    params:
+      class: GenericADKAgent
+      connection_type: SseServerParams
+      function: init_agent
+
+imports:
+  _init_child_logging: automa_ai.common.setup_logging._init_child_logging
+  A2AAgentServer: automa_ai.common.agent_registry.A2AAgentServer
+  A2AClient: a2a.client.A2AClient
+  A2AServerManager: automa_ai.common.agent_registry.A2AServerManager
+  ABC: abc.ABC
+  abc: abc
+  abstractmethod: abc.abstractmethod
+  Agent: google.adk.Agent
+  AgentCapabilities: a2a.types.AgentCapabilities
+  AgentCard: a2a.types.AgentCard
+  AgentFactory: automa_ai.agents.agent_factory.AgentFactory
+  AgentRunner: automa_ai.common.agent_runner.AgentRunner
+  AgentSkill: a2a.types.AgentSkill
+  AIMessage: langchain_core.messages.AIMessage
+  AIMessageAccumulator: automa_ai.common.message_accumulator.AIMessageAccumulator
+  AIMessageChunk: langchain_core.messages.AIMessageChunk
+  annotations: __future__.annotations
+  Any: typing.Any
+  AsyncGenerator: typing.AsyncGenerator
+  asyncio: asyncio
+  AsyncIterable: typing.AsyncIterable
+  Awaitable: typing.Awaitable
+  AzureChatOpenAI: langchain_openai.AzureChatOpenAI
+  BaseAgent: automa_ai.common.base_agent.BaseAgent
+  BaseChatModel: langchain_core.language_models.BaseChatModel
+  BaseLlm: google.adk.models.BaseLlm
+  BaseMemoryStore: automa_ai.memory.memory_stores.BaseMemoryStore
+  BaseMessage: langchain_core.messages.BaseMessage
+  BaseModel: pydantic.BaseModel
+  BaseRetriever: automa_ai.retrieval.base.BaseRetriever
+  build_load_skill_tool: automa_ai.skills.tools.build_load_skill_tool
+  build_subagent_delegation_instruction: automa_ai.agents.remote_agent.build_subagent_delegation_instruction
+  Callable: typing.Callable
+  ChatAnthropic: langchain_anthropic.ChatAnthropic
+  ChatBedrockConverse: langchain_aws.ChatBedrockConverse
+  ChatGoogleGenerativeAI: langchain_google_genai.ChatGoogleGenerativeAI
+  ChatOllama: langchain_ollama.ChatOllama
+  ChatOpenAI: langchain_openai.ChatOpenAI
+  client: automa_ai.mcp_servers.client
+  config: logging.config
+  copy: copy
+  create_agent: langchain.agents.create_agent
+  create_text_message_object: a2a.client.create_text_message_object
+  dataclass: dataclasses.dataclass
+  DataPart: a2a.types.DataPart
+  datetime: datetime.datetime
+  defaultdict: collections.defaultdict
+  DefaultMemoryManager: automa_ai.memory.manager.DefaultMemoryManager
+  deprecated: automa_ai.common.utils.deprecated
+  Dict: typing.Dict
+  EmbeddingConfig: automa_ai.retrieval.config.EmbeddingConfig
+  Enum: enum.Enum
+  Event: google.adk.events.Event
+  extract_and_parse_json: automa_ai.common.response_parser.extract_and_parse_json
+  extract_metrics_from_chunk: automa_ai.metrics.extractor.extract_metrics_from_chunk
+  Field: pydantic.Field
+  field: dataclasses.field
+  fnmatch: fnmatch
+  genai_types: google.genai.types
+  GenericADKAgent: automa_ai.agents.adk_agent.GenericADKAgent
+  GenericAgentType: automa_ai.agents.GenericAgentType
+  GenericLangGraphChatAgent: automa_ai.agents.langgraph_chatagent.GenericLangGraphChatAgent
+  GenericLangGraphReactAgent: automa_ai.agents.react_langgraph_agent.GenericLangGraphReactAgent
+  GenericLLM: automa_ai.agents.GenericLLM
+  get_agent_mcp_server_config: automa_ai.common.utils.get_agent_mcp_server_config
+  get_retriever_provider: automa_ai.retrieval.registry.get_retriever_provider
+  httpx: httpx
+  HumanMessage: langchain_core.messages.HumanMessage
+  import_module: importlib.import_module
+  InMemorySessionService: google.adk.sessions.InMemorySessionService
+  Iterable: typing.Iterable
+  json: json
+  JSONDecodeError: json.JSONDecodeError
+  JsonRpcTransport: a2a.client.transports.JsonRpcTransport
+  List: typing.List
+  LiteLlm: google.adk.models.lite_llm.LiteLlm
+  Literal: typing.Literal
+  logging: logging
+  make_subagent_tool: automa_ai.agents.remote_agent.make_subagent_tool
+  map_mcp_config_to_server_config: automa_ai.common.utils.map_mcp_config_to_server_config
+  Mapping: typing.Mapping
+  MCPServerConfig: automa_ai.common.mcp_registry.MCPServerConfig
+  MCPServerManager: automa_ai.common.mcp_registry.MCPServerManager
+  MCPToolset: google.adk.tools.mcp_tool.MCPToolset
+  MemoryEntry: automa_ai.memory.memory_types.MemoryEntry
+  MemorySaver: langgraph.checkpoint.memory.MemorySaver
+  MemoryStoreRegistry: automa_ai.memory.memory_stores.MemoryStoreRegistry
+  MemoryType: automa_ai.memory.memory_types.MemoryType
+  MemoryWriteEvent: automa_ai.memory.manager.MemoryWriteEvent
+  Message: a2a.types.Message
+  MessageSendParams: a2a.types.MessageSendParams
+  metadata: importlib.metadata
+  MetricsCollector: automa_ai.metrics.collector.MetricsCollector
+  model_validator: pydantic.model_validator
+  ModelMetrics: automa_ai.common.types.ModelMetrics
+  multiprocessing_logging: multiprocessing_logging
+  MultiServerMCPClient: langchain_mcp_adapters.client.MultiServerMCPClient
+  nx: networkx
+  Optional: typing.Optional
+  OrchestratorConfig: automa_ai.agents.orchestrator_network_agent.OrchestratorConfig
+  OrchestratorNetworkAgent: automa_ai.agents.orchestrator_network_agent.OrchestratorNetworkAgent
+  os: os
+  Path: pathlib.Path
+  Process: multiprocessing.Process
+  PromptTemplate: langchain_core.prompts.PromptTemplate
+  Protocol: typing.Protocol
+  Queue: asyncio.Queue
+  re: re
+  register_retriever_provider: automa_ai.retrieval.registry.register_retriever_provider
+  resolve_chat_model: automa_ai.agents.agent_factory.resolve_chat_model
+  resolve_retriever: automa_ai.retrieval.resolve_retriever
+  RESPONSE_PROMPT: automa_ai.prompt_engineering.prompt_template.RESPONSE_PROMPT
+  RetrieverProvider: automa_ai.retrieval.providers.base.RetrieverProvider
+  RetrieverProviderSpec: automa_ai.retrieval.config.RetrieverProviderSpec
+  Runner: google.adk.Runner
+  SecretStr: pydantic.SecretStr
+  SendStreamingMessageRequest: a2a.types.SendStreamingMessageRequest
+  SendStreamingMessageResponse: a2a.types.SendStreamingMessageResponse
+  SendStreamingMessageSuccessResponse: a2a.types.SendStreamingMessageSuccessResponse
+  serve: automa_ai.mcp_servers.agent_card_server.serve
+  ServerConfig: automa_ai.common.types.ServerConfig
+  ServiceOrchestrator: automa_ai.network.agentic_network.ServiceOrchestrator
+  setup_file_logger: automa_ai.common.setup_logging.setup_file_logger
+  SkillManager: automa_ai.skills.manager.SkillManager
+  SkillRegistryEntry: automa_ai.skills.config.SkillRegistryEntry
+  SkillsConfig: automa_ai.skills.config.SkillsConfig
+  socket: socket
+  SseServerParams: google.adk.tools.mcp_tool.mcp_session_manager.SseServerParams
+  Status: automa_ai.common.workflow.Status
+  StreamEvent: automa_ai.agents.remote_agent.StreamEvent
+  StrOutputParser: langchain_core.output_parsers.StrOutputParser
+  StructuredTool: langchain_core.tools.StructuredTool
+  SubAgentSpec: automa_ai.agents.remote_agent.SubAgentSpec
+  Task: a2a.types.Task
+  TaskArtifactUpdateEvent: a2a.types.TaskArtifactUpdateEvent
+  TaskState: a2a.types.TaskState
+  TaskStatusUpdateEvent: a2a.types.TaskStatusUpdateEvent
+  TextPart: a2a.types.TextPart
+  time: time
+  tool: langchain.tools.tool
+  ToolMessage: langchain_core.messages.ToolMessage
+  Tuple: typing.Tuple
+  types: google.genai.types
+  uuid: uuid
+  uuid4: uuid.uuid4
+  verify_directory_and_json_files: automa_ai.common.file_util.verify_directory_and_json_files
+  wait_for_port: automa_ai.common.utils.wait_for_port
+  warnings: warnings
+  WorkflowGraph: automa_ai.common.workflow.WorkflowGraph
+  WorkflowNode: automa_ai.common.workflow.WorkflowNode
+  wraps: functools.wraps
+
+functions:
+  __aenter__:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self]
+  __aexit__:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self, exc_type, exc_val, exc_tb]
+  __call__:
+    type: sync
+    module: automa_ai.agents.agent_factory
+    args: [self]
+    params:
+      returns: BaseAgent
+  __init__:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self]
+  _add_file_handler:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [logger, log_file_path, level, mode, formatter]
+  _build_stream_inputs:
+    type: async
+    module: automa_ai.agents.langgraph_chatagent
+    args: [self, query, session_id]
+    params:
+      returns: dict
+  _child_entrypoint:
+    type: sync
+    module: automa_ai.common.mcp_registry
+    args: [serve_fn, logging_config]
+  _content_to_text:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self, content]
+    params:
+      returns: str
+  _deep_merge_dicts:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [d1, d2]
+    params:
+      returns: LoggingConfigDict
+  _directory_entries:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self]
+    params:
+      returns: Iterable[SkillRegistryEntry]
+  _emit_final_output:
+    type: async
+    module: automa_ai.agents.langgraph_chatagent
+    args: [self, output_queue, message_accumulator, session_id, task_id]
+    params:
+      returns: None
+  _format_error:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, message]
+    params:
+      returns: str
+  _format_subagent_event:
+    type: sync
+    module: automa_ai.agents.langgraph_chatagent
+    args: [event]
+    params:
+      returns: str
+  _forward_subagent_events:
+    type: async
+    module: automa_ai.agents.langgraph_chatagent
+    args: [self, subagent_event_queue, output_queue]
+    params:
+      returns: None
+  _get_logging_config:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [log_dir]
+    params:
+      returns: LoggingConfigDict
+  _get_partial_marker_length:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self, text, marker]
+    params:
+      returns: int
+  _import_from_path:
+    type: sync
+    module: automa_ai.retrieval.resolve
+    args: [path]
+    params:
+      returns: Any
+  _init_agent_card_mcp:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self, agent_cards_dir]
+  _init_child_logging:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [config]
+  _init_orchestrator_agent:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self, orchestrator_config]
+  _is_allowed_path:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, path]
+    params:
+      returns: bool
+  _is_directory_entry:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, entry, path]
+    params:
+      returns: bool
+  _list_directory_skills:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, directory]
+    params:
+      returns: set[str]
+  _merge_dict:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self, target, source]
+    params:
+      returns: None
+  _normalize_chunk_content:
+    type: sync
+    module: automa_ai.agents.langgraph_chatagent
+    args: [chunk]
+  _normalize_newlines:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [text]
+    params:
+      returns: str
+  _parse_skill_file:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, path, skill_name, entry]
+    params:
+      returns: SkillParseResult
+  _resolve_format:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, path, entry]
+    params:
+      returns: str
+  _resolve_from_directory:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, entry, directory, skill_name]
+    params:
+      returns: SkillResolution
+  _resolve_skill_path:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, skill_name]
+    params:
+      returns: SkillResolution
+  _run:
+    type: async
+    module: automa_ai.agents.remote_agent
+    args: [task]
+    params:
+      returns: dict
+  _start_memory_writer:
+    type: async
+    module: automa_ai.agents.langgraph_chatagent
+    args: [self]
+  _strip_front_matter:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [text]
+    params:
+      returns: str
+  _summarize:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self, items]
+  _validate_provider_or_impl:
+    type: sync
+    module: automa_ai.retrieval.config
+    args: [self]
+    params:
+      returns: RetrieverProviderSpec
+  _wrap_prompt:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, skill_name, path, body, entry]
+    params:
+      returns: str
+  add:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self, metrics]
+  add_a2a_server:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self, server]
+  add_chunk:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self, chunk]
+    params:
+      returns: None
+  add_edge:
+    type: sync
+    module: automa_ai.common.workflow
+    args: [self, from_node_id, to_node_id]
+    params:
+      returns: None
+  add_entry_agent:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self, server]
+  add_graph_node:
+    type: sync
+    module: automa_ai.agents.orchestrator_network_agent
+    args: [self, task_id, context_id, query, node_id, node_key, node_label]
+    params:
+      returns: WorkflowNode
+  add_mcp_server:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self, config]
+  add_memory:
+    type: async
+    module: automa_ai.memory.manager
+    args: [self, message, session_id, user_id, importance_score]
+    params:
+      returns: None
+  add_node:
+    type: sync
+    module: automa_ai.common.workflow
+    args: [self, node]
+    params:
+      returns: None
+  add_server:
+    type: sync
+    module: automa_ai.common.mcp_registry
+    args: [self, config]
+    params:
+      returns: bool
+  adelete_memory:
+    type: async
+    module: automa_ai.memory.memory_stores
+    args: [self, memory_id]
+    params:
+      returns: bool
+  agent_chunk_forwarder:
+    type: async
+    module: automa_ai.agents.langgraph_chatagent
+  aread_memories:
+    type: async
+    module: automa_ai.memory.memory_stores
+    args: [self, query, session_id, user_id, memory_type, limit]
+    params:
+      returns: List[MemoryEntry]
+  asimilarity_search:
+    type: async
+    module: automa_ai.retrieval.base
+    args: [self, query]
+    params:
+      returns: list[Any]
+  asimilarity_search_by_vector:
+    type: async
+    module: automa_ai.retrieval.base
+    args: [self, vector]
+    params:
+      returns: list[Any]
+  available_skills:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self]
+    params:
+      returns: list[str]
+  awrite_memory:
+    type: async
+    module: automa_ai.memory.memory_stores
+    args: [self, entries]
+    params:
+      returns: None
+  build_load_skill_tool:
+    type: sync
+    module: automa_ai.skills.tools
+    args: [skill_manager]
+  build_logging_config:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [log_dir, existing_config]
+    params:
+      returns: LoggingConfigDict
+  build_subagent_delegation_instruction:
+    type: sync
+    module: automa_ai.agents.remote_agent
+    args: [subagents]
+    params:
+      returns: str
+  calculate_recency_score:
+    type: sync
+    module: automa_ai.memory.manager
+    args: [memory]
+    params:
+      returns: float
+  cleanup:
+    type: sync
+    module: automa_ai.common.mcp_registry
+    args: [self]
+  clear_memories:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [self, memory_type]
+    params:
+      returns: None
+  clear_state:
+    type: sync
+    module: automa_ai.agents.orchestrator_network_agent
+    args: [self]
+  close:
+    type: async
+    module: automa_ai.agents.remote_agent
+    args: [self]
+  compute_final:
+    type: sync
+    module: automa_ai.agents.remote_agent
+    args: [chunks]
+    params:
+      returns: str
+  decorator:
+    type: sync
+    module: automa_ai.common.utils
+    args: [obj]
+  delete_memory:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [self, memory_id]
+    params:
+      returns: bool
+  deprecated:
+    type: sync
+    module: automa_ai.common.utils
+    args: [message]
+  emit_subagent_event:
+    type: sync
+    module: automa_ai.agents.react_langgraph_agent
+    args: [e]
+  extract_and_parse_json:
+    type: sync
+    module: automa_ai.common.response_parser
+    args: [text, parse_first]
+    params:
+      returns: Tuple
+  extract_and_parse_json_regex_fallback:
+    type: sync
+    module: automa_ai.common.response_parser
+    args: [text]
+    params:
+      returns: Tuple
+  extract_metrics_from_chunk:
+    type: sync
+    module: automa_ai.metrics.extractor
+    args: [chunk, session_id, query_id]
+    params:
+      returns: ModelMetrics
+  filter:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [self, record]
+    params:
+      returns: bool
+  finalize:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self]
+    params:
+      returns: AIMessage
+  find_agent_for_task:
+    type: async
+    module: automa_ai.common.workflow
+    args: [self]
+  format_response:
+    type: sync
+    module: automa_ai.agents.adk_agent
+    args: [self, chunk]
+  from_config:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [cls, config]
+    params:
+      returns: SkillManager
+  from_dict:
+    type: sync
+    module: automa_ai.skills.config
+    args: [cls, data]
+    params:
+      returns: SkillsConfig
+  generate_summary:
+    type: async
+    module: automa_ai.agents.orchestrator_network_agent
+    args: [self]
+    params:
+      returns: str
+  get:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [cls, name]
+    params:
+      returns: type[BaseMemoryStore]
+  get_agent:
+    type: sync
+    module: automa_ai.agents.agent_factory
+    args: [self]
+  get_agent_mcp_server_config:
+    type: sync
+    module: automa_ai.common.utils
+    params:
+      returns: ServerConfig
+  get_agent_response:
+    type: sync
+    module: automa_ai.agents.adk_agent
+    args: [self, chunk]
+  get_artifact_text:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self]
+  get_assistant_text:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self]
+  get_entry_host:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self]
+    params:
+      returns: str
+  get_entry_port:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self]
+    params:
+      returns: int
+  get_entry_url:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self]
+    params:
+      returns: str
+  get_last_assistant_text:
+    type: sync
+    module: automa_ai.common.message_accumulator
+    args: [self]
+  get_memory_stats:
+    type: sync
+    module: automa_ai.memory.manager
+    args: [self]
+    params:
+      returns: Dict
+  get_planner_resource:
+    type: async
+    module: automa_ai.common.workflow
+    args: [self]
+  get_retriever_provider:
+    type: sync
+    module: automa_ai.retrieval.registry
+    args: [name]
+  get_service_status:
+    type: sync
+    module: automa_ai.network.agentic_network
+    args: [self]
+    params:
+      returns: Dict
+  get_status:
+    type: sync
+    module: automa_ai.common.mcp_registry
+    args: [self]
+    params:
+      returns: Dict
+  init_agent:
+    type: async
+    module: automa_ai.agents.adk_agent
+    args: [self]
+  init_graph:
+    type: async
+    module: automa_ai.agents.react_langgraph_agent
+    args: [self, emitter]
+  invoke:
+    type: async
+    module: automa_ai.agents.adk_agent
+    args: [self, query, session_id]
+    params:
+      returns: dict
+  is_empty:
+    type: sync
+    module: automa_ai.common.workflow
+    args: [self]
+    params:
+      returns: bool
+  list_servers:
+    type: sync
+    module: automa_ai.common.mcp_registry
+    args: [self]
+    params:
+      returns: List[str]
+  load:
+    type: sync
+    module: automa_ai.skills.manager
+    args: [self, skill_name]
+    params:
+      returns: str
+  load_memory_store_plugins:
+    type: sync
+    module: automa_ai.common.utils
+  load_skill:
+    type: tool
+    module: automa_ai.skills.tools
+    args: [skill_name]
+    params:
+      returns: str
+  make_subagent_tool:
+    type: sync
+    module: automa_ai.agents.remote_agent
+    args: [spec, emitter]
+  manage_memory_size:
+    type: async
+    module: automa_ai.memory.manager
+    args: [self]
+    params:
+      returns: None
+  map_mcp_config_to_server_config:
+    type: sync
+    module: automa_ai.common.utils
+    args: [mcp_config]
+    params:
+      returns: ServerConfig
+  map_to_url:
+    type: sync
+    module: automa_ai.common.utils
+    args: [hostname, port, protocol]
+  new_init:
+    type: sync
+    module: automa_ai.common.utils
+    args: [self]
+  per_query:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self]
+  per_session:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self]
+  read_memories:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [self, query, session_id, user_id, memory_type, limit]
+    params:
+      returns: List[MemoryEntry]
+  register:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [cls, name, store_cls]
+  register_retriever_provider:
+    type: sync
+    module: automa_ai.retrieval.registry
+    args: [name, cls]
+    params:
+      returns: None
+  resolve_chat_model:
+    type: sync
+    module: automa_ai.agents.agent_factory
+    args: [backend, model_name, agent_type, base_url, api_key, api_version]
+  resolve_retriever:
+    type: sync
+    module: automa_ai.retrieval.resolve
+    args: [spec]
+  retrieve_memories:
+    type: async
+    module: automa_ai.memory.manager
+    args: [self, query, session_id, memory_types, limit, include_short_term, include_long_term]
+  review_task_outcome:
+    type: async
+    module: automa_ai.agents.orchestrator_network_agent
+    args: [self]
+    params:
+      returns: str
+  run:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self]
+  run_node:
+    type: async
+    module: automa_ai.common.workflow
+    args: [self, query, task_id, context_id, blackboard]
+    params:
+      returns: AsyncIterable[dict]
+  run_stream:
+    type: async
+    module: automa_ai.common.agent_runner
+    args: [self, agent, query, session_id]
+    params:
+      returns: AsyncGenerator
+  run_until_shutdown:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self]
+  run_workflow:
+    type: async
+    module: automa_ai.common.workflow
+    args: [self, start_node_id]
+    params:
+      returns: AsyncIterable[dict]
+  safe_transfer:
+    type: async
+    module: automa_ai.memory.manager
+  set_node_attribute:
+    type: sync
+    module: automa_ai.common.workflow
+    args: [self, node_id, attribute, value]
+    params:
+      returns: None
+  set_node_attributes:
+    type: sync
+    module: automa_ai.agents.orchestrator_network_agent
+    args: [self, node_id, task_id, context_id, query]
+  setup_file_logger:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [base_log_dir, logger_name, log_filename, level, file_mode, formatter]
+    params:
+      returns: logging.Logger
+  setup_logging:
+    type: sync
+    module: automa_ai.common.setup_logging
+    args: [log_dir, existing_config]
+    params:
+      returns: None
+  shutdown_all:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self]
+  similarity_search:
+    type: sync
+    module: automa_ai.retrieval.base
+    args: [self, query]
+    params:
+      returns: list[Any]
+  similarity_search_by_vector:
+    type: sync
+    module: automa_ai.retrieval.base
+    args: [self, vector]
+    params:
+      returns: list[Any]
+  start_all:
+    type: async
+    module: automa_ai.network.agentic_network
+    args: [self]
+  start_query:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self, query_id]
+  start_server:
+    type: async
+    module: automa_ai.common.mcp_registry
+    args: [self, name]
+    params:
+      returns: bool
+  stop_all:
+    type: async
+    module: automa_ai.common.mcp_registry
+    args: [self]
+    params:
+      returns: Dict
+  stop_server:
+    type: async
+    module: automa_ai.common.mcp_registry
+    args: [self, name]
+    params:
+      returns: bool
+  stream:
+    type: async
+    module: automa_ai.agents.adk_agent
+    args: [self, query, context_id, task_id]
+    params:
+      returns: AsyncIterable[dict]
+  summary_for_query:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self, query_id]
+  summary_for_session:
+    type: sync
+    module: automa_ai.metrics.collector
+    args: [self, session_id]
+  tool_name:
+    type: sync
+    module: automa_ai.agents.remote_agent
+    args: [self]
+    params:
+      returns: str
+  update_blackboard:
+    type: sync
+    module: automa_ai.common.workflow
+    args: [self, blackboard]
+  user_query:
+    type: async
+    module: automa_ai.network.chat_network
+    args: [self, query, context_id, task_id]
+  wait_for_port:
+    type: sync
+    module: automa_ai.common.utils
+    args: [host, port, timeout]
+  wrapper:
+    type: sync
+    module: automa_ai.common.utils
+  write_memory:
+    type: sync
+    module: automa_ai.memory.memory_stores
+    args: [self, entries]
+    params:
+      returns: None
+
+variables:
+  AWS_ACCESS_KEY_ID:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [automa_ai.agents.agent_factory]
+  AWS_REGION:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [automa_ai.agents.agent_factory]
+  AWS_SECRET_ACCESS_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [automa_ai.agents.agent_factory]
+  GOOGLE_API_KEY:
+    type: env
+    params:
+      caller: [os.getenv]
+      path: [automa_ai.agents.agent_factory]
+
+files:
+  base_log_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.makedirs]
+  entry.path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path]
+  log_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.makedirs]
+  log_file_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [os.path.dirname, os.path.abspath]
+  path:
+    type: literal
+    actions: [read]
+    params:
+      caller: [Path(entry.path), path.read_text]
+  skill_name:
+    type: variable
+    actions: [read]
+    params:
+      caller: [skill_manager.load]
+
+networks:
+  localhost:
+    type: api
+    actions: [GET]
+    urls: [/sse]
+    protocols: [http]
+    ports: ["10100"]
+    params:
+      caller: [get_agent_mcp_server_config]
+      links: [url]
