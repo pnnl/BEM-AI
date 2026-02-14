@@ -196,4 +196,4 @@ def load_blackboard_config(schema_path: Path, base_dir: Path) -> BlackboardConfi
 
 
 def blackboard_file_path(base_dir: Path, session_id: str) -> Path:
-    return base_dir / f"{session_id}.json"
+    return base_dir / f"{session_id}.blackboard.json"
