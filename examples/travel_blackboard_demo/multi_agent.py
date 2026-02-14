@@ -137,6 +137,7 @@ def build_agent_factory(
     )
 
 
+        logger.info("Registered travel tools in child process before agent build.")
 async def main() -> None:
     register_travel_tools()
     BLACKBOARD_BASE_DIR.mkdir(parents=True, exist_ok=True)
