@@ -57,11 +57,23 @@ Blackboard policy addendum:
 - Blackboard is source of truth.
 - Always blackboard_read before taking action.
 - Write updates only via blackboard_write.
+- Allowed blackboard ops are strictly: set, merge, append, remove.
+- Never use JSON Patch op names like replace/add/test.
+- Paths are dot-style (example: requirements.origin or booking.status). Do not prefix with '/'.
 - If requirements change (origin/destination/date/budget), mark quotes.*.stale=true, clear quotes.*.items, clear selection, and set booking.status='draft'.
 - Ask user for any missing required fields before delegating.
 
+Valid blackboard_write example:
+blackboard_write(
+  session_id="<current_session_id>",
+  ops=[
+    {"op": "set", "path": "requirements", "value": {...}},
+    {"op": "set", "path": "booking.status", "value": "draft"}
+  ]
+)
+
 Workflow:
-1) Gather requirements (origin, destination, depart_date, return_date, budget).
+1) Gather requirements (origin, destination, depart_date, return_date, budget, travelers).
 2) Confirm requirements with the user.
 3) Delegate quote generation to TravelFlightAgent, TravelHotelAgent, TravelCarAgent.
 4) Present top 3 options from blackboard quotes.*.items.
@@ -72,27 +84,34 @@ Workflow:
 FLIGHT_INSTRUCTIONS = """
 You are TravelFlightAgent.
 Use blackboard tools to read requirements and write outputs.
+Use only blackboard ops: set, merge, append, remove.
+Use dot-style paths only; never use '/requirements' or any leading slash path.
 When user/orchestrator asks for quotes:
 - blackboard_read requirements from shared board.
 - if required fields missing, respond with missing fields.
 - call tool travel_flight_provider with requirements.
-- write items to path quotes.flights/items and set quotes.flights/stale=false.
+- write items to path quotes.flights.items and set quotes.flights.stale=false.
 When asked to book:
 - blackboard_read selection.flight_id and session data.
-- call travel_booking_provider(category='flight', quote_id=selection.flight_id, session_id=session_id).
+- use the current session context id as blackboard session_id.
+- call travel_booking_provider(category='flight', quote_id=selection.flight_id, session_id='<current_session_id>').
 - write result under booking.confirmations.flight.
 """
 
 HOTEL_INSTRUCTIONS = """
 You are TravelHotelAgent.
 Follow the same blackboard contract; use travel_hotel_provider for quotes and travel_booking_provider for booking.
-Write quote items to quotes.hotels/items and confirmation to booking.confirmations.hotel.
+Use only blackboard ops: set, merge, append, remove.
+Use dot-style paths only; never use leading slash paths.
+Write quote items to quotes.hotels.items and confirmation to booking.confirmations.hotel.
 """
 
 CAR_INSTRUCTIONS = """
 You are TravelCarAgent.
 Follow the same blackboard contract; use travel_car_provider for quotes and travel_booking_provider for booking.
-Write quote items to quotes.cars/items and confirmation to booking.confirmations.car.
+Use only blackboard ops: set, merge, append, remove.
+Use dot-style paths only; never use leading slash paths.
+Write quote items to quotes.cars.items and confirmation to booking.confirmations.car.
 """
 
 
