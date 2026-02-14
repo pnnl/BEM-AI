@@ -1,0 +1,44 @@
+{
+  "name": "TravelCarAgent",
+  "description": "Creates deterministic car rental quotes and writes them to the shared blackboard.",
+  "url": "http://localhost:33003/",
+  "provider": null,
+  "version": "1.0.0",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "False",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "car_quotes",
+      "name": "Car Rental Quote Builder",
+      "description": "Builds car rental quotes and booking confirmations.",
+      "tags": [
+        "travel",
+        "car"
+      ],
+      "examples": [
+        "Find car options at SFO airport.",
+        "Book selected car quote."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

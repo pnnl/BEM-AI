@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "requirements",
+    "quotes",
+    "selection",
+    "booking"
+  ],
+  "properties": {
+    "requirements": {
+      "type": "object",
+      "properties": {
+        "origin": {"type": "string"},
+        "destination": {"type": "string"},
+        "depart_date": {"type": "string"},
+        "return_date": {"type": "string"},
+        "budget": {"type": "number"},
+        "travelers": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "quotes": {
+      "type": "object",
+      "required": ["flights", "hotels", "cars"],
+      "properties": {
+        "flights": {
+          "$ref": "#/$defs/quoteBucket"
+        },
+        "hotels": {
+          "$ref": "#/$defs/quoteBucket"
+        },
+        "cars": {
+          "$ref": "#/$defs/quoteBucket"
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "flight_id": {"type": "string"},
+        "hotel_id": {"type": "string"},
+        "car_id": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "booking": {
+      "type": "object",
+      "required": ["status", "confirmations"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["draft", "ready_to_book", "booked"]
+        },
+        "confirmations": {
+          "type": "object",
+          "properties": {
+            "flight": {"$ref": "#/$defs/confirmation"},
+            "hotel": {"$ref": "#/$defs/confirmation"},
+            "car": {"$ref": "#/$defs/confirmation"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "quoteBucket": {
+      "type": "object",
+      "required": ["items", "stale"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": true}
+        },
+        "stale": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "confirmation": {
+      "type": "object",
+      "required": ["quote_id", "confirmation_id", "status"],
+      "properties": {
+        "quote_id": {"type": "string"},
+        "confirmation_id": {"type": "string"},
+        "status": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
