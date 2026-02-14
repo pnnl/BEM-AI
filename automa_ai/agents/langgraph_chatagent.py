@@ -252,6 +252,7 @@ class GenericLangGraphChatAgent(BaseAgent):
             """Forward agent chunks to output queue"""
             # use to track the tool call steps
             active_tool_calls = 0
+            last_stream_text: str | None = None
             context_token = set_subagent_context_id(session_id)
             emitter_token = set_subagent_emitter(emit_subagent_event)
             try:
@@ -291,23 +292,21 @@ class GenericLangGraphChatAgent(BaseAgent):
                         if ck.content:
                             content = self._normalize_chunk_content(ck)
                             if content is not None:
-                                # if is_last_model_step:
-                                #    await self._emit_final_output(
-                                #        output_queue,
-                                #        message_accumulator,
-                                #        session_id,
-                                #        task_id,
-                                #    )
-                                # else:
-                                # not last step, continue streaming
-                                await output_queue.put(
-                                    {
-                                        "response_type": "text",
-                                        "is_task_complete": False,
-                                        "require_user_input": False,
-                                        "content": message_accumulator.get_last_assistant_text(),
-                                    }
-                                )
+                                if isinstance(content, dict):
+                                    stream_text = str(content)
+                                else:
+                                    stream_text = str(content)
+                                # Emit incremental chunk text and suppress immediate duplicates.
+                                if stream_text and stream_text != last_stream_text:
+                                    await output_queue.put(
+                                        {
+                                            "response_type": "text",
+                                            "is_task_complete": False,
+                                            "require_user_input": False,
+                                            "content": stream_text,
+                                        }
+                                    )
+                                    last_stream_text = stream_text
                         elif ck.tool_calls:
                             active_tool_calls += len(ck.tool_calls)
                             tool_call_str = ""

@@ -1,0 +1,44 @@
+{
+  "name": "TravelFlightAgent",
+  "description": "Creates deterministic flight quotes and writes them to the shared blackboard.",
+  "url": "http://localhost:33001/",
+  "provider": null,
+  "version": "1.0.0",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "False",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "flight_quotes",
+      "name": "Flight Quote Builder",
+      "description": "Builds flight quotes and booking confirmations.",
+      "tags": [
+        "travel",
+        "flight"
+      ],
+      "examples": [
+        "Search flights for BOS to SFO on 2026-06-10.",
+        "Book selected flight quote."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

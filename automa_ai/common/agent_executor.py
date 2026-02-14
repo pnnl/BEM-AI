@@ -1,4 +1,3 @@
-import logging
 import os
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -22,7 +21,6 @@ from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
 
 
-
 class GenericAgentExecutor(AgentExecutor):
     """Agent Executor used by modeling agents.
     Core business logic on how agent handles tasks, formats responses, process streaming and cancellation.
@@ -31,10 +29,62 @@ class GenericAgentExecutor(AgentExecutor):
 
     def __init__(self, agent: BaseAgent):
         self.agent = agent
-        self.logger = setup_file_logger(base_log_dir="./logs", logger_name=agent.agent_name)
+        self.logger = setup_file_logger(
+            base_log_dir="./logs", logger_name=agent.agent_name
+        )
+
+    async def _safe_publish_event(
+        self,
+        *,
+        event_queue: EventQueue,
+        event,
+        terminal_state_reached: bool,
+    ) -> bool:
+        """Publish a raw A2A event if the task is still active."""
+        if terminal_state_reached:
+            return False
+        try:
+            await event_queue.enqueue_event(event)
+            return True
+        except Exception as exc:
+            self.logger.warning(f"Skipping late/closed event queue update: {exc}")
+            return False
+
+    async def _safe_publish_completion(
+        self,
+        *,
+        updater: TaskUpdater,
+        part: DataPart | TextPart,
+        artifact_name: str,
+    ) -> bool:
+        """Publish final artifact and complete the task."""
+        try:
+            await updater.add_artifact([part], name=artifact_name)
+            await updater.complete()
+            return True
+        except Exception as exc:
+            self.logger.warning(f"Failed to publish completion artifact/status: {exc}")
+            return False
+
+    async def _safe_publish_status(
+        self,
+        *,
+        updater: TaskUpdater,
+        state: TaskState,
+        message,
+        final: bool = False,
+    ) -> bool:
+        """Publish a task status update."""
+        try:
+            await updater.update_status(state, message, final=final)
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                f"Failed to publish status '{state.value}' update: {exc}"
+            )
+            return False
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        
         self.logger.info(f"Executing agent {self.agent.agent_name}")
         error = self._validate_request(context)
         if error:
@@ -45,67 +95,85 @@ class GenericAgentExecutor(AgentExecutor):
 
         if not task:
             task = new_task(context.message)
-            await event_queue.enqueue_event(task)
+            await self._safe_publish_event(
+                event_queue=event_queue,
+                event=task,
+                terminal_state_reached=False,
+            )
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
-        last_text_sent = None  # outside loop
+        last_text_sent = None
+        terminal_state_reached = False
+
         async for item in self.agent.stream(query, task.context_id, task.id):
-            # Agent to Agent call will return events,
-            # Update the relevant ids to proxy back.
-            if hasattr(item, "root") and isinstance(
-                item.root, SendStreamingMessageResponse
-            ):
+            # Agent-to-agent call may return fully formed A2A event wrappers.
+            if hasattr(item, "root") and isinstance(item.root, SendStreamingMessageResponse):
                 event = item.root.result
                 if isinstance(event, (TaskStatusUpdateEvent | TaskArtifactUpdateEvent)):
-                    await event_queue.enqueue_event(event)
+                    await self._safe_publish_event(
+                        event_queue=event_queue,
+                        event=event,
+                        terminal_state_reached=terminal_state_reached,
+                    )
+                continue
+
+            if terminal_state_reached:
+                self.logger.debug(
+                    "Terminal state already reached; ignoring additional stream item."
+                )
                 continue
 
             self.logger.info(f"🔍 We received the item: {item}")
             is_task_complete = item["is_task_complete"]
             require_user_input = item["require_user_input"]
-            # logger.info(f"🔍 Processing item: is_complete={is_task_complete}, require_input={require_user_input}")
 
             if is_task_complete:
-                self.logger.info(f"🔍 {os.getpid()}: Completing with content: {item['content']}")
+                self.logger.info(
+                    f"🔍 {os.getpid()}: Completing with content: {item['content']}"
+                )
                 if item["response_type"] == "data":
                     part = DataPart(data=item["content"])
                 else:
                     part = TextPart(text=item["content"])
 
-                await updater.add_artifact(
-                    [part], name=f"{self.agent.agent_name}-result"
+                await self._safe_publish_completion(
+                    updater=updater,
+                    part=part,
+                    artifact_name=f"{self.agent.agent_name}-result",
                 )
-                await updater.complete()
+                terminal_state_reached = True
                 break
 
             if require_user_input:
-                # logger.info(f"-----Requires User Updates!: {item['content']}")
-                await updater.update_status(
-                    TaskState.input_required,
-                    new_agent_text_message(item["content"], task.context_id, task.id),
+                await self._safe_publish_status(
+                    updater=updater,
+                    state=TaskState.input_required,
+                    message=new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                     final=True,
                 )
-                # Stop the execution and waiting for user inputs.
+                terminal_state_reached = True
                 break
-            # Other status continue the loop
-            # Only send working update if message is different
+
+            # Working update path.
             if item["content"] != last_text_sent:
                 self.logger.info(f"-----Continue updates!: {item['content']}")
-                await updater.update_status(
-                    TaskState.working,
-                    new_agent_text_message(
+                status_published = await self._safe_publish_status(
+                    updater=updater,
+                    state=TaskState.working,
+                    message=new_agent_text_message(
                         item["content"],
                         task.context_id,
                         task.id,
                     ),
                 )
-                last_text_sent = item["content"]
+                if status_published:
+                    last_text_sent = item["content"]
 
     def _validate_request(self, context: RequestContext) -> bool:
         # TODO - see any requests for validations
         return False
 
-    async def cancel(
-        self, request: RequestContext, event_queue: EventQueue
-    ) -> Task | None:
+    async def cancel(self, request: RequestContext, event_queue: EventQueue) -> Task | None:
         raise ServerError(error=UnsupportedOperationError())

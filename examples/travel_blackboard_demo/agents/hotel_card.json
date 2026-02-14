@@ -1,0 +1,44 @@
+{
+  "name": "TravelHotelAgent",
+  "description": "Creates deterministic hotel quotes and writes them to the shared blackboard.",
+  "url": "http://localhost:33002/",
+  "provider": null,
+  "version": "1.0.0",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "False",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "hotel_quotes",
+      "name": "Hotel Quote Builder",
+      "description": "Builds hotel quotes and booking confirmations.",
+      "tags": [
+        "travel",
+        "hotel"
+      ],
+      "examples": [
+        "Find hotel options for downtown Chicago.",
+        "Book selected hotel quote."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}

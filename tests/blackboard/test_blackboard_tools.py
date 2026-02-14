@@ -6,6 +6,7 @@ from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
 from automa_ai.blackboard.errors import DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
 from automa_ai.blackboard.tools import build_blackboard_tools
+from automa_ai.agents.remote_agent import set_subagent_context_id, reset_subagent_context_id
 
 
 def build_store(tmp_path: Path):
@@ -123,3 +124,19 @@ def test_tool_wrapper_read_nonexistent_path_returns_none(tmp_path: Path):
     tools = _tools(tmp_path)
     read_result = tools["blackboard_read"].func(session_id="session-tools", path="does.not.exist")
     assert read_result["data"] is None
+
+
+def test_tool_wrapper_uses_context_session_when_omitted(tmp_path: Path):
+    tools = _tools(tmp_path)
+    token = set_subagent_context_id("session-tools")
+    try:
+        tools["blackboard_write"].func(
+            ops=[{"op": "append", "path": "items", "value": "ctx"}],
+            expected_revision=1,
+        )
+        read_result = tools["blackboard_read"].func(path="items")
+    finally:
+        reset_subagent_context_id(token)
+
+    assert read_result["session_id"] == "session-tools"
+    assert read_result["data"] == ["ctx"]
