@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Callable
 
 from a2a.types import AgentCard
 from google.adk.models.lite_llm import LiteLlm
@@ -151,6 +151,7 @@ class AgentFactory:
         skills_config: SkillsConfig | Dict | None = None,
         tools_config: ToolsConfig | Dict | List[Dict] | None = None,
         blackboard_config: BlackboardConfig | Dict | None = None,
+        tool_registration_hook: Callable[[], None] | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
@@ -170,6 +171,7 @@ class AgentFactory:
         self.skills_config = skills_config
         self.tools_config = tools_config
         self.blackboard_config = blackboard_config
+        self.tool_registration_hook = tool_registration_hook
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
@@ -180,6 +182,9 @@ class AgentFactory:
         return self.__call__()
 
     def __call__(self) -> BaseAgent:
+        if self.tool_registration_hook:
+            self.tool_registration_hook()
+
         chat_model = resolve_chat_model(
             self.chat_model,
             self.model_name,

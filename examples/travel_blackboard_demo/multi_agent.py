@@ -132,23 +132,13 @@ def build_agent_factory(
         tools_config=tools_config,
         subagent_config=subagents,
         blackboard_config=blackboard_config,
+        tool_registration_hook=register_travel_tools,
         enable_metrics=False,
         debug=False,
     )
 
 
-        logger.info("Registered travel tools in child process before agent build.")
-async def main() -> None:
-    register_travel_tools()
-    BLACKBOARD_BASE_DIR.mkdir(parents=True, exist_ok=True)
-    bb_cfg = load_blackboard_config(SCHEMA_PATH, BLACKBOARD_BASE_DIR).model_dump()
 
-    orchestrator_card = load_card(AGENTS_DIR / "orchestrator_card.json")
-    flight_card = load_card(AGENTS_DIR / "flight_card.json")
-    hotel_card = load_card(AGENTS_DIR / "hotel_card.json")
-    car_card = load_card(AGENTS_DIR / "car_card.json")
-
-    flight_factory = build_agent_factory(
         card=flight_card,
         instructions=FLIGHT_INSTRUCTIONS,
         blackboard_config=bb_cfg,
@@ -183,14 +173,6 @@ async def main() -> None:
     server_manager.add_server(A2AAgentServer(flight_factory, flight_card))
     server_manager.add_server(A2AAgentServer(hotel_factory, hotel_card))
     server_manager.add_server(A2AAgentServer(car_factory, car_card))
-
-    print(ollama_health_message())
-    print("▶ Starting travel blackboard demo agents...")
-    await server_manager.start_all()
-    print("✅ Orchestrator: http://localhost:33000/")
-    print("✅ Flight agent: http://localhost:33001/")
-    print("✅ Hotel agent: http://localhost:33002/")
-    print("✅ Car agent: http://localhost:33003/")
     print("Type 'exit' or 'stop' to shut down.")
 
     loop = asyncio.get_event_loop()
