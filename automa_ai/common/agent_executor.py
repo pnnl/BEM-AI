@@ -50,6 +50,8 @@ class GenericAgentExecutor(AgentExecutor):
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         last_text_sent = None  # outside loop
         async for item in self.agent.stream(query, task.context_id, task.id):
+            logging.info("EventQueue: ", event_queue)
+            logging.info("EventQueue.queue: ", event_queue.queue)
             # Agent to Agent call will return events,
             # Update the relevant ids to proxy back.
             if hasattr(item, "root") and isinstance(
