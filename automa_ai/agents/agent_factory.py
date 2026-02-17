@@ -180,7 +180,6 @@ class AgentFactory:
         return self.__call__()
 
     def __call__(self) -> BaseAgent:
-        load_tool_plugins()
 
         chat_model = resolve_chat_model(
             self.chat_model,

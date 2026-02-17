@@ -68,6 +68,8 @@ async def test_forward_subagent_events_emits_text():
     item = await asyncio.wait_for(output_queue.get(), timeout=1)
     task.cancel()
     assert item["response_type"] == "text"
+    assert item["source"] == "subagent:test"
+    assert item["content"].startswith("[[source:subagent:test]] ")
     assert "(final)" in item["content"]
 
 

@@ -31,6 +31,8 @@ from automa_ai.blackboard.tools import build_blackboard_tools
 memory = MemorySaver()
 
 logger = logging.getLogger(__name__)
+STREAM_SOURCE_MARKER_PREFIX = "[[source:"
+STREAM_SOURCE_MARKER_SUFFIX = "]]"
 
 
 class GenericLangGraphChatAgent(BaseAgent):
@@ -466,6 +468,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         "response_type": "text",
                         "is_task_complete": False,
                         "require_user_input": False,
+                        "source": e.source,
                         "content": content_str,
                     }
                 )
@@ -475,12 +478,21 @@ class GenericLangGraphChatAgent(BaseAgent):
 
     @staticmethod
     def _format_subagent_event(event: StreamEvent) -> str:
-        # content_str = f"\n\n[{event.source}] "
-        content_str = ""
+        content_body = event.content
         if event.metadata and event.metadata.get("final"):
-            content_str += "(final) "
-        content_str += event.content
-        return content_str
+            content_body = f"(final) {content_body}"
+        return GenericLangGraphChatAgent._attach_source_marker(
+            content_body, event.source
+        )
+
+    @staticmethod
+    def _attach_source_marker(content: str, source: str | None) -> str:
+        if not source:
+            return content
+        return (
+            f"{STREAM_SOURCE_MARKER_PREFIX}{source}{STREAM_SOURCE_MARKER_SUFFIX} "
+            f"{content}"
+        )
 
     @staticmethod
     def _normalize_chunk_content(chunk: AIMessageChunk) -> str | None:

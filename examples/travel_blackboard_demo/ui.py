@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from examples.travel_blackboard_demo.agents.common import blackboard_file_path
 BASE_DIR = Path(__file__).resolve().parent
 BLACKBOARD_BASE_DIR = BASE_DIR / ".demo_blackboards"
 ORCHESTRATOR_URL = os.getenv("TRAVEL_ORCHESTRATOR_URL", "http://localhost:33000")
+SOURCE_MARKER_RE = re.compile(r"^\[\[source:(?P<source>[^\]]+)]]\s*")
 
 
 @st.cache_resource
@@ -52,7 +54,7 @@ async def stream_reply(prompt: str, session_id: str):
             text_fragments = [
                 p.get("text")
                 for p in parts
-                if p.get("kind") == "text" and p.get("text")
+                if p.get("kind") == "text" and p.get("text") and not p.get("text").strip().startswith("**Tool")
             ]
             if text_fragments:
                 text_part = "\n".join(text_fragments)
@@ -66,7 +68,12 @@ async def stream_reply(prompt: str, session_id: str):
             text_part = chunk["data"]
 
         if text_part:
-            yield text_part
+            source = None
+            marker_match = SOURCE_MARKER_RE.match(text_part)
+            if marker_match:
+                source = marker_match.group("source")
+                text_part = SOURCE_MARKER_RE.sub("", text_part, count=1)
+            yield {"text": text_part, "source": source}
 
 
 def main() -> None:
@@ -111,16 +118,25 @@ def main() -> None:
 
         with st.chat_message("assistant"):
             placeholder = st.empty()
+            agent_status = st.empty()
             full_reply = st.session_state["messages"][assistant_index]["content"]
             st.session_state["is_streaming"] = True
 
             async def consume_stream():
                 nonlocal full_reply
-                async for token in stream_reply(prompt, st.session_state["session_id"]):
-                    full_reply += token
-                    st.session_state["messages"][assistant_index]["content"] = full_reply
-                    placeholder.markdown(full_reply + "▌")
+                async for event in stream_reply(prompt, st.session_state["session_id"]):
+                    source = event.get("source")
+                    if source:
+                        agent_name = source.replace("subagent:", "")
+                        agent_status.markdown(f"## Active agent: `{agent_name}`")
+
+                    token = event.get("text", "")
+                    if token:
+                        full_reply += token
+                        st.session_state["messages"][assistant_index]["content"] = full_reply
+                        placeholder.markdown(full_reply + "▌")
                 placeholder.markdown(full_reply)
+                agent_status.empty()
 
             try:
                 asyncio.run(consume_stream())
