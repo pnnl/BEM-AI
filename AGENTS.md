@@ -117,6 +117,17 @@ See `examples/sim_chat_stream_demo/chatbot.py` for a concrete example that wires
 - **Add a new skill**: drop a `.md` or `.txt` file under an allowed root and register it in `skills_config` (or add a directory registry entry).【F:automa_ai/skills/README.md†L10-L35】
 - **Add a new memory store**: implement `BaseMemoryStore`, register with `MemoryStoreRegistry`, then update the `memory_config` for `DefaultMemoryManager`.【F:automa_ai/memory/memory_stores.py†L1-L59】【F:automa_ai/memory/manager.py†L46-L82】
 
+
+## Default tools (non-MCP)
+
+BEM-AI now supports first-class default tools configured directly in `AgentFactory` via `tools_config` (not MCP).
+
+- Core configuration models are in `automa_ai/config/tools.py` (`ToolsConfig`, `ToolSpec`).
+- Registry/factory and internal tool interface are in `automa_ai/tools/base.py` and `automa_ai/tools/registry.py`.
+- Built-in tools are registered in `automa_ai/tools/__init__.py`.
+- `AgentFactory` accepts `tools_config` and passes tool specs to `GenericLangGraphChatAgent`, which binds tools only when configured.
+- Built-in `web_search` implementation is under `automa_ai/tools/web_search/` with Serper/OSS search, Firecrawl/OSS scraping, and Jina/Cohere/OSS reranking.
+
 ## Building and Testing
 
 The repository does not include a dedicated build step in this document, but you can run focused tests for the key subsystems below.
@@ -138,6 +149,62 @@ All pull request comments should be complete sentences and end with a period.
 - Add new tests for any new feature or bug fix. 
 - Update documentation for user-facing changes. 
 
+## Example Development Guidelines (Lessons Learned)
+
+Use this checklist for all new examples drafted in this repository.
+
+### Required files and structure
+
+- Every example must include:
+  - a **Streamlit UI** script (`ui.py`), and
+  - a server bootstrap script:
+    - `agent.py` for a single-agent example, or
+    - `multi_agents.py` for a multi-agent example.
+- Every example must include a `README.md` with:
+  - what the example demonstrates,
+  - setup instructions,
+  - run instructions,
+  - troubleshooting tips.
+- Add a local `.env` file in the example folder for API keys, model names, and service URLs.
+
+### Agent construction and configuration
+
+- Always create agents via `AgentFactory`.
+- Keep prompts as simple as possible.
+- MCP configs and system prompts should be defined in the server bootstrap script (`agent.py` or `multi_agents.py`) so startup behavior is explicit.
+
+### Tools and memory plugin pattern
+
+- Follow a registry + config pattern (similar to memory stores):
+  - register implementations once via plugin/entry-point loading,
+  - bind them with declarative config (`tools_config`, `memory_config`) in `AgentFactory`.
+- Avoid ad-hoc runtime registration functions in example flow logic.
+- For custom tools, prefer entry-point/plugin registration so multiprocess server workers can resolve the same tool types reliably.
+
+### Multi-agent and streaming lessons
+
+- For multi-agent demos:
+  - use A2A subagent delegation (`SubAgentSpec`) instead of direct Python calls,
+  - keep names/tool names deterministic and unique.
+- For Streamlit streaming UIs:
+  - persist partial assistant output in `st.session_state`,
+  - guard against rerun interruptions (disable refresh/session-reset controls while streaming),
+  - only refresh side snapshots when no stream is active.
+
+### Blackboard lessons
+
+- If using local JSON blackboard backend, follow the backend file naming contract (`<session_id>.blackboard.json`).
+- Use blackboard operations and paths exactly as supported by tooling/contracts; avoid JSON-patch style ops if not supported.
+- Prefer context-aware `session_id` handling where available to reduce brittle LLM-generated IDs.
+
+### Documentation expectations for engineering users
+
+- Write README instructions for users who are domain engineers (for example, mechanical engineers) with moderate scripting experience.
+- Use practical examples and plain language:
+  - expected inputs,
+  - expected outputs,
+  - how to validate success.
+
 ## Learning Mode
 When a user explicitly expressed that they are currently onboarding or learning this repository, the agent shall follow the additional instructions in the learning mode.
 
@@ -157,3 +224,4 @@ When a user explicitly expressed that they are currently onboarding or learning 
 - If the user asks for something complex, **suggest simpler alternatives**
 - Treat every session as a **teaching opportunity**
 - Be direct, **Tell the user when they are doing something wrong**
+- 

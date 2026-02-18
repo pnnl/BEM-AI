@@ -6,15 +6,32 @@ from functools import wraps
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.memory_stores import MemoryStoreRegistry
+from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
 
 import importlib.metadata
 
+
+def _iter_entry_points(group: str):
+    eps = importlib.metadata.entry_points()
+    if hasattr(eps, "select"):
+        return eps.select(group=group)
+    return eps.get(group, [])
+
+
 def load_memory_store_plugins():
-    for ep in importlib.metadata.entry_points(
-        group="automa_ai.memory_stores"
-    ):
+    for ep in _iter_entry_points("automa_ai.memory_stores"):
         store_cls = ep.load()
         MemoryStoreRegistry.register(ep.name, store_cls)
+
+
+def load_tool_plugins():
+    for ep in _iter_entry_points("automa_ai.tools"):
+        builder = ep.load()
+        try:
+            DEFAULT_TOOL_REGISTRY.register(ep.name, builder)
+        except ValueError:
+            # Plugin may already be loaded in this process.
+            pass
 
 
 # Map MCPConfigServer to ServerConfig

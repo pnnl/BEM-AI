@@ -103,6 +103,30 @@ Project configuration is managed through `pyproject.toml`. Key configuration are
 - **Project Metadata**: Version, description, and author information
 - **Optional**: optional packages to use for UI integration and running examples.
 
+### Default tools configuration
+
+You can enable built-in tools directly from config using a `tools` list.
+
+```yaml
+tools:
+  - type: web_search
+    config:
+      provider: auto
+      serper:
+        api_key: ${SERPER_API_KEY}
+      firecrawl:
+        api_key: ${FIRECRAWL_API_KEY}
+      scrape:
+        enabled: true
+        max_pages: 5
+      rerank:
+        provider: opensource
+        top_k: 5
+```
+
+Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
+See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
+
 ### A2A Server Base Path
 
 You can mount an A2A agent server under a URL prefix by passing `base_url_path` to

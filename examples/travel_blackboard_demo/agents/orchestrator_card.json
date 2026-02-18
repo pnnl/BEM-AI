@@ -1,0 +1,45 @@
+{
+  "name": "TravelOrchestratorAgent",
+  "description": "Coordinates travel planning and booking with blackboard-enabled subagent delegation.",
+  "url": "http://localhost:33000/",
+  "provider": null,
+  "version": "1.0.0",
+  "documentationUrl": null,
+  "capabilities": {
+    "streaming": "True",
+    "pushNotification": "False",
+    "stateTransitionHistory": "False"
+  },
+  "authentication": {
+    "credentials": null,
+    "schemes": [
+      "public"
+    ]
+  },
+  "defaultInputModes": [
+    "text",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text",
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "travel_orchestration",
+      "name": "Travel Orchestration",
+      "description": "Collects requirements, coordinates quote search, and finalizes booking.",
+      "tags": [
+        "travel",
+        "orchestration",
+        "blackboard"
+      ],
+      "examples": [
+        "Plan a trip from Seattle to Denver next month under $1200.",
+        "Book the second flight, first hotel, and first car option."
+      ],
+      "inputModes": null,
+      "outputModes": null
+    }
+  ]
+}
