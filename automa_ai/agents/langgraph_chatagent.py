@@ -501,7 +501,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     content = content["text"]
                 elif content["type"] == "tool_use":
                     # seems unique to claude - temporary block tool call info first.
-                    content = "-"
+                    content = None
         return content
 
     async def _emit_final_output(
