@@ -288,6 +288,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         # is task completed?
                         # is_last_model_step = self.is_last_chunk(ck, active_tool_calls)
                         # print("Pass last step: ", is_last_model_step)
+                        
 
                         if ck.content:
                             content = self._normalize_chunk_content(ck)
@@ -311,6 +312,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             active_tool_calls += len(ck.tool_calls)
                             tool_call_str = ""
                             for tool_call in ck.tool_calls:
+                                logger.info(f"Invoking tool {tool_call.get('name')} with args {tool_call.get('args')}")
                                 tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
                                 tool_call_str += (
                                     f"**Arguments**: {tool_call.get('args')}\n\n"
@@ -340,6 +342,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             content = (
                                 f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
                             )
+                            logger.info(f"Tool {ck.name} returned: {ck.content}")
                             await output_queue.put(
                                 {
                                     "response_type": "text",
