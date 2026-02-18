@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from automa_ai.common.base_agent import BaseAgent
 import httpx
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 _subagent_context_id: ContextVar[str | None] = ContextVar(
     "subagent_context_id",
@@ -250,18 +253,45 @@ def make_subagent_tool(
                 f"{blackboard_contract}\n\n"
                 "Use blackboard tools for shared state updates."
             )
+        logger.info(
+            "Running subagent %s with task: %s",
+            adapter.subagent.agent_name,
+            delegated_task,
+        )
         agent_card: AgentCard = adapter.subagent.agent_card
         context_id = get_subagent_context_id()
         if agent_card.capabilities.streaming:
             async for chunk in adapter.stream(task, context_id=context_id):
+                logger.info(
+                    "Received streaming chunk from %s: %s",
+                    adapter.subagent.agent_name,
+                    chunk,
+                )
                 chunks.append(chunk)
         else:
             result = await adapter.run(task, context_id=context_id)
+            logger.info(
+                "Received non-streaming result from %s: %s",
+                adapter.subagent.agent_name,
+                result,
+            )
             chunks.append(result)
 
         result = None
         if chunks:
             result = chunks[0]
+        else:
+            logger.warning(
+                "Subagent %s produced no chunks for task: %s",
+                adapter.subagent.agent_name,
+                delegated_task,
+            )
+
+        logger.info(
+            "Subagent %s final output: %s",
+            adapter.subagent.agent_name,
+            result if result else "No result produced",
+        )
 
         if result:
             return {
