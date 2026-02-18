@@ -501,6 +501,12 @@ class GenericLangGraphChatAgent(BaseAgent):
                 if content["type"] == "text" and content["text"]:
                     content = content["text"]
                 elif content["type"] == "tool_use":
+                    logger.warning(
+                        "Dropping 'tool_use' chunk in _normalize_chunk_content: "
+                        "model_provider=%s, partial_content=%s",
+                        chunk.response_metadata.get("model_provider") if chunk.response_metadata else None,
+                        content.get("text") if "text" in content else content,
+                    )
                     # seems unique to claude - temporary block tool call info first.
                     content = None
         return content
