@@ -385,8 +385,6 @@ class GenericLangGraphChatAgent(BaseAgent):
                     break
                 # print(f"Yielding from {item.get('source')}: {item.get('content', '')[:50]}...")
                 yield item
-                if item.get("is_task_complete"):
-                    break
         finally:
             for task in forwarder_tasks:
                 task.cancel()
@@ -511,7 +509,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         session_id: str,
         task_id: str,
     ) -> None:
-        final_text = message_accumulator.get_assistant_text()
+        final_text = message_accumulator.get_assistant_text() or "Completed."
         artifact_text = message_accumulator.get_artifact_text()
 
         ai_message = message_accumulator.finalize()

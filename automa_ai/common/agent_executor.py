@@ -135,7 +135,7 @@ class GenericAgentExecutor(AgentExecutor):
             is_task_complete = item["is_task_complete"]
             require_user_input = item["require_user_input"]
 
-            if is_task_complete and item.get('content') is not None:
+            if is_task_complete:
                 self.logger.info(
                     f"🔍 {os.getpid()}: Completing with content: {item['content']}"
                 )
