@@ -106,6 +106,8 @@ class GenericAgentExecutor(AgentExecutor):
         terminal_state_reached = False
 
         async for item in self.agent.stream(query, task.context_id, task.id):
+            self.logger.info(item)
+
             queue_obj = event_queue.queue
             self.logger.info(
                 "Queue size=%s items=%s",
@@ -133,7 +135,7 @@ class GenericAgentExecutor(AgentExecutor):
             is_task_complete = item["is_task_complete"]
             require_user_input = item["require_user_input"]
 
-            if is_task_complete:
+            if is_task_complete and item.get('content') is not None:
                 self.logger.info(
                     f"🔍 {os.getpid()}: Completing with content: {item['content']}"
                 )
