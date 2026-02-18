@@ -32,16 +32,9 @@ dependencies = [
     "pandas>=2.3.3",
     "pandas-stubs==2.3.3.251219",
     "pydantic>=2.12.3",
-<<<<<<< HEAD
     "pyjwt>=2.11.0",
     "streamlit>=1.54.0",
     "uvicorn>=0.40.0",
-=======
-    "pyjwt>=2.11.0",
-    "streamlit>=1.54.0",
-    "uvicorn>=0.40.0",
-    "multiprocessing-logging>=0.3.4",
->>>>>>> origin/develop
 ]
 packages = [{include = "automa_ai", from = "."}]
 
