@@ -273,6 +273,8 @@ class GenericLangGraphChatAgent(BaseAgent):
 
                     # Process agent chunk
                     if isinstance(ck, AIMessageChunk):
+                        logger.info(f"{self.agent_name} - processing AIMessageChunk: {message_accumulator._assistant_parts}")
+
                         if self.metrics:
                             # Record tracking
                             if ck.response_metadata:
@@ -285,7 +287,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 )
                         # accumulate ai messages
                         message_accumulator.add_chunk(ck)
-                        logger.info(f"{self.agent_name} has processed a {type(ck)} chunk. The message accumulator parts are {message_accumulator._assistant_parts}")
+                        logger.info(f"{self.agent_name} - message accumulator parts: {message_accumulator._assistant_parts}")
                         # is task completed?
                         # is_last_model_step = self.is_last_chunk(ck, active_tool_calls)
                         # print("Pass last step: ", is_last_model_step)
