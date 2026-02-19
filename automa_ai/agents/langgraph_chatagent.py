@@ -361,7 +361,8 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     "content": f"Tool call {ck.name} has no content return or failed. check logs.",
                                 }
                             )
-
+                    logger.info(f"Message accumulator parts: {message_accumulator._assistant_parts}")
+                logger.info("Emitting final output")
                 await self._emit_final_output(
                     output_queue, message_accumulator, session_id, task_id
                 )
@@ -515,7 +516,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         session_id: str,
         task_id: str,
     ) -> None:
-        final_text = message_accumulator.get_assistant_text() or "Completed."
+        final_text = message_accumulator.get_assistant_text()
         artifact_text = message_accumulator.get_artifact_text()
 
         ai_message = message_accumulator.finalize()
