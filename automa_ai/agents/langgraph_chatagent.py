@@ -361,6 +361,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     "content": f"Tool call {ck.name} has no content return or failed. check logs.",
                                 }
                             )
+                    logger.info(f"Chunk type: {type(ck)}")
                     logger.info(f"Message accumulator parts: {message_accumulator._assistant_parts}")
                 logger.info("Emitting final output")
                 await self._emit_final_output(
