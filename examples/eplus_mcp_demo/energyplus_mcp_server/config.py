@@ -29,13 +29,22 @@ class EnergyPlusConfig:
 @dataclass
 class PathConfig:
     """Path configuration"""
-    workspace_root: str = "/Users/xuwe123/gitlab/automa_tryout/examples/eplus_mcp_demo/energyplus_mcp_server"
+    workspace_root: str = ""
     sample_files_path: str = ""
     temp_dir: str = "/tmp"
-    output_dir: str = "/Users/xuwe123/gitlab/automa_tryout/examples/eplus_mcp_demo/energyplus_mcp_server/outputs"
-
+    output_dir: str = ""
+    
     def __post_init__(self):
         """Set default paths after initialization"""
+        # Set workspace_root to the energyplus_mcp_server directory if not provided
+        if not self.workspace_root:
+            self.workspace_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # Set output_dir if not provided
+        if not self.output_dir:
+            self.output_dir = os.path.join(self.workspace_root, "outputs")
+        
+        # Set sample_files_path if not provided
         if not self.sample_files_path:
             self.sample_files_path = os.path.join(self.workspace_root, "sample_files")
 

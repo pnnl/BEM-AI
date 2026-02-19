@@ -13,6 +13,24 @@ async def main():
     print("Testing Foundational Geometry Agent")
     print("=" * 60)
     
+    # Test 0: Ask what tools are available
+    print("\n🛠️  Test 0: What tools are available?")
+    print("-" * 60)
+    async for chunk in client.send_streaming_message(
+        "What tools do you have available?",
+        context_id="test-session-1"
+    ):
+        # Handle status-update events with streaming text
+        result = chunk.get("result", {})
+        if result.get("kind") == "status-update":
+            status = result.get("status", {})
+            message = status.get("message", {})
+            parts = message.get("parts", [])
+            for part in parts:
+                if isinstance(part, dict) and part.get("kind") == "text":
+                    print(part.get("text", ""), end="", flush=True)
+    print("\n")
+    
     # Test 1: Ask about available building types
     print("\n📋 Test 1: What building types are available?")
     print("-" * 60)

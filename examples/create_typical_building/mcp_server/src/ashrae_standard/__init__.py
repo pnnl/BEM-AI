@@ -78,6 +78,63 @@ class ASHRAEBuildingType(Enum):
         return [bt.value for bt in cls]
 
 
+def map_building_type_to_geometry(building_type: ASHRAEBuildingType) -> ASHRAEExampleBuildingTypes:
+    """
+    Map ASHRAEBuildingType (used for construction sets) to ASHRAEExampleBuildingTypes 
+    (used for geometry files).
+    
+    Args:
+        building_type: ASHRAEBuildingType enum value
+        
+    Returns:
+        ASHRAEExampleBuildingTypes enum value for loading geometry
+        
+    Raises:
+        ValueError: If building type cannot be mapped to a geometry file
+    """
+    # Direct mappings (most building types map 1:1)
+    direct_mappings = {
+        ASHRAEBuildingType.COLLEGE: ASHRAEExampleBuildingTypes.COLLEGE,
+        ASHRAEBuildingType.COURTHOUSE: ASHRAEExampleBuildingTypes.COURTHOUSE,
+        ASHRAEBuildingType.FULL_SERVICE_RESTAURANT: ASHRAEExampleBuildingTypes.FULL_SERVICE_RESTAURANT,
+        ASHRAEBuildingType.HIGHRISE_APARTMENT: ASHRAEExampleBuildingTypes.HIGHRISE_APARTMENT,
+        ASHRAEBuildingType.HOSPITAL: ASHRAEExampleBuildingTypes.HOSPITAL,
+        ASHRAEBuildingType.LABORATORY: ASHRAEExampleBuildingTypes.LABORATORY,
+        ASHRAEBuildingType.LARGE_HOTEL: ASHRAEExampleBuildingTypes.LARGE_HOTEL,
+        ASHRAEBuildingType.LARGE_OFFICE: ASHRAEExampleBuildingTypes.LARGE_OFFICE,
+        ASHRAEBuildingType.MEDIUM_OFFICE: ASHRAEExampleBuildingTypes.MEDIUM_OFFICE,
+        ASHRAEBuildingType.MIDRISE_APARTMENT: ASHRAEExampleBuildingTypes.MIDRISE_APARTMENT,
+        ASHRAEBuildingType.OUTPATIENT: ASHRAEExampleBuildingTypes.OUTPATIENT,
+        ASHRAEBuildingType.PRIMARY_SCHOOL: ASHRAEExampleBuildingTypes.PRIMARY_SCHOOL,
+        ASHRAEBuildingType.QUICK_SERVICE_RESTAURANT: ASHRAEExampleBuildingTypes.QUICK_SERVICE_RESTAURANT,
+        ASHRAEBuildingType.SECONDARY_SCHOOL: ASHRAEExampleBuildingTypes.SECONDARY_SCHOOL,
+        ASHRAEBuildingType.SMALL_HOTEL: ASHRAEExampleBuildingTypes.SMALL_HOTEL,
+        ASHRAEBuildingType.SMALL_OFFICE: ASHRAEExampleBuildingTypes.SMALL_OFFICE,
+        ASHRAEBuildingType.WAREHOUSE: ASHRAEExampleBuildingTypes.WAREHOUSE,
+    }
+    
+    # Special mappings for types that don't have exact geometry matches
+    special_mappings = {
+        ASHRAEBuildingType.RETAIL: ASHRAEExampleBuildingTypes.RETAIL_STRIPMALL,
+        ASHRAEBuildingType.STRIP_MALL: ASHRAEExampleBuildingTypes.RETAIL_STRIPMALL,
+        ASHRAEBuildingType.OFFICE: ASHRAEExampleBuildingTypes.MEDIUM_OFFICE,  # Default to medium office
+    }
+    
+    # Check direct mappings first
+    if building_type in direct_mappings:
+        return direct_mappings[building_type]
+    
+    # Check special mappings
+    if building_type in special_mappings:
+        return special_mappings[building_type]
+    
+    # Handle unmapped types
+    raise ValueError(
+        f"Building type '{building_type.value}' cannot be mapped to a geometry file. "
+        f"Available geometry types: {[bt.value for bt in ASHRAEExampleBuildingTypes]}"
+    )
+
+
 class ASHRAESpaceType(Enum):
     """
     Enumeration of ASHRAE 90.1 space types.
@@ -133,7 +190,8 @@ __all__ = [
     'ASHRAEExampleBuildingTypes',
     'ASHRAEBuildingType',
     'ASHRAESpaceType', 
-    'ASHRAEClimateZone'
+    'ASHRAEClimateZone',
+    'map_building_type_to_geometry'
 ]
 
 # Import OpenStudio integration if available

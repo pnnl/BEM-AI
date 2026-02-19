@@ -10,7 +10,7 @@ import openstudio
 
 from pydantic import BaseModel
 
-from .ashrae_standard import ASHRAEBuildingType, ASHRAESpaceType, ASHRAETemplate, ASHRAEClimateZone, ASHRAEExampleBuildingTypes, ASHRAE901StandardsWithOpenStudio
+from .ashrae_standard import ASHRAEBuildingType, ASHRAESpaceType, ASHRAETemplate, ASHRAEClimateZone, ASHRAEExampleBuildingTypes, ASHRAE901StandardsWithOpenStudio, map_building_type_to_geometry
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -223,21 +223,28 @@ def serve(host, port, transport):
                     "error": f"Invalid building type: {building_type}. Valid options: {[bt.value for bt in ASHRAEBuildingType]}"
                 })
             
+            # Map to geometry building type
+            try:
+                geometry_type_enum = map_building_type_to_geometry(building_type_enum)
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            
             # Convert string to Path
             save_directory_path = Path(save_directory)
             
             # Generate and save the geometry
-            success = osstd_srv.generate_default_ashrae_geometry_osm(building_type_enum, save_directory_path)
+            success = osstd_srv.generate_default_ashrae_geometry_osm(geometry_type_enum, save_directory_path)
             
             # Create output filename for response
-            output_filename = f"{building_type_enum.value}.osm"
+            output_filename = f"{geometry_type_enum.value}.osm"
             output_path = save_directory_path / output_filename
             
             response_data = {
                 "success": success,
                 "building_type": building_type_enum.value,
+                "geometry_type": geometry_type_enum.value,
                 "saved_to": str(output_path),
-                "message": f"Successfully saved {building_type_enum.value} geometry to {output_path}"
+                "message": f"Successfully saved {building_type_enum.value} geometry (using {geometry_type_enum.value}) to {output_path}"
             }
             
             return json.dumps(response_data, indent=2)
