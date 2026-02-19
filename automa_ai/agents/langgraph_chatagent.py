@@ -294,6 +294,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         
 
                         if ck.content:
+                            logger.info(f"{self.agent_name} - chunk content: {ck.content}")
                             content = self._normalize_chunk_content(ck)
                             if content is not None:
                                 if isinstance(content, dict):
@@ -312,6 +313,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     )
                                     last_stream_text = stream_text
                         elif ck.tool_calls:
+                            logger.info(f"{self.agent_name} - tool calls: {ck.tool_calls}")
                             active_tool_calls += len(ck.tool_calls)
                             tool_call_str = ""
                             for tool_call in ck.tool_calls:
