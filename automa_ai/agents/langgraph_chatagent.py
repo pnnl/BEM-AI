@@ -260,7 +260,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     inputs, config, stream_mode="messages"
                 ):
                     if self.debug:
-                        print("Getting the chunk", chunk)
+                        logger.info(f"{self.agent_name} is getting the chunk", chunk)
                     ck, meta = chunk
 
                     if isinstance(ck, HumanMessage) and self.memory_manager:
