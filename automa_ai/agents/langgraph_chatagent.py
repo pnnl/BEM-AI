@@ -285,6 +285,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 )
                         # accumulate ai messages
                         message_accumulator.add_chunk(ck)
+                        logger.info(f"{self.agent_name} has processed a {type(ck)} chunk. The message accumulator parts are {message_accumulator._assistant_parts}")
                         # is task completed?
                         # is_last_model_step = self.is_last_chunk(ck, active_tool_calls)
                         # print("Pass last step: ", is_last_model_step)
@@ -312,7 +313,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             active_tool_calls += len(ck.tool_calls)
                             tool_call_str = ""
                             for tool_call in ck.tool_calls:
-                                logger.info(f"Invoking tool {tool_call.get('name')} with args {tool_call.get('args')}")
+                                logger.info(f"{self.agent_name} is invoking tool {tool_call.get('name')} with args {tool_call.get('args')}")
                                 tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
                                 tool_call_str += (
                                     f"**Arguments**: {tool_call.get('args')}\n\n"
@@ -335,6 +336,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         #        task_id,
                         #    )
                         # continue
+                        
                     elif isinstance(ck, ToolMessage):
                         active_tool_calls -= 1
                         if ck.content:
@@ -362,7 +364,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 }
                             )
                     logger.info(f"Chunk type: {type(ck)}")
-                    logger.info(f"Message accumulator parts: {message_accumulator._assistant_parts}")
+                    logger.info(f"{self.agent_name} currently has the message accumulator parts: {message_accumulator._assistant_parts}")
                 logger.info("Emitting final output")
                 await self._emit_final_output(
                     output_queue, message_accumulator, session_id, task_id
