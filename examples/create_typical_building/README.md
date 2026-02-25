@@ -191,7 +191,20 @@ uv run python test_mcp_tools.py
 **Common testing scenarios:**
 
 ```python
-# EStreamlit UI   │ A2A     │  Agent Server    │  SSE    │  MCP Server         │
+# Example natural language requests for the agent:
+"What building types are available for geometry generation?"
+"List all climate zones"
+"Create a medium office building with ASHRAE 90.1-2013 constructions for climate zone 4A and save it to /tmp/models"
+"Generate a primary school geometry and apply 90.1-2016 envelope for zone 5A, save to ~/Documents/models"
+```
+
+## Architecture Details
+
+### Component Interaction
+
+```
+┌─────────────────┐         ┌──────────────────┐         ┌─────────────────────┐
+│  Streamlit UI   │ A2A     │  Agent Server    │  SSE    │  MCP Server         │
 │  or Test Client │────────▶│  (port 8081)     │────────▶│  (port 8082)        │
 └─────────────────┘         └──────────────────┘         └─────────────────────┘
                                     │                              │
@@ -205,20 +218,6 @@ uv run python test_mcp_tools.py
 |------|---------|
 | `create_typical_building.py` | Main entry point - starts both A2A and MCP servers |
 | `create_typical_building_ui.py` | Streamlit web interface for interactive chat |
-| `test_client.py` | A2A client test - tests agent through natural language |
-| `test_mcp_tools.py` | Direct MCP test - tests MCP tools without agent layer |
-| `mcp_server/src/server.py` | FastMCP server with OpenStudio Standards tools |
-| `.env` | Configuration for ports, hosts, and LLM settings |
-| `LLM_GUIDE.md` | Comprehensive guide to LLM provider configuration        │
-                            Uses LangGraph Agent              FastMCP Server
-                            with tool-calling             (OpenStudio Standards)
-```
-
-### Files Overview
-
-| File | Purpose |
-|------|---------|
-| `create_typical_building.py` | Main entry point - starts both A2A and MCP servers |
 | `test_client.py` | A2A client test - tests agent through natural language |
 | `test_mcp_tools.py` | Direct MCP test - tests MCP tools without agent layer |
 | `mcp_server/src/server.py` | FastMCP server with OpenStudio Standards tools |
@@ -246,13 +245,12 @@ uv run python test_mcp_tools.py
 1. ~~Implement stdio client support~~ ✅ (Converted to SSE transport instead)
 2. ~~Convert MCP server to SSE~~ ✅ (Completed)
 3. ~~Add test utilities~~ ✅ (Completed)
-4. ~~Add chatbot interface - for interactive building model creation and configuration~~ ✅ (Completed) 
-5. ** Create SME use cases ** - to drive development and testing of MCP tools (in-progress)
+4. ~~Add chatbot interface~~ ✅ (Streamlit UI completed)
+5. **Create SME use cases** - to drive development and testing of MCP tools (in-progress)
 
-## Testing
+## Example Usage
 
-Once MCP tools are connected, the agent can handle requests like:
-
+Once the agent is running, it can handle requests like:
 - "Create a medium office building with ASHRAE 90.1-2013 constructions for climate zone 4A"
 - "Generate geometry for a primary school and save to /tmp/models"
 - "Apply construction sets for a retail building in zone 5B"
@@ -262,3 +260,4 @@ The agent returns structured responses with:
 - Building parameters (type, climate zone, standard)
 - Output file path
 - Error details if applicable
+
