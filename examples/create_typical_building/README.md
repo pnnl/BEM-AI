@@ -17,10 +17,29 @@ The Foundational Geometry Agent provides the scaffolding for energy models by:
 
 ## Running the Agent
 
-### Start the Agent (Single Command)
+### Option 1: Interactive Streamlit UI (Recommended)
+
+The easiest way to use the agent is through the Streamlit web interface:
 
 ```bash
-cd /home/gonz102/git/BEM-AI
+# Terminal 1: Start the agent server
+uv run python examples/create_typical_building/create_typical_building.py
+
+# Terminal 2: Start the Streamlit UI
+uv run streamlit run examples/create_typical_building/create_typical_building_ui.py
+```
+
+Then open your browser to the URL shown (typically `http://localhost:8501`).
+
+**Features:**
+- Interactive chat interface for building model creation
+- Real-time streaming responses
+- Visual feedback for tool calls and model generation
+- No coding required - just natural language requests
+
+### Option 2: Command Line (Programmatic)
+
+```bash
 uv run python examples/create_typical_building/create_typical_building.py
 ```
 
@@ -73,14 +92,27 @@ Edit `.env` to configure servers and LLM:
 # A2A Agent Server
 CHATBOT_SERVER_URL=http://localhost:8081
 
-# LLM Model  
-CHAT_BOT_MODEL_NAME=llama3.3:70b
-CHAT_BOT_MODEL_BASE_URL=http://rc-chat.pnl.gov:11434
+# LLM Model Configuration
+# See sample.env for all available model options (BIRTHRIGHT, Claude, OpenAI, Ollama)
+# The chat model provider is auto-detected based on model name
+
+# PNNL BIRTHRIGHT API (recommended for access to latest models)
+BIRTHRIGHT_API=your-api-key
+CHAT_BOT_MODEL_NAME=grok-4-fast-reasoning-birthright
+CHAT_BOT_MODEL_BASE_URL=https://ai-incubator-api.pnnl.gov
 
 # MCP Server (OpenStudio Tools)
 CREATE_TYPICAL_BLDG_MCP_PORT=8082
 CREATE_TYPICAL_BLDG_MCP_HOST=localhost
 ```
+
+**Supported Models:**
+- **BIRTHRIGHT**: GROK, GPT-5, o3, o4-mini, Claude models via PNNL API
+- **Claude**: Direct Anthropic API (Claude 3.5 Haiku/Sonnet, Claude 4)
+- **OpenAI**: Direct OpenAI API (GPT-4o, GPT-4o-mini)
+- **Ollama**: Local models (Llama, Qwen, Mistral)
+
+The agent automatically detects the correct provider based on the model name.
 
 ## Testing the Agent
 
@@ -159,23 +191,25 @@ uv run python test_mcp_tools.py
 **Common testing scenarios:**
 
 ```python
-# Example natural language requests for the agent:
-"What building types are available for geometry generation?"
-"List all climate zones"
-"Create a medium office building with ASHRAE 90.1-2013 constructions for climate zone 4A and save it to /tmp/models"
-"Generate a primary school geometry and apply 90.1-2016 envelope for zone 5A, save to ~/Documents/models"
-```
-
-## Architecture Details
-
-### Component Interaction
-
-```
-┌─────────────────┐         ┌──────────────────┐         ┌─────────────────────┐
-│  Test Client    │ A2A     │  Agent Server    │  SSE    │  MCP Server         │
-│  (test_client)  │────────▶│  (port 8081)     │────────▶│  (port 8082)        │
+# EStreamlit UI   │ A2A     │  Agent Server    │  SSE    │  MCP Server         │
+│  or Test Client │────────▶│  (port 8081)     │────────▶│  (port 8082)        │
 └─────────────────┘         └──────────────────┘         └─────────────────────┘
                                     │                              │
+                            Uses LangGraph Agent              FastMCP Server
+                            with tool-calling             (OpenStudio Standards)
+```
+
+### Files Overview
+
+| File | Purpose |
+|------|---------|
+| `create_typical_building.py` | Main entry point - starts both A2A and MCP servers |
+| `create_typical_building_ui.py` | Streamlit web interface for interactive chat |
+| `test_client.py` | A2A client test - tests agent through natural language |
+| `test_mcp_tools.py` | Direct MCP test - tests MCP tools without agent layer |
+| `mcp_server/src/server.py` | FastMCP server with OpenStudio Standards tools |
+| `.env` | Configuration for ports, hosts, and LLM settings |
+| `LLM_GUIDE.md` | Comprehensive guide to LLM provider configuration        │
                             Uses LangGraph Agent              FastMCP Server
                             with tool-calling             (OpenStudio Standards)
 ```
@@ -212,7 +246,8 @@ uv run python test_mcp_tools.py
 1. ~~Implement stdio client support~~ ✅ (Converted to SSE transport instead)
 2. ~~Convert MCP server to SSE~~ ✅ (Completed)
 3. ~~Add test utilities~~ ✅ (Completed)
-4. **Add chatbot interface** for interactive building model creation and configuration
+4. ~~Add chatbot interface - for interactive building model creation and configuration~~ ✅ (Completed) 
+5. ** Create SME use cases ** - to drive development and testing of MCP tools (in-progress)
 
 ## Testing
 

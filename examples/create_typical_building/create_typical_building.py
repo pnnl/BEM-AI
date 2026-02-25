@@ -20,7 +20,7 @@ load_dotenv(dotenv_path=env_path)
 CHATBOT_SERVER_URL = os.environ.get("CHATBOT_SERVER_URL", "http://localhost:8081")
 chat_bot_model_name = os.environ.get("CHAT_BOT_MODEL_NAME", "gpt-4o")
 chat_bot_base_url = os.environ.get("CHAT_BOT_MODEL_BASE_URL") or None
-chat_bot_api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY") or None
+chat_bot_api_key = os.environ.get("BIRTHRIGHT_API") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY") or None
 CREATE_TYPICAL_BLDG_MCP_PORT = int(os.environ.get("CREATE_TYPICAL_BLDG_MCP_PORT", "8082"))
 CREATE_TYPICAL_BLDG_MCP_HOST = os.environ.get("CREATE_TYPICAL_BLDG_MCP_HOST", "localhost")
 
@@ -138,13 +138,32 @@ foundational_geometry_card = AgentCard(
 ########################################################################################
 # Agent Factory
 ########################################################################################
+# Auto-detect chat model provider based on model name
+def get_chat_model_type(model_name: str) -> GenericLLM:
+    """Automatically determine the chat model type based on model name."""
+    model_lower = model_name.lower()
+    if 'claude' in model_lower:
+        return GenericLLM.CLAUDE
+    elif 'grok' in model_lower or 'gpt' in model_lower or 'o3' in model_lower or 'o4' in model_lower:
+        return GenericLLM.OPENAI
+    elif 'llama' in model_lower or 'qwen' in model_lower or 'mistral' in model_lower:
+        return GenericLLM.OLLAMA
+    elif 'gemini' in model_lower:
+        return GenericLLM.GEMINI
+    else:
+        # Default to OPENAI for unknown models (works for most BIRTHRIGHT models)
+        return GenericLLM.OPENAI
+
+chat_model_type = get_chat_model_type(chat_bot_model_name)
+print(f"🤖 Using {chat_model_type.value} provider for model: {chat_bot_model_name}")
+
 # Initialize foundational geometry agent with MCP server configuration
 foundational_geometry_agent = AgentFactory(
     card=foundational_geometry_card,
     instructions=FOUNDATIONAL_GEOMETRY_COT,
     model_name=chat_bot_model_name,
     agent_type=GenericAgentType.LANGGRAPHCHAT,
-    chat_model=GenericLLM.CLAUDE,  # Changed from OLLAMA to CLAUDE
+    chat_model=chat_model_type,  # Auto-detected based on model name
     model_base_url=chat_bot_base_url,
     api_key=chat_bot_api_key,  # The agent can use this API key when relevant.
     mcp_configs={"create_typical_bldg_mcp": create_typical_bldg_mcp_config},  # Enable MCP server with SSE transport

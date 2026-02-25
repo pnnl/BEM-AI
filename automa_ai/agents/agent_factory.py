@@ -55,7 +55,9 @@ def resolve_chat_model(backend: GenericLLM, model_name: str, agent_type: Generic
                  azure_deployment=model_name,
                  streaming=streaming,
              )
-         return ChatOpenAI(model=model_name, base_url=base_url, api_key=SecretStr(api_key), temperature=0, streaming=True)
+         # O-series models (o3, o4-mini) require temperature=1
+         temp = 1 if model_name and ('o3' in model_name or 'o4' in model_name) else 0
+         return ChatOpenAI(model=model_name, base_url=base_url, api_key=SecretStr(api_key), temperature=temp, streaming=True)
     elif backend == GenericLLM.CLAUDE:
          assert api_key, "You must provide an API key to access Anthropic Claude model"
          key = SecretStr(api_key)
