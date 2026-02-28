@@ -1398,7 +1398,7 @@ OS:WeatherFile,
   -82.52,                                 !- Longitude {deg}
   -5,                                     !- Time Zone {hr}
   8,                                      !- Elevation {m}
-  /Users/xuwe123/github/openstudio-standards/data/weather/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw, !- Url
+  , !- Url
   08A73550,                               !- Checksum
   ,                                       !- Start Date Actual Year
   Sunday;                                 !- Start Day of Week
