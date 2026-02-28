@@ -1,0 +1,22 @@
+{
+  "measures": {
+    "add_daylighting": {
+      "entrypoint": "measures/add_daylighting.py",
+      "description": "Add daylight sensors to eligible spaces using OpenStudio APIs.",
+      "allowed": true,
+      "timeout_seconds": 180,
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "sensor_height_m": {"type": "number", "default": 1.0},
+          "phi_rotation_around_z_axis": {"type": "number", "default": 0.0},
+          "illuminance_setpoint": {"type": "number", "default": 430.0},
+          "lighting_control_type": {"type": "string", "default": "Continuous"},
+          "minimum_input_power_fraction_continuous": {"type": "number", "default": 0.3},
+          "minimum_light_output_fraction_continuous": {"type": "number", "default": 0.2},
+          "number_of_stepped_control_steps": {"type": "integer", "default": 1}
+        }
+      }
+    }
+  }
+}
