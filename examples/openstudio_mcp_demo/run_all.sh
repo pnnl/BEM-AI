@@ -1,9 +1,10 @@
 #!/bin/bash
 set -e
 
-SERVER_SCRIPT="agent.py"
-CLIENT_SCRIPT="ui.py"
-LOG_DIR="logs"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SERVER_SCRIPT="$SCRIPT_DIR/agent.py"
+CLIENT_SCRIPT="$SCRIPT_DIR/ui.py"
+LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 python3 "$SERVER_SCRIPT" > "$LOG_DIR/server.log" 2>&1 &
@@ -32,5 +33,7 @@ cleanup() {
   kill $SERVER_PID 2>/dev/null || true
 }
 
-trap cleanup SIGINT
-while true; do sleep 1; done
+trap cleanup SIGINT SIGTERM EXIT
+while kill -0 "$SERVER_PID" 2>/dev/null && kill -0 "$CLIENT_PID" 2>/dev/null; do
+  sleep 1
+done

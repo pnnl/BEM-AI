@@ -24,6 +24,18 @@ MCP_PORT = 10210
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/sse"
 
 
+def _find_local_epw() -> Path | None:
+    candidates = [
+        Path("examples/openstudio_mcp_demo/resource/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw"),
+        Path.home() / "github/openstudio-standards/data/weather/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw",
+    ]
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved.exists():
+            return resolved
+    return None
+
+
 @pytest.fixture(scope="session", autouse=True)
 def start_openstudio_mcp_server():
     from multiprocessing import Process
@@ -193,6 +205,9 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
     )
     if not openstudio_path or not Path(openstudio_path).exists():
         pytest.skip("OPENSTUDIO_PATH is not configured to a valid executable.")
+    epw_path = _find_local_epw()
+    if epw_path is None:
+        pytest.skip("Local EPW file not found for real simulation test.")
 
     sample_model_uri = (
         Path("examples/openstudio_mcp_demo/resource/sample.osm")
@@ -215,6 +230,14 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             assert isinstance(load_payload, dict)
             assert load_payload["ok"] is True
             model_id = load_payload["model_id"]
+
+            set_weather_result = await session.call_tool(
+                name="model.set_weather",
+                arguments={"model_id": model_id, "epw_path": str(epw_path)},
+            )
+            set_weather_payload = set_weather_result.structuredContent
+            assert isinstance(set_weather_payload, dict)
+            assert set_weather_payload["ok"] is True
 
             run_result = await session.call_tool(
                 name="sim.run",

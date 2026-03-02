@@ -12,7 +12,7 @@ Run a constrained HVAC sizing workflow through OpenStudio MCP tools and return s
 ## Inputs
 
 - `model_uri` (required)
-- `epw_id` (optional, defaults allowed)
+- `epw_path` (optional local EPW path; defaults allowed via model metadata)
 - `ddy_id` (optional)
 - `derive_from_epw` (optional, default true)
 - `hvac_template_measure` (optional)
@@ -62,14 +62,14 @@ H. Summarize outputs (`results.summarize`) and return assumptions + artifact IDs
 
 - Enforce tool allowlist prefixes: `model.*`, `sim.*`, `results.*`.
 - Enforce run gates: `max_runtime_minutes`, `max_variants`.
-- Current implementation uses stubbed simulation/results behavior when full OpenStudio runtime is unavailable.
+- Current implementation requires a functioning OpenStudio runtime, model path, and weather file; `sim.run` and `results.query` will fail if these are unavailable (no stubbed behavior).
 
 ## Example invocation
 
 ```json
 {
   "model_uri": "file:///tmp/demo.osm",
-  "epw_id": "USA_CO_Golden.724666_TMY3",
+  "epw_path": "/absolute/path/to/weather.epw",
   "derive_from_epw": true,
   "hvac_template_measure": "hvac_template",
   "measure_args": {"system_type": "VAV"}

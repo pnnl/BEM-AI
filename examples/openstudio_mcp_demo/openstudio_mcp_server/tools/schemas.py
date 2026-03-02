@@ -22,7 +22,10 @@ class ModelCloneArgs(BaseModel):
 
 class ModelSetWeatherArgs(BaseModel):
     model_id: str = Field(min_length=1)
-    epw_id: str = Field(min_length=1)
+    epw_path: str = Field(
+        min_length=1,
+        description="Local EPW file path (absolute, relative, or file:// URI).",
+    )
 
 
 class ModelSetDesignDaysArgs(BaseModel):
@@ -64,19 +67,15 @@ class ResultsQueryArgs(BaseModel):
         "design_day_end_use_fuel",
         "annual_eui",
         "sizing_summary",
-        "sql",
     ] = Field(
         description=(
             "Supported query types: annual_end_use_fuel, design_day_end_use_fuel, "
-            "annual_eui, sizing_summary, sql."
+            "annual_eui, sizing_summary."
         )
     )
     params: dict[str, Any] = Field(
         default_factory=dict,
-        description=(
-            "Optional query params. Required for query_type='sql' with key 'sql'. "
-            "Ignored for the other query types."
-        ),
+        description="Optional query params (currently unused for built-in query types).",
     )
 
 

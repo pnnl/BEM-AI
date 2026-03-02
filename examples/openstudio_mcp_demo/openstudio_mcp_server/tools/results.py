@@ -18,7 +18,7 @@ def register_results_tools(mcp, service) -> None:
         description=(
             "Query simulation result data by SQL artifact. "
             "query_type must be one of: annual_end_use_fuel, design_day_end_use_fuel, "
-            "annual_eui, sizing_summary, sql."
+            "annual_eui, sizing_summary."
         ),
     )
     async def results_query(

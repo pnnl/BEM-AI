@@ -48,7 +48,45 @@ def main() -> None:
             async def process_stream():
                 nonlocal response_text
                 async for chunk in send_message_async(prompt, st.session_state.get("context_id")):
-                    text_part = chunk.get("content") if isinstance(chunk, dict) else None
+                    text_part = None
+
+                    if isinstance(chunk, dict) and "result" in chunk:
+                        result = chunk.get("result", {})
+                        context_id = result.get("contextId")
+                        if context_id:
+                            st.session_state["context_id"] = context_id
+
+                        kind = result.get("kind")
+                        if kind == "artifact-update":
+                            artifact = result.get("artifact", {})
+                            parts = artifact.get("parts", [])
+                            text_fragments = [
+                                p.get("text")
+                                for p in parts
+                                if p.get("kind") == "text" and p.get("text")
+                            ]
+                            if text_fragments:
+                                text_part = "\n".join(text_fragments)
+                        elif kind == "status-update":
+                            status = result.get("status", {})
+                            message = status.get("message", {})
+                            parts = message.get("parts", [])
+                            text_fragments = [
+                                p.get("text")
+                                for p in parts
+                                if p.get("kind") == "text" and p.get("text")
+                            ]
+                            if text_fragments:
+                                text_part = "\n".join(text_fragments)
+                    elif isinstance(chunk, dict) and "delta" in chunk and isinstance(chunk["delta"], dict):
+                        text_part = chunk["delta"].get("text")
+                    elif isinstance(chunk, dict) and "message" in chunk and isinstance(chunk["message"], dict):
+                        text_part = chunk["message"].get("text")
+                    elif isinstance(chunk, dict) and "content" in chunk:
+                        text_part = chunk.get("content")
+                    elif isinstance(chunk, dict) and "data" in chunk:
+                        text_part = chunk.get("data")
+
                     if text_part:
                         response_text += str(text_part)
                         placeholder.markdown(response_text + "▌")

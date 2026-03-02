@@ -39,10 +39,10 @@ def register_model_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="model.set_weather", description="Attach weather artifact to model.")
-    async def model_set_weather(model_id: str, epw_id: str) -> dict[str, Any]:
+    @mcp.tool(name="model.set_weather", description="Attach local weather file path to model.")
+    async def model_set_weather(model_id: str, epw_path: str) -> dict[str, Any]:
         try:
-            args = ModelSetWeatherArgs(model_id=model_id, epw_id=epw_id)
+            args = ModelSetWeatherArgs(model_id=model_id, epw_path=epw_path)
             return service.model_set_weather(args)
         except ValidationError as exc:
             return validation_error_payload(exc)

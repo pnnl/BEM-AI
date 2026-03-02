@@ -11,7 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -159,7 +159,7 @@ class OpenStudioService:
 
     def model_set_weather(self, args: ModelSetWeatherArgs) -> dict[str, Any]:
         model_state = self._get_model_state(args.model_id)
-        model_state.metadata["weather"] = args.epw_id
+        model_state.metadata["weather"] = args.epw_path
         return success_payload(model_id=args.model_id)
 
     def model_set_design_days(self, args: ModelSetDesignDaysArgs) -> dict[str, Any]:
@@ -180,7 +180,8 @@ class OpenStudioService:
         model_state = self._get_model_state(args.model_id)
         if not self.openstudio_path:
             raise ValueError("OPENSTUDIO_PATH is not set in environment.")
-        if not Path(self.openstudio_path).exists():
+        openstudio_path = Path(self.openstudio_path)
+        if not (openstudio_path.is_file() and os.access(openstudio_path, os.X_OK)):
             raise ValueError(f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}")
 
         # Step 2: resolve measure policy and normalize user args from schema/defaults.
@@ -376,12 +377,6 @@ class OpenStudioService:
                     "design_day_end_use_fuel_j": self._query_design_day_end_use_by_fuel(conn),
                     "annual_eui": self._query_annual_eui(conn),
                 }
-            elif args.query_type == "sql":
-                sql_query = str(args.params.get("sql", "")).strip()
-                if not sql_query:
-                    raise ValueError("params.sql is required for query_type='sql'")
-                rows = conn.execute(sql_query).fetchall()
-                data = {"rows": [list(row) for row in rows], "row_count": len(rows)}
             else:
                 raise ValueError(f"Unsupported query_type: {args.query_type}")
         return success_payload(data=data)
@@ -399,7 +394,8 @@ class OpenStudioService:
     def _resolve_model_path(self, model_uri: str) -> Path:
         if model_uri.startswith("file://"):
             parsed = urlparse(model_uri)
-            return Path(parsed.path).resolve()
+            decoded_path = unquote(parsed.path)
+            return Path(decoded_path).resolve()
         return Path(model_uri).resolve()
 
     def _resolve_weather_path(self, model_state: OpenStudioModelState, options: dict[str, Any]) -> Path:
