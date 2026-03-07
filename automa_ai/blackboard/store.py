@@ -8,7 +8,8 @@ from typing import Any
 
 from automa_ai.blackboard.errors import RevisionConflictError, DocumentNotFoundError
 from automa_ai.blackboard.models import BlackboardDocument, BlackboardPatch, BlackboardEvent
-from automa_ai.blackboard.schema import BlackboardSchemaValidator
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
+from automa_ai.config.blackboard import BlackboardConfig
 
 _PATH_TOKEN_RE = re.compile(r"([^.\[\]]+)|(\[(\d+)\])")
 
@@ -150,8 +151,15 @@ def _remove_path(data: dict[str, Any], path: str) -> tuple[Any, Any]:
 
 
 class BlackboardStore(ABC):
-    def __init__(self, validator: BlackboardSchemaValidator):
-        self.validator = validator
+    def __init__(self, config: BlackboardConfig):
+        self.registry = BlackboardSchemaRegistry()
+        self.registry.register(
+            name=config.schema_name,
+            version=config.schema_version,
+            json_schema=config.schema,
+            description=config.schema_description,
+        )
+        self.validator = BlackboardSchemaValidator(self.registry)
 
     @abstractmethod
     def load(self, session_id: str) -> BlackboardDocument:
@@ -230,3 +238,33 @@ def bump_revision(doc: BlackboardDocument) -> BlackboardDocument:
     doc.revision += 1
     doc.updated_at = datetime.now(timezone.utc)
     return doc
+
+
+def create_blackboard_store(config: BlackboardConfig) -> BlackboardStore:
+    """Create a blackboard store instance from configuration.
+
+    Args:
+        config (BlackboardConfig): Configuration for the blackboard store
+
+    Returns:
+        BlackboardStore: Configured blackboard store instance
+
+    Raises:
+        BackendNotConfiguredError: If the specified backend is not supported
+    """
+    from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
+    from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
+    from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
+    from automa_ai.blackboard.errors import BackendNotConfiguredError
+
+    backend_map = {
+        "local_json": LocalJSONBlackboardStore,
+        "s3_json": S3JSONBlackboardStore,
+        "dynamodb_json": DynamoDBJSONBlackboardStore,
+    }
+
+    backend_class = backend_map.get(config.backend)
+    if not backend_class:
+        raise BackendNotConfiguredError(f"Unknown blackboard backend: {config.backend}")
+
+    return backend_class(config=config)

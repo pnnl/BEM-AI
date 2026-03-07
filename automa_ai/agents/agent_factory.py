@@ -17,6 +17,7 @@ from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
+from automa_ai.blackboard.store import create_blackboard_store
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
@@ -224,36 +225,12 @@ class AgentFactory:
             if not isinstance(bb_cfg, BlackboardConfig):
                 bb_cfg = BlackboardConfig.from_dict(bb_cfg)
             if bb_cfg.enabled:
-                registry = BlackboardSchemaRegistry()
-                registry.register(
-                    name=bb_cfg.schema_name,
-                    version=bb_cfg.schema_version,
-                    json_schema=bb_cfg.schema,
-                    description=bb_cfg.schema_description,
-                )
-                validator = BlackboardSchemaValidator(registry)
-                if bb_cfg.backend == "local_json":
-                    blackboard_store = LocalJSONBlackboardStore(base_dir=bb_cfg.base_dir or ".blackboard", validator=validator)
-                elif bb_cfg.backend == "s3_json":
-                    if not bb_cfg.s3_bucket:
-                        raise BackendNotConfiguredError("s3_bucket is required for s3_json backend.")
-                    blackboard_store = S3JSONBlackboardStore(
-                        bucket=bb_cfg.s3_bucket,
-                        prefix=bb_cfg.s3_prefix,
-                        validator=validator,
-                    )
-                elif bb_cfg.backend == "dynamodb_json":
-                    if not bb_cfg.dynamodb_table:
-                        raise BackendNotConfiguredError("dynamodb_table is required for dynamodb_json backend.")
-                    blackboard_store = DynamoDBJSONBlackboardStore(table_name=bb_cfg.dynamodb_table, validator=validator)
-                else:
-                    raise BackendNotConfiguredError(f"Unknown blackboard backend: {bb_cfg.backend}")
-
+                blackboard_store = create_blackboard_store(bb_cfg)
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version
                 blackboard_initial_data = bb_cfg.initial_data
                 blackboard_contract = build_blackboard_contract(
-                    registry.resolve(bb_cfg.schema_name, bb_cfg.schema_version)
+                    blackboard_store.registry.resolve(bb_cfg.schema_name, bb_cfg.schema_version)
                 )
 
         built_tool_specs: list[ToolSpec] | None = None

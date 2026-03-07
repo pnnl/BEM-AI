@@ -5,19 +5,17 @@ from typing import Any
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardDocument
 from automa_ai.blackboard.store import BlackboardStore, bump_revision
+from automa_ai.config.blackboard import BlackboardConfig
 
 
 class DynamoDBJSONBlackboardStore(BlackboardStore):
-    def __init__(self, table_name: str, validator, dynamodb_table=None):
-        super().__init__(validator)
-        if dynamodb_table is not None:
-            self.table = dynamodb_table
-        else:
-            try:
-                import boto3
-            except ImportError as exc:  # pragma: no cover
-                raise BackendNotConfiguredError("boto3 is required for DynamoDB backend.") from exc
-            self.table = boto3.resource("dynamodb").Table(table_name)
+    def __init__(self, config: BlackboardConfig):
+        super().__init__(config)
+
+        if not config.dynamodb_table:
+            raise BackendNotConfiguredError("table is required for dynamodb_json backend.")
+        
+        self.table = config.dynamodb_table
 
     def load(self, session_id: str) -> BlackboardDocument:
         result = self.table.get_item(Key={"session_id": session_id})
