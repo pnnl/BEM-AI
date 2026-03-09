@@ -10,7 +10,7 @@ from automa_ai.config.blackboard import BlackboardConfig
 
 
 class S3JSONBlackboardStore(BlackboardStore):
-    def __init__(self, config: BlackboardConfig, bucket: str, prefix: str, validator, s3_client=None):
+    def __init__(self, config: BlackboardConfig, s3_client=None):
         super().__init__(config)
         if not config.s3_bucket:
             raise BackendNotConfiguredError("s3_bucket is required for s3_json backend.")
