@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
@@ -9,13 +10,19 @@ from automa_ai.config.blackboard import BlackboardConfig
 
 
 class DynamoDBJSONBlackboardStore(BlackboardStore):
-    def __init__(self, config: BlackboardConfig):
+    def __init__(self, config: BlackboardConfig, dynamodb_table=None):
         super().__init__(config)
 
-        if not config.dynamodb_table:
-            raise BackendNotConfiguredError("table is required for dynamodb_json backend.")
-        
-        self.table = config.dynamodb_table
+        if dynamodb_table is not None:
+            self.table = dynamodb_table
+        else:
+            if not config.dynamodb_table_name:
+                raise BackendNotConfiguredError("dynamodb_table_name is required for dynamodb_json backend.")
+            
+            self.table = self._load_dynamodb_blackboard_table(
+                table_name=config.dynamodb_table_name,
+                endpoint_url=config.dynamodb_endpoint_url,
+            )
 
     def load(self, session_id: str) -> BlackboardDocument:
         result = self.table.get_item(Key={"session_id": session_id})
@@ -67,3 +74,38 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
         except Exception as exc:
             raise RevisionConflictError("Conditional write failed due to revision mismatch.") from exc
         return doc
+
+    def _load_dynamodb_blackboard_table(region: str, table_name: str, endpoint_url: str = None):
+        try:
+            import boto3
+            import botocore
+        except ImportError as exc:
+            raise BackendNotConfiguredError("boto3 is required for DynamoDB backend.") from exc
+
+        dynamodb = boto3.resource(
+            "dynamodb",
+            endpoint_url=endpoint_url,
+        )
+
+        table = dynamodb.Table(table_name)
+        try:
+            table.load() # This will raise an exception if the table does not exist
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                print(f"Table '{table_name}' not found. Creating new table...")
+
+                table = dynamodb.create_table(
+                    TableName=table_name,
+                    KeySchema=[
+                        {"AttributeName": "session_id", "KeyType": "HASH"},
+                    ],
+                    AttributeDefinitions=[
+                        {"AttributeName": "session_id", "AttributeType": "S"},
+                    ],
+                    BillingMode='PAY_PER_REQUEST'
+                )
+
+                table.wait_until_exists()
+            else:
+                raise
+        return table
