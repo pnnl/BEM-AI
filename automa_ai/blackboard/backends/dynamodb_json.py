@@ -25,7 +25,7 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
             )
 
     def load(self, session_id: str) -> BlackboardDocument:
-        result = self.table.get_item(Key={"session_id": session_id})
+        result = self.table.get_item(Key={"session_id": session_id}, ConsistentRead=True)
         item = result.get("Item")
         if not item:
             raise DocumentNotFoundError(f"Session '{session_id}' has no blackboard document.")
@@ -75,7 +75,7 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
             raise RevisionConflictError("Conditional write failed due to revision mismatch.") from exc
         return doc
 
-    def _load_dynamodb_blackboard_table(region: str, table_name: str, endpoint_url: str = None):
+    def _load_dynamodb_blackboard_table(self, table_name: str, endpoint_url: str = None):
         try:
             import boto3
             import botocore
