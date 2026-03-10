@@ -10,6 +10,10 @@ from automa_ai.config.blackboard import BlackboardConfig
 
 
 class DynamoDBJSONBlackboardStore(BlackboardStore):
+    """Blackboard store that stores blackboards in AWS DynamoDB.
+
+    This class expects that a DynamoDB table exists with name `config.dynamodb_table_name`
+    """
     def __init__(self, config: BlackboardConfig, dynamodb_table=None):
         super().__init__(config)
 
@@ -78,7 +82,6 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
     def _load_dynamodb_blackboard_table(self, table_name: str, endpoint_url: str = None):
         try:
             import boto3
-            import botocore
         except ImportError as exc:
             raise BackendNotConfiguredError("boto3 is required for DynamoDB backend.") from exc
 
@@ -88,24 +91,6 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
         )
 
         table = dynamodb.Table(table_name)
-        try:
-            table.load() # This will raise an exception if the table does not exist
-        except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == 'ResourceNotFoundException':
-                print(f"Table '{table_name}' not found. Creating new table...")
+        table.load() # This will raise an exception if the table does not exist
 
-                table = dynamodb.create_table(
-                    TableName=table_name,
-                    KeySchema=[
-                        {"AttributeName": "session_id", "KeyType": "HASH"},
-                    ],
-                    AttributeDefinitions=[
-                        {"AttributeName": "session_id", "AttributeType": "S"},
-                    ],
-                    BillingMode='PAY_PER_REQUEST'
-                )
-
-                table.wait_until_exists()
-            else:
-                raise
         return table
