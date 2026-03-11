@@ -122,10 +122,16 @@ tools:
       rerank:
         provider: opensource
         top_k: 5
+  - type: run_python
+    config:
+      runner: local_subprocess
+      timeout_s: 20
+      workspace_root: .
+      allow_network: false
 ```
 
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
-See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
+See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_demo.py` for runnable examples.
 
 ### A2A Server Base Path
 
