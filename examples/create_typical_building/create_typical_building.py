@@ -42,8 +42,8 @@ create_typical_bldg_mcp_config = MCPServerConfig(
 geometry_generation_skill = AgentSkill(
     id="geometry_generation",
     name="Geometry Generation",
-    description="Generate default building geometries based on ASHRAE building types and space types. Load OpenStudio models with predefined geometries for various building types like Office, Hospital, School, etc.",
-    tags=["geometry", "building_model", "space_types"],
+    description="Generate default building geometries based on ASHRAE building types. Load OpenStudio models with predefined geometries for various building types like Office, Hospital, School, etc.",
+    tags=["geometry", "building_model"],
     examples=[
         "Generate a medium office building geometry",
         "Load the default geometry for a primary school",
@@ -54,7 +54,7 @@ geometry_generation_skill = AgentSkill(
 construction_envelope_skill = AgentSkill(
     id="construction_envelope",
     name="Construction and Envelope Configuration",
-    description="Apply ASHRAE 90.1 construction sets and configure envelope parameters. Set default constructions based on climate zone, building type, and space type to ensure compliance with energy standards.",
+    description="Apply ASHRAE 90.1 construction sets and configure envelope parameters. Set default constructions based on climate zone and building type to ensure compliance with energy standards.",
     tags=["construction", "envelope", "ashrae_90.1", "energy_standards"],
     examples=[
         "Apply ASHRAE 90.1-2013 constructions for climate zone 4A",
@@ -66,6 +66,10 @@ construction_envelope_skill = AgentSkill(
 ########################################################################################
 # Agent Instructions (Chain-of-Thought Prompt)
 ########################################################################################
+FOUNDATIONAL_GEOMETRY_ROLE = """
+You are a foundational geometry and building envelope specialist. Your role is to create the scaffolding for 
+energy models by generating building geometries and applying appropriate construction sets based on ASHRAE standards.
+"""
 FOUNDATIONAL_GEOMETRY_COT = """
 You are a foundational geometry and building envelope specialist. Your role is to create the scaffolding for 
 energy models by generating building geometries and applying appropriate construction sets based on ASHRAE standards.
@@ -108,7 +112,7 @@ When a user asks to create a building model, follow this process:
 
 ## AVAILABLE BUILDING TYPES
 Available geometries include: Office (Small, Medium, Large), Hospital, School (Primary, Secondary), 
-Hotel (Small, Large), Retail, Warehouse, Restaurant, and others.
+Hotel (Small, Large), RetailStripMall, Warehouse, Restaurant, and others.
 
 ## CLIMATE ZONES
 Common climate zones include: 1A, 2A, 2B, 3A, 3B, 3C, 4A, 4B, 4C, 5A, 5B, 5C, 6A, 6B, 7A, 7B, 8A
@@ -161,6 +165,7 @@ print(f"🤖 Using {chat_model_type.value} provider for model: {chat_bot_model_n
 foundational_geometry_agent = AgentFactory(
     card=foundational_geometry_card,
     instructions=FOUNDATIONAL_GEOMETRY_COT,
+    #instructions=FOUNDATIONAL_GEOMETRY_ROLE,
     model_name=chat_bot_model_name,
     agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=chat_model_type,  # Auto-detected based on model name

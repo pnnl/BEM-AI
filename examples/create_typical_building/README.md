@@ -74,8 +74,7 @@ The OpenStudio tools are provided by an MCP server in `mcp_server/`. This server
 2. `generate_example_with_default_construction_set`: Generate geometry with ASHRAE construction set applied
 3. `get_ashrae_enumeration_values`: List all available ASHRAE templates, building types, climate zones
 4. `get_available_building_types`: List building types for geometry generation
-5. `get_available_space_types`: List available space types
-6. `get_available_geometry_files`: List all geometry files in resources
+5. `get_available_geometry_files`: List all geometry files in resources
 
 ## Agent Skills
 

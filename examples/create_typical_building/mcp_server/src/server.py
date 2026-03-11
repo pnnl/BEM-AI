@@ -10,7 +10,7 @@ import openstudio
 
 from pydantic import BaseModel
 
-from .ashrae_standard import ASHRAEBuildingType, ASHRAESpaceType, ASHRAETemplate, ASHRAEClimateZone, ASHRAEExampleBuildingTypes, ASHRAE901StandardsWithOpenStudio, map_building_type_to_geometry
+from .ashrae_standard import ASHRAEBuildingType, ASHRAETemplate, ASHRAEClimateZone, ASHRAEExampleBuildingTypes, ASHRAE901StandardsWithOpenStudio, map_building_type_to_geometry
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -302,27 +302,6 @@ def serve(host, port, transport):
             return json.dumps({"error": str(e)})
 
     @mcp.tool(
-        name="get_available_space_types",
-        description="Get a list of all available space types"
-    )
-    def get_available_space_types() -> str:
-        """
-        Get a list of all available space types
-
-        Returns:
-            JSON string with available space types
-        """
-        try:
-            response_data = {
-                "available_space_types": [space_type.value for space_type in ASHRAESpaceType],
-                "total_count": len(ASHRAESpaceType)
-            }
-            return json.dumps(response_data, indent=2)
-        except Exception as e:
-            logger.error(f"Error in get_available_space_types: {str(e)}")
-            return json.dumps({"error": str(e)})
-
-    @mcp.tool(
         name="get_available_building_types",
         description="Get a list of all available building types for geometry loading"
     )
@@ -366,11 +345,11 @@ def serve(host, port, transport):
 
     @mcp.tool(
         name="get_ashrae_enumeration_values",
-        description="Get all available ASHRAE enumeration values (templates, building types, space types, climate zones)"
+        description="Get all available ASHRAE enumeration values (templates, building types, climate zones)"
     )
     def get_ashrae_enumeration_values() -> str:
         """
-        Get all available ASHRAE enumeration values (templates, building types, space types, climate zones)
+        Get all available ASHRAE enumeration values (templates, building types, climate zones)
 
         Returns:
             JSON string with all enumeration values
@@ -379,13 +358,11 @@ def serve(host, port, transport):
             response_data = {
                 "templates": [template.value for template in ASHRAETemplate],
                 "building_types": [building_type.value for building_type in ASHRAEBuildingType],
-                "space_types": [space_type.value for space_type in ASHRAESpaceType],
                 "climate_zones": [climate_zone.value for climate_zone in ASHRAEClimateZone],
                 "example_building_types": [example_type.value for example_type in ASHRAEExampleBuildingTypes],
                 "counts": {
                     "templates": len(ASHRAETemplate),
                     "building_types": len(ASHRAEBuildingType),
-                    "space_types": len(ASHRAESpaceType),
                     "climate_zones": len(ASHRAEClimateZone),
                     "example_building_types": len(ASHRAEExampleBuildingTypes)
                 }
@@ -397,19 +374,18 @@ def serve(host, port, transport):
 
     @mcp.tool(
         name="set_default_construction_set",
-        description="Apply ASHRAE 90.1 construction set to an OpenStudio model based on climate zone, building type, and space type"
+        description="Apply ASHRAE 90.1 construction set to an OpenStudio model based on climate zone and building type"
     )
     def set_default_construction_set(openstudio_model: object, template: str, climate_zone: str, 
-                                   building_type: str, space_type: str) -> str:
+                                   building_type: str) -> str:
         """
-        Apply ASHRAE 90.1 construction set to an OpenStudio model based on climate zone, building type, and space type
+        Apply ASHRAE 90.1 construction set to an OpenStudio model based on climate zone and building type
 
         Args:
             openstudio_model: The OpenStudio model object to apply the construction set to
             template: ASHRAE template (e.g., '90.1-2013')
             climate_zone: Climate zone string (e.g., 'ASHRAE 169-2013-4A')
             building_type: Building type (e.g., 'Office', 'RetailStandalone')
-            space_type: Space type (e.g., 'OpenOffice', 'Classroom')
 
         Returns:
             JSON string with operation results
@@ -439,16 +415,8 @@ def serve(host, port, transport):
                     "error": f"Invalid building type: {building_type}. Valid options: {[bt.value for bt in ASHRAEBuildingType]}"
                 })
             
-            # Validate space type
-            try:
-                ASHRAESpaceType(space_type)
-            except ValueError:
-                return json.dumps({
-                    "error": f"Invalid space type: {space_type}. Valid options: {[st.value for st in ASHRAESpaceType]}"
-                })
-            
-            # Determine if it's residential based on space type (using enum values)
-            is_residential = space_type in [ASHRAESpaceType.APARTMENT.value] or building_type in [ASHRAEBuildingType.HIGHRISE_APARTMENT.value, ASHRAEBuildingType.MIDRISE_APARTMENT.value]
+            # Determine if it's residential based on building type
+            is_residential = building_type in [ASHRAEBuildingType.HIGHRISE_APARTMENT.value, ASHRAEBuildingType.MIDRISE_APARTMENT.value]
             
             # Create ASHRAE standards instance with the specified template
             standard = ASHRAE901StandardsWithOpenStudio(template)
@@ -466,9 +434,8 @@ def serve(host, port, transport):
                 "template": template,
                 "climate_zone": climate_zone,
                 "building_type": building_type,
-                "space_type": space_type,
                 "is_residential": is_residential,
-                "message": f"Successfully applied {template} construction set for {building_type} - {space_type} in {climate_zone}" if success else "Failed to apply construction set"
+                "message": f"Successfully applied {template} construction set for {building_type} in {climate_zone}" if success else "Failed to apply construction set"
             }
             
             return json.dumps(response_data, indent=2)
