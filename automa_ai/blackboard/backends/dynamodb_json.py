@@ -5,22 +5,30 @@ from typing import Any
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardDocument
 from automa_ai.blackboard.store import BlackboardStore, bump_revision
+from automa_ai.config.blackboard import BlackboardConfig
 
 
 class DynamoDBJSONBlackboardStore(BlackboardStore):
-    def __init__(self, table_name: str, validator, dynamodb_table=None):
-        super().__init__(validator)
+    """Blackboard store that stores blackboards in AWS DynamoDB.
+
+    This class expects that a DynamoDB table exists with name `config.dynamodb_table_name`
+    """
+    def __init__(self, config: BlackboardConfig, dynamodb_table=None):
+        super().__init__(config)
+
         if dynamodb_table is not None:
             self.table = dynamodb_table
         else:
-            try:
-                import boto3
-            except ImportError as exc:  # pragma: no cover
-                raise BackendNotConfiguredError("boto3 is required for DynamoDB backend.") from exc
-            self.table = boto3.resource("dynamodb").Table(table_name)
+            if not config.dynamodb_table_name:
+                raise BackendNotConfiguredError("dynamodb_table_name is required for dynamodb_json backend.")
+            
+            self.table = self._load_dynamodb_blackboard_table(
+                table_name=config.dynamodb_table_name,
+                endpoint_url=config.dynamodb_endpoint_url,
+            )
 
     def load(self, session_id: str) -> BlackboardDocument:
-        result = self.table.get_item(Key={"session_id": session_id})
+        result = self.table.get_item(Key={"session_id": session_id}, ConsistentRead=True)
         item = result.get("Item")
         if not item:
             raise DocumentNotFoundError(f"Session '{session_id}' has no blackboard document.")
@@ -69,3 +77,19 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
         except Exception as exc:
             raise RevisionConflictError("Conditional write failed due to revision mismatch.") from exc
         return doc
+
+    def _load_dynamodb_blackboard_table(self, table_name: str, endpoint_url: str = None):
+        try:
+            import boto3
+        except ImportError as exc:
+            raise BackendNotConfiguredError("boto3 is required for DynamoDB backend.") from exc
+
+        dynamodb = boto3.resource(
+            "dynamodb",
+            endpoint_url=endpoint_url,
+        )
+
+        table = dynamodb.Table(table_name)
+        table.load() # This will raise an exception if the table does not exist
+
+        return table

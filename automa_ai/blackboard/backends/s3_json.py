@@ -6,13 +6,17 @@ from typing import Any
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardDocument
 from automa_ai.blackboard.store import BlackboardStore, bump_revision
+from automa_ai.config.blackboard import BlackboardConfig
 
 
 class S3JSONBlackboardStore(BlackboardStore):
-    def __init__(self, bucket: str, prefix: str, validator, s3_client=None):
-        super().__init__(validator)
-        self.bucket = bucket
-        self.prefix = prefix.rstrip("/")
+    def __init__(self, config: BlackboardConfig, s3_client=None):
+        super().__init__(config)
+        if not config.s3_bucket:
+            raise BackendNotConfiguredError("s3_bucket is required for s3_json backend.")
+        
+        self.bucket = config.s3_bucket
+        self.prefix = config.s3_prefix.rstrip("/")
         if s3_client is not None:
             self.s3 = s3_client
         else:

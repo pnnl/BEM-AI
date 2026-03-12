@@ -4,7 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 class BlackboardConfig(BaseModel):
     enabled: bool = False
     backend: str = "local_json"
@@ -17,7 +16,9 @@ class BlackboardConfig(BaseModel):
     base_dir: str | None = None
     s3_bucket: str | None = None
     s3_prefix: str = "blackboards"
-    dynamodb_table: str | None = None
+
+    dynamodb_table_name: str | None = None
+    dynamodb_endpoint_url: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BlackboardConfig":

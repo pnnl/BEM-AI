@@ -1,20 +1,28 @@
 from pathlib import Path
-
+import uuid
 import pytest
 
 from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
 from automa_ai.blackboard.errors import DocumentNotFoundError, RevisionConflictError
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
 from automa_ai.blackboard.tools import build_blackboard_tools
-from automa_ai.agents.remote_agent import set_subagent_context_id, reset_subagent_context_id
+from automa_ai.agents.remote_agent import (
+    set_subagent_context_id,
+    reset_subagent_context_id,
+)
+from automa_ai.config.blackboard import BlackboardConfig
 
+@pytest.fixture
+def session_id():
+    return f"session-{uuid.uuid4()}"
 
-def build_store(tmp_path: Path):
-    registry = BlackboardSchemaRegistry()
-    registry.register(
-        "test",
-        "1",
-        {
+@pytest.fixture
+def store(tmp_path: Path, session_id):
+    config = BlackboardConfig(
+        enabled=True,
+        backend="local_json",
+        schema_name="test",
+        schema_version="1",
+        schema=        {
             "type": "object",
             "properties": {
                 "items": {"type": "array", "items": {"type": "string"}},
@@ -23,89 +31,90 @@ def build_store(tmp_path: Path):
             },
             "required": ["items"],
         },
+        base_dir=str(tmp_path.parent),
     )
-    validator = BlackboardSchemaValidator(registry)
-    store = LocalJSONBlackboardStore(str(tmp_path), validator)
-    store.create("session-tools", "test", "1", {"items": []})
+    store = LocalJSONBlackboardStore(config=config)
+    store.create(session_id, "test", "1", {"items": []})
     return store
 
+@pytest.fixture
+def tools(store):
+    return {t.name: t for t in build_blackboard_tools(store)}
 
-def _tools(tmp_path: Path):
-    return {t.name: t for t in build_blackboard_tools(build_store(tmp_path))}
 
 
-def test_tool_wrapper_append_operation(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_append_operation(tools, session_id):
     write_result = tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "append", "path": "items", "value": "a"}],
         expected_revision=1,
         actor="tester",
     )
 
     assert write_result["revision"] == 2
-    read_result = tools["blackboard_read"].func(session_id="session-tools", path="items")
+    read_result = tools["blackboard_read"].func(
+        session_id=session_id, path="items"
+    )
     assert read_result["data"] == ["a"]
 
 
-def test_tool_wrapper_set_operation(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_set_operation(tools, session_id):
     tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "set", "path": "field", "value": "hello"}],
         expected_revision=1,
     )
 
-    read_result = tools["blackboard_read"].func(session_id="session-tools", path="field")
+    read_result = tools["blackboard_read"].func(
+        session_id=session_id, path="field"
+    )
     assert read_result["data"] == "hello"
 
 
-def test_tool_wrapper_merge_operation(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_merge_operation(tools, session_id):
     tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "set", "path": "meta", "value": {"a": 1}}],
         expected_revision=1,
     )
     tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "merge", "path": "meta", "value": {"b": 2}}],
         expected_revision=2,
     )
 
-    read_result = tools["blackboard_read"].func(session_id="session-tools", path="meta")
+    read_result = tools["blackboard_read"].func(session_id=session_id, path="meta")
     assert read_result["data"] == {"a": 1, "b": 2}
 
 
-def test_tool_wrapper_remove_operation(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_remove_operation(tools, session_id):
     tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "set", "path": "field", "value": "delete-me"}],
         expected_revision=1,
     )
     tools["blackboard_write"].func(
-        session_id="session-tools",
+        session_id=session_id,
         ops=[{"op": "remove", "path": "field"}],
         expected_revision=2,
     )
 
-    read_result = tools["blackboard_read"].func(session_id="session-tools", path="field")
+    read_result = tools["blackboard_read"].func(
+        session_id=session_id, path="field"
+    )
     assert read_result["data"] is None
 
 
-def test_tool_wrapper_write_conflict_error(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_write_conflict_error(tools, session_id):
     with pytest.raises(RevisionConflictError):
         tools["blackboard_write"].func(
-            session_id="session-tools",
+            session_id=session_id,
             ops=[{"op": "append", "path": "items", "value": "a"}],
             expected_revision=99,
         )
 
 
-def test_tool_wrapper_nonexistent_session_errors(tmp_path: Path):
-    tools = _tools(tmp_path)
+def test_tool_wrapper_nonexistent_session_errors(tools):
     with pytest.raises(DocumentNotFoundError):
         tools["blackboard_read"].func(session_id="missing", path="items")
 
@@ -120,15 +129,15 @@ def test_tool_wrapper_nonexistent_session_errors(tmp_path: Path):
         )
 
 
-def test_tool_wrapper_read_nonexistent_path_returns_none(tmp_path: Path):
-    tools = _tools(tmp_path)
-    read_result = tools["blackboard_read"].func(session_id="session-tools", path="does.not.exist")
+def test_tool_wrapper_read_nonexistent_path_returns_none(tools, session_id):
+    read_result = tools["blackboard_read"].func(
+        session_id=session_id, path="does.not.exist"
+    )
     assert read_result["data"] is None
 
 
-def test_tool_wrapper_uses_context_session_when_omitted(tmp_path: Path):
-    tools = _tools(tmp_path)
-    token = set_subagent_context_id("session-tools")
+def test_tool_wrapper_uses_context_session_when_omitted(tools, session_id):
+    token = set_subagent_context_id(session_id)
     try:
         tools["blackboard_write"].func(
             ops=[{"op": "append", "path": "items", "value": "ctx"}],
@@ -138,5 +147,5 @@ def test_tool_wrapper_uses_context_session_when_omitted(tmp_path: Path):
     finally:
         reset_subagent_context_id(token)
 
-    assert read_result["session_id"] == "session-tools"
+    assert read_result["session_id"] == session_id
     assert read_result["data"] == ["ctx"]
