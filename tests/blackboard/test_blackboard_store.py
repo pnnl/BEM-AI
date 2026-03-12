@@ -7,15 +7,17 @@ from automa_ai.blackboard.errors import RevisionConflictError, SchemaValidationE
 from automa_ai.blackboard.models import BlackboardPatch
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
 from automa_ai.blackboard.store import get_path_value, parse_path
+from automa_ai.config.blackboard import BlackboardConfig
 
 
 @pytest.fixture
-def schema_registry():
-    registry = BlackboardSchemaRegistry()
-    registry.register(
-        "ce_workflow",
-        "1.0",
-        {
+def store(tmp_path: Path):
+    config = BlackboardConfig(
+        enabled=True,
+        backend="local_json",
+        schema_name="ce_workflow",
+        schema_version="1.0",
+        schema={
             "type": "object",
             "properties": {
                 "project": {
@@ -23,9 +25,7 @@ def schema_registry():
                     "properties": {
                         "description": {
                             "type": "object",
-                            "properties": {
-                                "confirmed_text": {"type": "string"}
-                            },
+                            "properties": {"confirmed_text": {"type": "string"}},
                             "required": ["confirmed_text"],
                         }
                     },
@@ -36,14 +36,10 @@ def schema_registry():
             },
             "required": ["project", "recommended_ces"],
         },
+        base_dir=str(tmp_path.parent),
     )
-    return registry
 
-
-@pytest.fixture
-def store(tmp_path: Path, schema_registry):
-    validator = BlackboardSchemaValidator(schema_registry)
-    return LocalJSONBlackboardStore(str(tmp_path), validator)
+    return LocalJSONBlackboardStore(config=config)
 
 
 def test_parse_path_and_get_path_value():

@@ -5,7 +5,11 @@ import pytest
 from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
 from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
 from automa_ai.blackboard.errors import RevisionConflictError
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
+from automa_ai.blackboard.schema import (
+    BlackboardSchemaRegistry,
+    BlackboardSchemaValidator,
+)
+from automa_ai.config.blackboard import BlackboardConfig
 
 
 class FakeS3:
@@ -40,14 +44,23 @@ class FakeDynamoTable:
     def __init__(self):
         self.items = {}
 
-    def get_item(self, Key):
+    def get_item(self, Key, ConsistentRead):
         item = self.items.get(Key["session_id"])
         return {"Item": item} if item else {}
 
-    def put_item(self, Item, ConditionExpression, ExpressionAttributeValues=None, ExpressionAttributeNames=None):
+    def put_item(
+        self,
+        Item,
+        ConditionExpression,
+        ExpressionAttributeValues=None,
+        ExpressionAttributeNames=None,
+    ):
         sid = Item["session_id"]
         current = self.items.get(sid)
-        if ConditionExpression == "attribute_not_exists(session_id)" and current is not None:
+        if (
+            ConditionExpression == "attribute_not_exists(session_id)"
+            and current is not None
+        ):
             raise RuntimeError("exists")
         if ConditionExpression == "#rev = :expected":
             expected = ExpressionAttributeValues[":expected"]
@@ -58,60 +71,88 @@ class FakeDynamoTable:
 
 def _validator():
     registry = BlackboardSchemaRegistry()
-    registry.register("test", "1", {"type": "object", "properties": {"items": {"type": "array"}}})
+    registry.register(
+        "test", "1", {"type": "object", "properties": {"items": {"type": "array"}}}
+    )
     return BlackboardSchemaValidator(registry)
 
+@pytest.fixture
+def s3_blackboard():
+    fake_s3 = FakeS3()
 
-def test_s3_backend_mocked_roundtrip():
-    store = S3JSONBlackboardStore("bucket", "prefix", _validator(), s3_client=FakeS3())
-    doc = store.create("s1", "test", "1", {"items": []})
+    config = BlackboardConfig(
+        enabled=True,
+        backend="s3_json",
+        schema_name="test",
+        schema_version="1",
+        schema={"type": "object", "properties": {"items": {"type": "array"}}},
+        s3_bucket="bucket",
+        s3_prefix="prefix",
+    )
+
+    return S3JSONBlackboardStore(config=config, s3_client=fake_s3)
+
+@pytest.fixture
+def dynamodb_blackboard():
+    fake_dynamodb_table = FakeDynamoTable()
+
+    config = BlackboardConfig(
+        enabled=True,
+        backend="dynamodb_json",
+        schema_name="test",
+        schema_version="1",
+        schema={"type": "object", "properties": {"items": {"type": "array"}}},
+        dynamodb_table_name="table",
+    )
+
+    return DynamoDBJSONBlackboardStore(config=config, dynamodb_table=fake_dynamodb_table)
+
+
+def test_s3_backend_mocked_roundtrip(s3_blackboard):
+    doc = s3_blackboard.create("s1", "test", "1", {"items": []})
     assert doc.revision == 1
-    loaded = store.load("s1")
+    loaded = s3_blackboard.load("s1")
     assert loaded.data["items"] == []
 
 
-def test_s3_backend_uses_conditional_write_on_existing_document():
-    fake_s3 = FakeS3()
-    store = S3JSONBlackboardStore("bucket", "prefix", _validator(), s3_client=fake_s3)
-    created = store.create("s1", "test", "1", {"items": []})
+def test_s3_backend_uses_conditional_write_on_existing_document(s3_blackboard):
+    created = s3_blackboard.create("s1", "test", "1", {"items": []})
 
     stale = created.model_copy(deep=True)
     stale.data["items"].append("stale")
-    store.save(stale)
+    s3_blackboard.save(stale)
 
     with pytest.raises(RevisionConflictError):
-        store.save(created)
+        s3_blackboard.save(created)
 
 
-def test_dynamodb_backend_conditional_conflict():
-    store = DynamoDBJSONBlackboardStore("table", _validator(), dynamodb_table=FakeDynamoTable())
-    created = store.create("s1", "test", "1", {"items": []})
+def test_dynamodb_backend_conditional_conflict(dynamodb_blackboard):
+    created = dynamodb_blackboard.create("s1", "test", "1", {"items": []})
     assert created.revision == 1
 
     with pytest.raises(RevisionConflictError):
-        store.save(created, expected_revision=2)
+        dynamodb_blackboard.save(created, expected_revision=2)
 
 
-def test_dynamodb_backend_save_without_expected_revision_updates_existing_document():
-    store = DynamoDBJSONBlackboardStore("table", _validator(), dynamodb_table=FakeDynamoTable())
-    created = store.create("s1", "test", "1", {"items": []})
+def test_dynamodb_backend_save_without_expected_revision_updates_existing_document(dynamodb_blackboard):
+    created = dynamodb_blackboard.create("s1", "test", "1", {"items": []})
 
     created.data["items"].append("item")
-    updated = store.save(created)
+    updated = dynamodb_blackboard.save(created)
 
     assert updated.revision == 2
-    loaded = store.load("s1")
+    loaded = dynamodb_blackboard.load("s1")
     assert loaded.data["items"] == ["item"]
 
 
-def test_dynamodb_backend_create_and_update_with_expected_revision():
-    store = DynamoDBJSONBlackboardStore("table", _validator(), dynamodb_table=FakeDynamoTable())
-    created = store.create("s2", "test", "1", {"items": []})
+def test_dynamodb_backend_create_and_update_with_expected_revision(dynamodb_blackboard):
+    created = dynamodb_blackboard.create("s2", "test", "1", {"items": []})
 
     created.data["items"].append("ok")
-    updated = store.save(created, expected_revision=1)
-
     assert created.revision == 1
+
+    updated = dynamodb_blackboard.save(created, expected_revision=1)
     assert updated.revision == 2
-    loaded = store.load("s2")
+
+    loaded = dynamodb_blackboard.load("s2")
     assert loaded.data["items"] == ["ok"]
