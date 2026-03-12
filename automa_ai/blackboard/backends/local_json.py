@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from automa_ai.blackboard.errors import DocumentNotFoundError, RevisionConflictError
+from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardDocument
 from automa_ai.blackboard.store import BlackboardStore, bump_revision
 from automa_ai.config.blackboard import BlackboardConfig
@@ -15,6 +15,9 @@ from automa_ai.config.blackboard import BlackboardConfig
 class LocalJSONBlackboardStore(BlackboardStore):
     def __init__(self, config: BlackboardConfig):
         super().__init__(config)
+
+        if not config.base_dir:
+            raise BackendNotConfiguredError("base_dir is required for local_json backend.")
         self.base_dir = Path(config.base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
