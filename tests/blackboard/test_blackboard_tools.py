@@ -4,10 +4,6 @@ import pytest
 
 from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
 from automa_ai.blackboard.errors import DocumentNotFoundError, RevisionConflictError
-from automa_ai.blackboard.schema import (
-    BlackboardSchemaRegistry,
-    BlackboardSchemaValidator,
-)
 from automa_ai.blackboard.tools import build_blackboard_tools
 from automa_ai.agents.remote_agent import (
     set_subagent_context_id,

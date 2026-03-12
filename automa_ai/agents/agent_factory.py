@@ -26,12 +26,7 @@ from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.config.blackboard import BlackboardConfig
-from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
-from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
-from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
 from automa_ai.blackboard.instructions import build_blackboard_contract
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
-from automa_ai.blackboard.errors import BackendNotConfiguredError
 
 logger = logging.getLogger(__name__)
 

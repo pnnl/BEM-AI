@@ -5,10 +5,6 @@ import pytest
 from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
 from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
 from automa_ai.blackboard.errors import RevisionConflictError
-from automa_ai.blackboard.schema import (
-    BlackboardSchemaRegistry,
-    BlackboardSchemaValidator,
-)
 from automa_ai.config.blackboard import BlackboardConfig
 
 
@@ -67,14 +63,6 @@ class FakeDynamoTable:
             if current is None or current.get("revision") != expected:
                 raise RuntimeError("conflict")
         self.items[sid] = Item
-
-
-def _validator():
-    registry = BlackboardSchemaRegistry()
-    registry.register(
-        "test", "1", {"type": "object", "properties": {"items": {"type": "array"}}}
-    )
-    return BlackboardSchemaValidator(registry)
 
 @pytest.fixture
 def s3_blackboard():

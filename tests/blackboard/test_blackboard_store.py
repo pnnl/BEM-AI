@@ -5,7 +5,6 @@ import pytest
 from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
 from automa_ai.blackboard.errors import RevisionConflictError, SchemaValidationError
 from automa_ai.blackboard.models import BlackboardPatch
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
 from automa_ai.blackboard.store import get_path_value, parse_path
 from automa_ai.config.blackboard import BlackboardConfig
 
