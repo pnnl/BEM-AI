@@ -12,7 +12,9 @@ The Foundational Geometry Agent provides the scaffolding for energy models by:
 ## Current Status
 
 ✅ **Working**: A2A agent server with full MCP tool integration via SSE transport
+
 ✅ **Working**: OpenStudio geometry generation and construction set application tools
+
 ✅ **Working**: Single-command deployment with automatic MCP server lifecycle management
 
 ## Running the Agent
