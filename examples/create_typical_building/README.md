@@ -103,6 +103,10 @@ CHAT_BOT_MODEL_BASE_URL=https://ai-incubator-api.pnnl.gov
 # MCP Server (OpenStudio Tools)
 CREATE_TYPICAL_BLDG_MCP_PORT=8082
 CREATE_TYPICAL_BLDG_MCP_HOST=localhost
+
+# Evaluation Judge Model (Ollama - default)
+OLLAMA_MODEL_NAME=llama3.3:70b
+OLLAMA_MODEL_BASE_URL=http://your-ollama-host:11434
 ```
 
 **Supported Models:**
@@ -113,9 +117,18 @@ CREATE_TYPICAL_BLDG_MCP_HOST=localhost
 
 The agent automatically detects the correct provider based on the model name.
 
+**Evaluation Configuration:**
+
+For automated evaluations using DeepEval, the default configuration uses **Ollama** as the LLM judge. This allows you to:
+- Run evaluations on local infrastructure without API costs
+- Use powerful open-source models like Llama 3.3 70B
+- Maintain evaluation independence from cloud services
+
+**Alternative: OpenAI for evaluation** - The code includes a commented-out section to use OpenAI's GPT models (like `gpt-4o-mini`) as the judge. To enable this, add `OPENAI_API_KEY` and `OPEN_AI_MODEL_NAME` to your `.env` and uncomment the relevant section in `create_typical_bldg_evaluation.py`.
+
 ## Testing the Agent
 
-Two test utilities are provided to test different aspects of the system:
+Three test utilities are provided to test different aspects of the system:
 
 ### Test Client (`test_client.py`)
 
@@ -179,13 +192,100 @@ uv run python test_mcp_tools.py
 - Shows low-level MCP protocol interaction
 - Useful for debugging MCP server issues independently of the agent
 
+### Automated Evaluation (`evaluation/create_typical_bldg_evaluation.py`)
+
+Evaluates agent performance using [DeepEval](https://github.com/confident-ai/deepeval) metrics with LLM-as-a-judge scoring.
+
+**Setup:**
+
+1. **Configure evaluation model** (add to `.env`):
+   
+   By default, the evaluation uses **Ollama** for the judge model:
+   ```env
+   # Ollama (default for evaluation)
+   OLLAMA_MODEL_NAME=llama3.3:70b
+   OLLAMA_MODEL_BASE_URL=http://your-ollama-host:11434
+   ```
+
+   **Alternative: OpenAI GPT** (commented out in code, uncomment to use):
+   ```env
+   # OpenAI API (alternative - requires code modification)
+   OPENAI_API_KEY=sk-proj-your-key-here
+   OPEN_AI_MODEL_NAME=gpt-4o-mini
+   ```
+   
+   To switch to OpenAI, uncomment lines 268-273 and comment out lines 261-265 in `create_typical_bldg_evaluation.py`.
+
+2. **Run the evaluation:**
+   ```bash
+   uv run python examples/create_typical_building/evaluation/create_typical_bldg_evaluation.py
+   ```
+
+**What it evaluates:**
+
+The test suite in `evaluation/create_typical_bldg_test_data.json` contains scenarios covering:
+
+1. **Information gathering**: Agent asks for missing climate zone before making tool calls
+2. **Tool selection**: Correct tools are invoked with properly formatted parameters
+3. **Climate zone formatting**: Validates ASHRAE 169-2013-<zone> format compliance
+4. **Building type validation**: Agent verifies building types and suggests alternatives for invalid requests
+5. **Default handling**: Agent explicitly informs users when defaulting to ASHRAE 90.1-2013 standard
+
+**Metrics:**
+
+- **Tool Correctness** (ToolCorrectnessMetric): Evaluates whether the agent selected and called the right tools
+  - Tool calling: Did the expected tools get called?
+  - Tool selection: Were the chosen tools appropriate for the task?
+  
+- **Correctness** (GEval): Custom evaluator for domain-specific behaviors
+  - Climate zone formatting (ASHRAE 169-2013-<zone>)
+  - Clarification behavior (asking for missing information)
+  - Tool usage alignment with expected output
+
+**Judge Model:**
+
+The evaluation uses an **Ollama model** (default: `llama3.3:70b`) as the judge. The judge model is configured separately from the agent model, allowing you to:
+- Use Ollama for evaluation while running the agent with BIRTHRIGHT/Claude/OpenAI
+- Run evaluations on local infrastructure
+- Switch to OpenAI GPT models by modifying the code (commented section provided)
+
+**Output:**
+
+Results are saved to `evaluation/create_typical_bldg_evaluation_output.json` with:
+- Question/expected/actual output for each test case
+- Per-metric scores and pass/fail status
+- Detailed reasoning from the judge model
+- Verbose logs for debugging failures
+
+**Example output structure:**
+```json
+{
+  "question": "Create a medium office building and save it to /tmp/models",
+  "expected": "Agent asks for climate zone before proceeding...",
+  "actual_output": "What climate zone should I use...",
+  "deepeval_result": {
+    "passed": true,
+    "metrics_data": [
+      {
+        "metric": "Tool Correctness",
+        "passed": true,
+        "score": 1.0,
+        "reason": "...",
+        "verbose_logs": {...}
+      }
+    ]
+  }
+}
+```
+
 ### Testing Workflow
 
 **Recommended testing sequence:**
 
 1. **Verify MCP server**: Run `test_mcp_tools.py` to ensure all tools are working correctly
 2. **Test agent integration**: Run `test_client.py` to verify the agent can orchestrate MCP tools
-3. **Manual testing**: Send custom A2A requests via the SimpleClient or API calls
+3. **Run automated evaluation**: Execute the evaluation suite to measure agent performance
+4. **Manual testing**: Send custom A2A requests via the SimpleClient or API calls
 
 **Common testing scenarios:**
 
@@ -219,8 +319,12 @@ uv run python test_mcp_tools.py
 | `create_typical_building_ui.py` | Streamlit web interface for interactive chat |
 | `test_client.py` | A2A client test - tests agent through natural language |
 | `test_mcp_tools.py` | Direct MCP test - tests MCP tools without agent layer |
+| `evaluation/create_typical_bldg_evaluation.py` | Automated DeepEval test suite with LLM-as-a-judge |
+| `evaluation/create_typical_bldg_test_data.json` | Test cases and expected outputs for evaluation |
+| `evaluation/create_typical_bldg_evaluation_output.json` | Evaluation results with scores and detailed logs |
 | `mcp_server/src/server.py` | FastMCP server with OpenStudio Standards tools |
 | `.env` | Configuration for ports, hosts, and LLM settings |
+| `sample.env` | Template .env file with all configuration options |
 
 ## Troubleshooting
 
@@ -245,7 +349,9 @@ uv run python test_mcp_tools.py
 2. ~~Convert MCP server to SSE~~ ✅ (Completed)
 3. ~~Add test utilities~~ ✅ (Completed)
 4. ~~Add chatbot interface~~ ✅ (Streamlit UI completed)
-5. **Create SME use cases** - to drive development and testing of MCP tools (in-progress)
+5. ~~Implement automated evaluation framework~~ ✅ (DeepEval integration completed)
+6. **Create SME use cases** - to drive development and testing of MCP tools (in-progress)
+7. **Expand evaluation test suite** - add more edge cases and domain-specific scenarios, add substantially more tools.
 
 ## Example Usage
 

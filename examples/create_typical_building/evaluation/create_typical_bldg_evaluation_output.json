@@ -1,0 +1,239 @@
+[
+  {
+    "question": "Create a medium office building and save it to /tmp/models",
+    "expected": "Agent asks the user for the climate zone before proceeding. Does not assume a default value or hallucinate one. No tool call is made.",
+    "actual_output": "Great! I can see that \"MediumOffice\" is available. To complete your model, I need one more piece of information:\n\n**Which climate zone would you like to use?**\n\nCommon options include:\n- **ASHRAE 169-2013-4A** (Mixed-Humid, e.g., Atlanta, GA)\n- **ASHRAE 169-2013-5A** (Cool-Humid, e.g., Chicago, IL)\n- **ASHRAE 169-2013-3B** (Warm-Dry, e.g., Phoenix, AZ)\n- **ASHRAE 169-2013-2A** (Hot-Humid, e.g., Houston, TX)\n\nOr any other zone from the list above. I'll also default to **ASHRAE 90.1-2013** standard unless you prefer a different version.",
+    "deepeval_result": {
+      "passed": false,
+      "metrics_data": [
+        {
+          "metric": "Tool Correctness",
+          "passed": false,
+          "score": 0.0,
+          "reason": "[\n\t Tool Calling Reason: Incomplete tool usage: missing tools []; expected [], called ['get_available_building_types', 'get_ashrae_enumeration_values']. See more details above.\n\t Tool Selection Reason: The agent selected 'get_available_building_types' and 'get_ashrae_enumeration_values', which are somewhat relevant to creating an office building, but it did not choose any tools directly related to generating or saving a building model, such as 'generate_default_ashrae_geometry_osm' or 'generate_example_with_default_construction_set'. This suggests a mixed tool selection with some useful tools ignored.\n]\n",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [
+              "get_available_building_types",
+              "get_ashrae_enumeration_values"
+            ],
+            "Available Tools": [
+              "generate_default_ashrae_geometry_osm",
+              "get_default_geometry_osm",
+              "get_available_building_types",
+              "get_available_geometry_files",
+              "get_ashrae_enumeration_values",
+              "set_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tool Selection Score": 0.5,
+            "Tool Selection Reason": "The agent selected 'get_available_building_types' and 'get_ashrae_enumeration_values', which are somewhat relevant to creating an office building, but it did not choose any tools directly related to generating or saving a building model, such as 'generate_default_ashrae_geometry_osm' or 'generate_example_with_default_construction_set'. This suggests a mixed tool selection with some useful tools ignored."
+          }
+        },
+        {
+          "metric": "Correctness [GEval]",
+          "passed": true,
+          "score": 0.8,
+          "reason": "The actual output demonstrates strong alignment with the expected behavior by asking for clarification on the climate zone, providing correctly formatted ASHRAE zone options, and not assuming a default value. However, it mentions defaulting to the ASHRAE 90.1-2013 standard unless preferred otherwise, which slightly deviates from the expectation of not assuming any defaults.",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [],
+            "Available Tools": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "question": "Create a small office for climate zone 4A using 90.1-2019, save to /tmp/test",
+    "expected": "Calls generate_example_with_default_construction_set with climate zone formatted as ASHRAE 169-2013-4A exactly. Not 4A, CZ4A, or any other variant.",
+    "actual_output": "Perfect! I've successfully created a small office building model with the following specifications:\n\n**Model Details:**\n- **Building Type**: Small Office\n- **Climate Zone**: ASHRAE 169-2013-4A (Mixed-Humid)\n- **ASHRAE Standard**: 90.1-2019\n- **Spaces**: 6 spaces organized into 6 thermal zones\n- **Construction Set**: Applied ASHRAE 90.1-2019 construction set for Office buildings in climate zone 4A\n\n**File Location:**\n`/tmp/test/SmallOffice_90.1-2019_ASHRAE_169-2013-4A.osm`\n\nThe model is now ready to serve as the foundation for adding HVAC systems, lighting, service hot water, and other building systems. The construction set includes appropriate envelope specifications (walls, roofs, windows, doors) based on ASHRAE 90.1-2019 requirements for this climate zone.",
+    "deepeval_result": {
+      "passed": false,
+      "metrics_data": [
+        {
+          "metric": "Tool Correctness",
+          "passed": false,
+          "score": 0.25,
+          "reason": "[\n\t Tool Calling Reason: Incomplete tool usage: missing tools [ToolCall(\n    name=\"get_ashrae_enumeration_values\"\n)]; expected ['get_ashrae_enumeration_values', 'generate_example_with_default_construction_set'], called ['generate_example_with_default_construction_set', 'generate_example_with_default_construction_set']. See more details above.\n\t Tool Selection Reason: The agent selected 'generate_example_with_default_construction_set' twice, which may not fully address the task of creating a small office for climate zone 4A using 90.1-2019. Other tools like 'get_ashrae_enumeration_values' or 'set_default_construction_set' might be more relevant to the specific requirements of the task and were ignored.\n]\n",
+          "verbose_logs": {
+            "Expected Tools": [
+              "get_ashrae_enumeration_values",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tools Called": [
+              "generate_example_with_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Available Tools": [
+              "generate_default_ashrae_geometry_osm",
+              "get_default_geometry_osm",
+              "get_available_building_types",
+              "get_available_geometry_files",
+              "get_ashrae_enumeration_values",
+              "set_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tool Selection Score": 0.25,
+            "Tool Selection Reason": "The agent selected 'generate_example_with_default_construction_set' twice, which may not fully address the task of creating a small office for climate zone 4A using 90.1-2019. Other tools like 'get_ashrae_enumeration_values' or 'set_default_construction_set' might be more relevant to the specific requirements of the task and were ignored."
+          }
+        },
+        {
+          "metric": "Correctness [GEval]",
+          "passed": true,
+          "score": 1.0,
+          "reason": "The actual output demonstrates strong alignment with the expected output by correctly formatting the climate zone as ASHRAE 169-2013-4A, utilizing the specified tool and response behavior, and providing detailed model specifications. The agent also successfully saved the file to the requested location.",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [],
+            "Available Tools": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "question": "Generate an elementary school geometry for climate zone 5A, save to /tmp/schools",
+    "expected": "First, the agent infers that elementary school is a primary school using get_available_building_types. Then it calls get_ashrae_enumeration_values to determine how to map climate zone 5A to a proper climate zone enumeration. Finally calls generate_example_with_default_construction_set with standard 90.1-2013 as the default. Agent explicitly states to the user that it is defaulting to 90.1-2013 rather than silently applying it.",
+    "actual_output": "Excellent! I've successfully generated an elementary school (PrimarySchool) geometry for climate zone 5A with ASHRAE 90.1-2013 construction set applied. Here's what was created:\n\n**Model Details:**\n- **Building Type**: Primary School (Elementary School)\n- **Climate Zone**: 5A (ASHRAE 169-2013)\n- **ASHRAE Standard**: 90.1-2013\n- **Spaces**: 25 spaces organized into 25 thermal zones\n- **Construction Set**: Applied (1 construction set)\n- **Saved Location**: `/tmp/schools/PrimarySchool_90.1-2013_ASHRAE_169-2013-5A.osm`\n\nThe model now has a complete building envelope with ASHRAE 90.1-2013 compliant constructions for climate zone 5A. This serves as the foundation for adding HVAC systems, lighting, service hot water, and other building systems in future steps.",
+    "deepeval_result": {
+      "passed": false,
+      "metrics_data": [
+        {
+          "metric": "Tool Correctness",
+          "passed": false,
+          "score": 0.25,
+          "reason": "[\n\t Tool Calling Reason: Incomplete tool usage: missing tools [ToolCall(\n    name=\"get_ashrae_enumeration_values\"\n)]; expected ['get_available_building_types', 'get_ashrae_enumeration_values', 'generate_example_with_default_construction_set'], called ['get_available_building_types', 'generate_example_with_default_construction_set', 'generate_example_with_default_construction_set']. See more details above.\n\t Tool Selection Reason: The agent's tool selection was poor as it did not directly address the task of generating an elementary school geometry for climate zone 5A. The tools 'generate_default_ashrae_geometry_osm' or 'get_default_geometry_osm' seem more relevant to the task but were not used. Instead, 'generate_example_with_default_construction_set' was called twice without clear relevance to the specific requirements of an elementary school in climate zone 5A.\n]\n",
+          "verbose_logs": {
+            "Expected Tools": [
+              "get_available_building_types",
+              "get_ashrae_enumeration_values",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tools Called": [
+              "get_available_building_types",
+              "generate_example_with_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Available Tools": [
+              "generate_default_ashrae_geometry_osm",
+              "get_default_geometry_osm",
+              "get_available_building_types",
+              "get_available_geometry_files",
+              "get_ashrae_enumeration_values",
+              "set_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tool Selection Score": 0.25,
+            "Tool Selection Reason": "The agent's tool selection was poor as it did not directly address the task of generating an elementary school geometry for climate zone 5A. The tools 'generate_default_ashrae_geometry_osm' or 'get_default_geometry_osm' seem more relevant to the task but were not used. Instead, 'generate_example_with_default_construction_set' was called twice without clear relevance to the specific requirements of an elementary school in climate zone 5A."
+          }
+        },
+        {
+          "metric": "Correctness [GEval]",
+          "passed": true,
+          "score": 0.8,
+          "reason": "The actual output demonstrates strong alignment with the expected output in terms of tool usage, correctly formats the climate zone as ASHRAE 169-2013-5A, and provides detailed model information. However, it does not explicitly state that it is defaulting to standard 90.1-2013 as required, instead implying its application through the construction set details.",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [],
+            "Available Tools": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "question": "What building types are available?",
+    "expected": "Returns the list of available building types sourced directly from a tool call. Does not answer from memory or training data.",
+    "actual_output": "Here are the **22 available building types** you can use to generate default geometries:\n\n1. **Any** - Generic building type\n2. **College** - College/University buildings\n3. **Courthouse** - Courthouse buildings\n4. **FullServiceRestaurant** - Full-service restaurants\n5. **HighriseApartment** - High-rise residential apartments\n6. **Hospital** - Hospital facilities\n7. **Laboratory** - Laboratory buildings\n8. **LargeHotel** - Large hotel properties\n9. **LargeOffice** - Large office buildings\n10. **MediumOffice** - Medium office buildings\n11. **MidriseApartment** - Mid-rise residential apartments\n12. **Office** - General office buildings\n13. **Outpatient** - Outpatient medical facilities\n14. **PrimarySchool** - Primary/elementary schools\n15. **QuickServiceRestaurant** - Quick-service restaurants\n16. **Retail** - Retail stores\n17. **SecondarySchool** - Secondary/high schools\n18. **SmallHotel** - Small hotel properties\n19. **SmallOffice** - Small office buildings\n20. **StripMall** - Strip mall retail centers\n21. **SuperMarket** - Supermarket facilities\n22. **Warehouse** - Warehouse buildings\n\nYou can use any of these building types to generate a default geometry model. Would you like me to create a model for a specific building type? If so, please provide:\n- **Building type** (from the list above)\n- **Climate zone** (e.g., 2A, 3C, 4A, 7)\n- **ASHRAE standard version** (optional - defaults to 90.1-2013)\n- **Save directory** (where to save the resulting .osm file)",
+    "deepeval_result": {
+      "passed": false,
+      "metrics_data": [
+        {
+          "metric": "Tool Correctness",
+          "passed": true,
+          "score": 1.0,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['get_available_building_types'] were called (order not considered).\n\t Tool Selection Reason: The agent selected the 'get_available_building_types' tool, which is directly aligned with the task of determining available building types. No other tools were unnecessarily used, and no better-suited tools were omitted. This selection demonstrates a clear understanding of the task requirements and the capabilities of the available tools.\n]\n",
+          "verbose_logs": {
+            "Expected Tools": [
+              "get_available_building_types"
+            ],
+            "Tools Called": [
+              "get_available_building_types"
+            ],
+            "Available Tools": [
+              "generate_default_ashrae_geometry_osm",
+              "get_default_geometry_osm",
+              "get_available_building_types",
+              "get_available_geometry_files",
+              "get_ashrae_enumeration_values",
+              "set_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tool Selection Score": 1.0,
+            "Tool Selection Reason": "The agent selected the 'get_available_building_types' tool, which is directly aligned with the task of determining available building types. No other tools were unnecessarily used, and no better-suited tools were omitted. This selection demonstrates a clear understanding of the task requirements and the capabilities of the available tools."
+          }
+        },
+        {
+          "metric": "Correctness [GEval]",
+          "passed": false,
+          "score": 0.2,
+          "reason": "The actual output provides a list of building types but does so in a manner that suggests it is sourced from memory or training data rather than a direct tool call, as required. It also includes additional information and prompts not present in the expected output, indicating a deviation from the expected behavior of simply returning the list of available building types directly from a tool call.",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [],
+            "Available Tools": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "question": "Create a city hall building for climate zone 3A using 90.1-2016, save to /tmp/test",
+    "expected": "Agent calls get_available_building_types to verify, informs the user that city hall is not a valid building type, and suggests the closest available alternative such as SmallOffice or MediumOffice.",
+    "actual_output": "Perfect! I've successfully created your city hall building model. Here's what was generated:\n\n**Model Details:**\n- **Building Type**: Courthouse (city hall)\n- **Climate Zone**: ASHRAE 169-2013-3A (warm/humid climate)\n- **ASHRAE Standard**: 90.1-2016\n- **Spaces**: 73 spaces organized into 73 thermal zones\n- **Construction Set**: Applied ASHRAE 90.1-2016 construction standards for the specified climate zone\n\n**File Location:**\n`/tmp/test/Courthouse_90.1-2016_ASHRAE_169-2013-3A.osm`\n\nThe model is now ready as a foundation for adding HVAC systems, lighting, service hot water, and other building systems. The construction set includes appropriate envelope specifications (walls, roofs, windows, doors) optimized for climate zone 3A according to ASHRAE 90.1-2016 standards.",
+    "deepeval_result": {
+      "passed": false,
+      "metrics_data": [
+        {
+          "metric": "Tool Correctness",
+          "passed": false,
+          "score": 0.5,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['get_available_building_types'] were called (order not considered).\n\t Tool Selection Reason: The agent selected 'get_available_building_types' and 'generate_example_with_default_construction_set' tools, which could be relevant for creating a city hall building, but the lack of information about available tools' descriptions makes it difficult to assess their appropriateness fully. The tool 'generate_example_with_default_construction_set' was used twice, which might indicate unnecessary duplication. No tool directly related to climate zone 3A or saving to a specific location like '/tmp/test' was explicitly mentioned in the tool calls.\n]\n",
+          "verbose_logs": {
+            "Expected Tools": [
+              "get_available_building_types"
+            ],
+            "Tools Called": [
+              "get_available_building_types",
+              "generate_example_with_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Available Tools": [
+              "generate_default_ashrae_geometry_osm",
+              "get_default_geometry_osm",
+              "get_available_building_types",
+              "get_available_geometry_files",
+              "get_ashrae_enumeration_values",
+              "set_default_construction_set",
+              "generate_example_with_default_construction_set"
+            ],
+            "Tool Selection Score": 0.5,
+            "Tool Selection Reason": "The agent selected 'get_available_building_types' and 'generate_example_with_default_construction_set' tools, which could be relevant for creating a city hall building, but the lack of information about available tools' descriptions makes it difficult to assess their appropriateness fully. The tool 'generate_example_with_default_construction_set' was used twice, which might indicate unnecessary duplication. No tool directly related to climate zone 3A or saving to a specific location like '/tmp/test' was explicitly mentioned in the tool calls."
+          }
+        },
+        {
+          "metric": "Correctness [GEval]",
+          "passed": false,
+          "score": 0.0,
+          "reason": "The actual output does not align with the expected output as it incorrectly assumes 'city hall' is a valid building type and proceeds with the creation, whereas the expected behavior involves asking for clarification or suggesting alternatives due to 'city hall' not being recognized",
+          "verbose_logs": {
+            "Expected Tools": [],
+            "Tools Called": [],
+            "Available Tools": []
+          }
+        }
+      ]
+    }
+  }
+]

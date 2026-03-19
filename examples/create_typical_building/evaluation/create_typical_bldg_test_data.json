@@ -1,0 +1,27 @@
+[
+    {
+        "query": "Create a medium office building and save it to /tmp/models",
+        "expected_output": "Agent asks the user for the climate zone before proceeding. Does not assume a default value or hallucinate one. No tool call is made.",
+        "correct_tools_call": null
+    },
+    {
+        "query": "Create a small office for climate zone 4A using 90.1-2019, save to /tmp/test",
+        "expected_output": "Calls generate_example_with_default_construction_set with climate zone formatted as ASHRAE 169-2013-4A exactly. Not 4A, CZ4A, or any other variant.",
+        "correct_tools_call": "get_ashrae_enumeration_values, generate_example_with_default_construction_set"
+    },
+    {
+        "query": "Generate an elementary school geometry for climate zone 5A, save to /tmp/schools",
+        "expected_output": "First, the agent infers that elementary school is a primary school using get_available_building_types. Then it calls get_ashrae_enumeration_values to determine how to map climate zone 5A to a proper climate zone enumeration. Finally calls generate_example_with_default_construction_set with standard 90.1-2013 as the default. Agent explicitly states to the user that it is defaulting to 90.1-2013 rather than silently applying it.",
+        "correct_tools_call": "get_available_building_types, get_ashrae_enumeration_values, generate_example_with_default_construction_set"
+    },
+    {
+        "query": "What building types are available?",
+        "expected_output": "Returns the list of available building types sourced directly from a tool call. Does not answer from memory or training data.",
+        "correct_tools_call": "get_available_building_types"
+    },
+    {
+        "query": "Create a city hall building for climate zone 3A using 90.1-2016, save to /tmp/test",
+        "expected_output": "Agent calls get_available_building_types to verify, informs the user that city hall is not a valid building type, and suggests the closest available alternative such as SmallOffice or MediumOffice.",
+        "correct_tools_call": "get_available_building_types"
+    }
+]
