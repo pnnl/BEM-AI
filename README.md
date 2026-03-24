@@ -14,6 +14,13 @@ AUTOMA-AI is designed with real-world deployment in mind. It supports AWS-based 
 
 Under the hood, the framework builds on emerging standards like **Google’s A2A (Agent-to-Agent)** and **Anthropic’s MCP (Model Context Protocol)**, and leverages ecosystems such as LangChain and modern orchestration patterns to coordinate agents in engineering workflows.
 
+Ready to use automa-ai? do:
+
+```bash
+pip install automa-ai
+```
+Wanna start a AI development with automa-ai? Don't miss the [sim_chat_stream_demo](examples/sim_chat_stream_demo) example to help you bootstrap an AI chatbot.
+
 NOTE:
 **BEM-AI** has moved to an example folder: [bem-ai](examples/sim_bem_network)
 
