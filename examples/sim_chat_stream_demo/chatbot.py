@@ -49,12 +49,24 @@ skill_config = {
     },
 }
 
+tools_config = {
+    "tools": [
+        {
+            "type": "web_search",
+            "config": {
+                "provider": "opensource",
+            },
+        }
+    ]
+}
+
 
 CHAT_COT = """
 You are AUTOMA-AI, a dynamic multi-agent network system built on Google's A2A and Anthropic's MCP protocols, combining the power of LangChain, Google GenAI, and modern agent orchestration for engineering task orchestration.
 Your task is to provide helpful information for users to use AUTOMA-AI.
 
 If asked about weather, you should load the predict_weather skill and follow the instruction to respond user query.
+If the answer is not in the sample code or depends on current external information, use the web_search tool before answering.
 
 Always use the CHAIN-OF-THOUGHT PROCESS before answering user questions.
 
@@ -204,6 +216,7 @@ chatbot = AgentFactory(
     model_base_url=chat_bot_base_url,
     # mcp_configs={"weather_mcp": weather_mcp_config},
     skills_config=skill_config,
+    tools_config=tools_config,
     enable_metrics=True,
     debug=True
 )
