@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
+from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk, ToolMessage, HumanMessage
@@ -24,9 +24,11 @@ from automa_ai.prompt_engineering.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
 from automa_ai.skills.tools import build_load_skill_tool
 from automa_ai.config.tools import ToolSpec
+from automa_ai.config.learning import LearningWorkflowConfig
 from automa_ai.tools import build_langchain_tools
 from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
+from automa_ai.learning import build_review_payload, run_learning_workflow
 
 memory = MemorySaver()
 
@@ -54,6 +56,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         blackboard_schema_version: str | None = None,
         blackboard_initial_data: dict | None = None,
         blackboard_contract: str | None = None,
+        learning_config: Optional[LearningWorkflowConfig] = None,
         enable_metrics: bool = False,
         debug: bool = False,
     ):
@@ -80,6 +83,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.blackboard_schema_version = blackboard_schema_version
         self.blackboard_initial_data = blackboard_initial_data or {}
         self.blackboard_contract = blackboard_contract
+        self.learning_config = learning_config or LearningWorkflowConfig()
         self.debug = debug
         if enable_metrics:
             self.metrics = MetricsCollector()
@@ -213,6 +217,13 @@ class GenericLangGraphChatAgent(BaseAgent):
         finally:
             reset_subagent_emitter(emitter_token)
             reset_subagent_context_id(context_token)
+        await self._trigger_learning_workflow(
+            query=query,
+            final_response=response,
+            response_type="invoke",
+            session_id=session_id,
+            task_id=session_id,
+        )
         return response
 
     async def stream(self, query, session_id, task_id) -> AsyncIterable[dict[str, Any]]:
@@ -359,8 +370,15 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 }
                             )
 
-                await self._emit_final_output(
+                final_output = await self._emit_final_output(
                     output_queue, message_accumulator, session_id, task_id
+                )
+                await self._trigger_learning_workflow(
+                    query=query,
+                    final_response=final_output["content"],
+                    response_type=final_output["response_type"],
+                    session_id=session_id,
+                    task_id=task_id,
                 )
             finally:
                 reset_subagent_emitter(emitter_token)
@@ -508,7 +526,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         message_accumulator: AIMessageAccumulator,
         session_id: str,
         task_id: str,
-    ) -> None:
+    ) -> dict[str, Any]:
         final_text = message_accumulator.get_assistant_text()
         artifact_text = message_accumulator.get_artifact_text()
 
@@ -531,16 +549,54 @@ class GenericLangGraphChatAgent(BaseAgent):
                             "content": parsed,
                         }
                     )
-                    return
+                    return {"response_type": "data", "content": parsed}
             except Exception:
                 # Intentionally pass.
                 pass
 
-        await output_queue.put(
-            {
-                "response_type": "text",
-                "is_task_complete": True,
-                "require_user_input": False,
-                "content": final_text,
-            }
+        final_item = {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": final_text,
+        }
+        await output_queue.put(final_item)
+        return {"response_type": "text", "content": final_text}
+
+    async def _trigger_learning_workflow(
+        self,
+        *,
+        query: str,
+        final_response: Any,
+        response_type: str,
+        session_id: str,
+        task_id: str,
+    ) -> None:
+        if not self.learning_config or not self.learning_config.enabled:
+            return
+
+        payload = build_review_payload(
+            query=query,
+            final_response=final_response,
+            response_type=response_type,
+            session_id=session_id,
+            task_id=task_id,
+            blackboard_store=self.blackboard_store,
         )
+        task = asyncio.create_task(
+            run_learning_workflow(
+                payload=payload,
+                reflection_spec_path=self.learning_config.reflection_agent_spec_path,
+                lesson_spec_path=self.learning_config.lesson_agent_spec_path,
+                output_dir=self.learning_config.output_dir,
+                session_id=session_id,
+            )
+        )
+        task.add_done_callback(self._on_learning_task_done)
+
+    @staticmethod
+    def _on_learning_task_done(task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Learning workflow failed in background task")

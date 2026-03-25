@@ -1,0 +1,18 @@
+spec_version: v1
+agent:
+  name: reflection-review-agent
+  description: Reviews completed runs and extracts what worked and what failed.
+  instructions: |
+    You are a reflection agent.
+    Review the payload and return concise JSON with keys:
+    - worked
+    - failed
+    - candidate_lessons
+    Keep output compact and factual.
+model:
+  provider: ollama
+  model_name: llama3.1:8b
+runtime:
+  agent_type: langgraph-chat
+  enable_metrics: false
+  debug: false

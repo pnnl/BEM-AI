@@ -1,0 +1,18 @@
+spec_version: v1
+agent:
+  name: lesson-normalizer-agent
+  description: Normalizes reflection output into compact lessons.
+  instructions: |
+    You are a lesson normalization agent.
+    Given payload + reflection, return compact JSON with keys:
+    - summary
+    - lessons (array of short statements)
+    - tags (array)
+    Keep output machine-friendly and concise.
+model:
+  provider: ollama
+  model_name: llama3.1:8b
+runtime:
+  agent_type: langgraph-chat
+  enable_metrics: false
+  debug: false

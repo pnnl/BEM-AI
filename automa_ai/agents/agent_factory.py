@@ -26,6 +26,7 @@ from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.config.learning import LearningWorkflowConfig
 from automa_ai.blackboard.instructions import build_blackboard_contract
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ class AgentFactory:
         skills_config: SkillsConfig | Dict | None = None,
         tools_config: ToolsConfig | Dict | List[Dict] | None = None,
         blackboard_config: BlackboardConfig | Dict | None = None,
+        learning_config: LearningWorkflowConfig | Dict | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
@@ -166,6 +168,7 @@ class AgentFactory:
         self.skills_config = skills_config
         self.tools_config = tools_config
         self.blackboard_config = blackboard_config
+        self.learning_config = learning_config
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
@@ -248,6 +251,9 @@ class AgentFactory:
                 mcp_servers=mcp_servers,
             )
         elif self.agent_type == GenericAgentType.LANGGRAPHCHAT:
+            learning_cfg = self.learning_config
+            if learning_cfg and not isinstance(learning_cfg, LearningWorkflowConfig):
+                learning_cfg = LearningWorkflowConfig.model_validate(learning_cfg)
             return GenericLangGraphChatAgent(
                 agent_name=self.card.name,
                 description=self.card.description,
@@ -269,6 +275,7 @@ class AgentFactory:
                 blackboard_initial_data=blackboard_initial_data,
                 blackboard_contract=blackboard_contract,
                 memory_manager=memory_manager,
+                learning_config=learning_cfg,
                 enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )
