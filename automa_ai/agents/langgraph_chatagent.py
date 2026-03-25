@@ -362,6 +362,24 @@ class GenericLangGraphChatAgent(BaseAgent):
                 await self._emit_final_output(
                     output_queue, message_accumulator, session_id, task_id
                 )
+            except Exception as exc:
+                logger.exception(
+                    "Agent stream failed for %s (session_id=%s, task_id=%s)",
+                    self.agent_name,
+                    session_id,
+                    task_id,
+                )
+                await output_queue.put(
+                    {
+                        "response_type": "text",
+                        "is_task_complete": True,
+                        "require_user_input": False,
+                        "content": (
+                            "Agent runtime error while processing the request: "
+                            f"{type(exc).__name__}: {exc}"
+                        ),
+                    }
+                )
             finally:
                 reset_subagent_emitter(emitter_token)
                 reset_subagent_context_id(context_token)

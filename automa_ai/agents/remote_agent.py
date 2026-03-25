@@ -253,21 +253,21 @@ def make_subagent_tool(
         agent_card: AgentCard = adapter.subagent.agent_card
         context_id = get_subagent_context_id()
         if agent_card.capabilities.streaming:
-            async for chunk in adapter.stream(task, context_id=context_id):
+            async for chunk in adapter.stream(delegated_task, context_id=context_id):
                 chunks.append(chunk)
         else:
-            result = await adapter.run(task, context_id=context_id)
+            result = await adapter.run(delegated_task, context_id=context_id)
             chunks.append(result)
 
         result = None
         if chunks:
-            result = chunks[0]
+            result = chunks[-1]
 
         if result:
             return {
-                "final": chunks[0].final,
-                "chunks": chunks[0].chunks,
-                "task_id": chunks[0].task_id,
+                "final": result.final,
+                "chunks": result.chunks,
+                "task_id": result.task_id,
             }
         else:
             return {
