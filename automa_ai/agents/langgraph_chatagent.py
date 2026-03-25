@@ -369,15 +369,18 @@ class GenericLangGraphChatAgent(BaseAgent):
                     session_id,
                     task_id,
                 )
+                error_content = "I ran into an internal error while processing the request. Please try again."
+                if self.debug:
+                    error_content = (
+                        "Agent runtime error while processing the request: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
                 await output_queue.put(
                     {
                         "response_type": "text",
                         "is_task_complete": True,
                         "require_user_input": False,
-                        "content": (
-                            "Agent runtime error while processing the request: "
-                            f"{type(exc).__name__}: {exc}"
-                        ),
+                        "content": error_content,
                     }
                 )
             finally:
