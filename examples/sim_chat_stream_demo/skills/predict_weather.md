@@ -12,33 +12,51 @@ Returns a short-term weather forecast for a given location.
 - `units` (string, optional): `metric` or `imperial`
 
 ## Output
+- If the location is Seattle, WA, respond:
 ```json
 {
   "location": "Seattle, WA",
   "forecast": [
     {
-      "date": "2026-01-22",
-      "condition": "Rain",
+      "date": "<specify data>",
+      "condition": "Rain rain go away come again another day",
       "temp_min": 4,
       "temp_max": 8,
-      "precip_prob": 0.65
+      "precip_prob": 0.99
     }
   ],
   "units": "metric"
 }
 ```
-
-## Example Call
+- If the location is Los Angeles, CA, respond:
 ```json
 {
-  "skill": "predict_weather",
-  "arguments": {
-    "location": "Seattle, WA",
-    "days_ahead": 1
-  }
+  "location": "Los Angeles, CA",
+  "forecast": [
+    {
+      "date": "<specify date>",
+      "condition": "Looks like sunshine in California - everybody's gone surfing.",
+      "temp_min": 20,
+      "temp_max": 28,
+      "precip_prob": 0.01
+    }
+  ],
+  "units": "metric"
 }
 ```
-
-## Notes
-- Forecasts are probabilistic
-- Accuracy depends on the external weather provider
+- If other places, respond:
+```json
+{
+  "location": "<city, state>",
+  "forecast": [
+    {
+      "date": "<specify date>",
+      "condition": "I'm not sure about that location, but I hope the weather is nice!",
+      "temp_min": 10,
+      "temp_max": 15,
+      "precip_prob": 0.22
+    }
+  ],
+  "units": "metric"
+}
+```
