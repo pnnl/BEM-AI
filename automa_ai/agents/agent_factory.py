@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from a2a.types import AgentCard
 from google.adk.models.lite_llm import LiteLlm
@@ -9,6 +9,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, SecretStr
 
 from automa_ai.agents import GenericAgentType, GenericLLM
@@ -24,8 +25,9 @@ from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
 from automa_ai.common.utils import map_mcp_config_to_server_config, load_tool_plugins
 from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
-from automa_ai.config.tools import ToolsConfig, ToolSpec
+from automa_ai.config import CheckpointerConfig
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
 
 logger = logging.getLogger(__name__)
@@ -59,8 +61,14 @@ def resolve_chat_model(
             aws_secret_access_key=SecretStr(aws_secret_access_key),
         )
     elif backend == GenericLLM.OPENAI:
-        assert api_key, "You must provide an API key to access OpenAI GPT models"
+        temp_key = os.getenv("OPENAI_KEY")
+        assert (
+            api_key or temp_key
+        ), "You must provide an API key (api_key) or have OPENAI_KEY in the environment to access OpenAI GPT models"
         # Need support for API key
+        if not api_key:
+            # use the key from environment variable.
+            api_key = temp_key
         # Detect Azure automatically
         if base_url and "azure.com" in base_url.lower():
             # Azure OpenAI
@@ -113,6 +121,30 @@ def resolve_chat_model(
         raise ValueError(f"Unsupported model backend: {backend}")
 
 
+def _build_checkpointer(
+    config: CheckpointerConfig | Dict[str, Any] | str | None,
+) -> Any:
+    if config is None:
+        return MemorySaver()
+
+    resolved = CheckpointerConfig.from_value(config)
+    if resolved.type == "default":
+        return MemorySaver()
+
+    try:
+        from langgraph.checkpoint.redis import RedisSaver
+    except ImportError as exc:
+        raise ImportError(
+            "Redis checkpointer support requires 'langgraph-checkpoint-redis'."
+        ) from exc
+
+    checkpointer = RedisSaver(redis_url=resolved.redis_url)
+    if hasattr(checkpointer, "setup"):
+        checkpointer.setup()
+
+    return checkpointer
+
+
 class AgentFactory:
     """
     Default Agent Factory to create a callable agent
@@ -147,6 +179,7 @@ class AgentFactory:
         skills_config: SkillsConfig | Dict | None = None,
         tools_config: ToolsConfig | Dict | List[Dict] | None = None,
         blackboard_config: BlackboardConfig | Dict | None = None,
+        checkpointer_config: CheckpointerConfig | Dict[str, Any] | str | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
@@ -166,6 +199,7 @@ class AgentFactory:
         self.skills_config = skills_config
         self.tools_config = tools_config
         self.blackboard_config = blackboard_config
+        self.checkpointer_config = checkpointer_config
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
@@ -225,7 +259,9 @@ class AgentFactory:
                 blackboard_schema_version = bb_cfg.schema_version
                 blackboard_initial_data = bb_cfg.initial_data
                 blackboard_contract = build_blackboard_contract(
-                    blackboard_store.registry.resolve(bb_cfg.schema_name, bb_cfg.schema_version)
+                    blackboard_store.registry.resolve(
+                        bb_cfg.schema_name, bb_cfg.schema_version
+                    )
                 )
 
         built_tool_specs: list[ToolSpec] | None = None
@@ -263,6 +299,7 @@ class AgentFactory:
                 subagents=self.subagent_config if self.subagent_config else None,
                 skills_manager=skill_manager,
                 default_tools=built_tool_specs,
+                checkpointer=_build_checkpointer(self.checkpointer_config),
                 blackboard_store=blackboard_store,
                 blackboard_schema_name=blackboard_schema_name,
                 blackboard_schema_version=blackboard_schema_version,

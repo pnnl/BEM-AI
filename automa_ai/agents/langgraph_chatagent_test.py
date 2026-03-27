@@ -5,11 +5,15 @@ from langchain_core.messages import AIMessageChunk
 
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.remote_agent import StreamEvent
-from automa_ai.common.message_accumulator import AIMessageAccumulator, ARTIFACT_START, ARTIFACT_END
+from automa_ai.common.message_accumulator import (
+    AIMessageAccumulator,
+    ARTIFACT_START,
+    ARTIFACT_END,
+)
 
 
 class DummyRetriever:
-    async def asimilarity_search_by_vector(self, query: str) -> str:
+    async def asimilarity_search(self, query: str) -> str:
         return "retrieved context"
 
 
@@ -34,6 +38,20 @@ def build_agent(*, retriever=None, memory_manager=None) -> GenericLangGraphChatA
         retriever=retriever,
         memory_manager=memory_manager,
     )
+
+
+def test_agent_uses_injected_checkpointer():
+    sentinel = object()
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        checkpointer=sentinel,
+    )
+
+    assert agent.checkpointer is sentinel
 
 
 @pytest.mark.asyncio
@@ -61,8 +79,12 @@ async def test_forward_subagent_events_emits_text():
     subagent_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
     output_queue: asyncio.Queue = asyncio.Queue()
 
-    task = asyncio.create_task(agent._forward_subagent_events(subagent_queue, output_queue))
-    event = StreamEvent(source="subagent:test", type="text", content="hello", metadata={"final": True})
+    task = asyncio.create_task(
+        agent._forward_subagent_events(subagent_queue, output_queue)
+    )
+    event = StreamEvent(
+        source="subagent:test", type="text", content="hello", metadata={"final": True}
+    )
     await subagent_queue.put(event)
 
     item = await asyncio.wait_for(output_queue.get(), timeout=1)
@@ -78,7 +100,7 @@ async def test_emit_final_output_emits_data_for_json_artifact():
     accumulator = AIMessageAccumulator()
 
     accumulator.add_chunk(
-        AIMessageChunk(content=f"{ARTIFACT_START}{{\"foo\": \"bar\"}}{ARTIFACT_END}")
+        AIMessageChunk(content=f'{ARTIFACT_START}{{"foo": "bar"}}{ARTIFACT_END}')
     )
 
     await agent._emit_final_output(output_queue, accumulator, "session-1", "task-1")

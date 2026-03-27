@@ -1,15 +1,16 @@
 """Configuration objects for retrieval providers and embeddings."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class EmbeddingConfig(BaseModel):
-    provider: str
+    provider: Literal["ollama", "azure-openai", "open-ai", "gemini"]
     model: str | None = None
     api_key: str | None = None
+    api_version: str | None = None
     base_url: str | None = None
     organization: str | None = None
     project: str | None = None

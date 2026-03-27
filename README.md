@@ -148,6 +148,20 @@ tools:
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
 See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
 
+### Checkpointer configuration
+
+`LANGGRAPHCHAT` agents can also be configured with an explicit checkpointer backend through `AgentFactory`.
+The default backend is in-memory. Redis is opt-in and requires a connection URL.
+
+```yaml
+checkpointer:
+  type: redis
+  redis_url: redis://localhost:6379
+```
+
+Then pass this to `AgentFactory(..., checkpointer_config=checkpointer)`.
+Use `type: default` to force the in-memory saver explicitly.
+
 ### A2A Server Base Path
 
 You can mount an A2A agent server under a URL prefix by passing `base_url_path` to
