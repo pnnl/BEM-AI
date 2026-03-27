@@ -1,13 +1,13 @@
 [project]
 name = "automa_ai"
-version = "0.5.1"
+version = "0.5.3"
 description = "PNNL Auto Multi-Agent AI: Dynamic multi-agent system for building applications"
 requires-python = ">=3.12"
 authors = [{name = "Weili Xu", email = "weili.xu@pnnl.gov"}, {name = "Hanlong, Wan", email = "hanlong.wan@pnnl.gov"}]
 license = "BSD-2-Clause"
 readme = "README.md"
 dependencies = [
-    "a2a-sdk>=0.3.22",
+    "a2a-sdk>=0.3.25",
     "asyncclick>=8.3.0.7",
     "bs4>=0.0.2",
     "chromadb>=1.4.1",
