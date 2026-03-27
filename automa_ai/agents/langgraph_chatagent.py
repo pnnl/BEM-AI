@@ -9,8 +9,16 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
 from pydantic import BaseModel
 
-from automa_ai.agents.remote_agent import SubAgentSpec, make_subagent_tool, build_subagent_delegation_instruction, \
-    StreamEvent, set_subagent_context_id, reset_subagent_context_id, set_subagent_emitter, reset_subagent_emitter
+from automa_ai.agents.remote_agent import (
+    SubAgentSpec,
+    make_subagent_tool,
+    build_subagent_delegation_instruction,
+    StreamEvent,
+    set_subagent_context_id,
+    reset_subagent_context_id,
+    set_subagent_emitter,
+    reset_subagent_emitter,
+)
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.message_accumulator import AIMessageAccumulator
 from automa_ai.common.response_parser import extract_and_parse_json
@@ -27,8 +35,6 @@ from automa_ai.config.tools import ToolSpec
 from automa_ai.tools import build_langchain_tools
 from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
-
-memory = MemorySaver()
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         skills_manager: SkillManager | None = None,
         memory_manager: DefaultMemoryManager = None,
         default_tools: list[ToolSpec] | None = None,
+        checkpointer: Any | None = None,
         blackboard_store: BlackboardStore | None = None,
         blackboard_schema_name: str | None = None,
         blackboard_schema_version: str | None = None,
@@ -75,6 +82,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.skill_manager = skills_manager
         self.metrics = None
         self.default_tool_specs = default_tools
+        self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
         self.blackboard_store = blackboard_store
         self.blackboard_schema_name = blackboard_schema_name
         self.blackboard_schema_version = blackboard_schema_version
@@ -133,7 +141,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                         "Rename the agent to avoid duplicate names"
                     )
                 used_tool_name.append(base)
-                tools.append(make_subagent_tool(subagent, emitter, self.blackboard_contract))
+                tools.append(
+                    make_subagent_tool(subagent, emitter, self.blackboard_contract)
+                )
             # build up the instruction
             self.instructions = (
                 f"{self.instructions}\n\n"
@@ -146,7 +156,6 @@ class GenericLangGraphChatAgent(BaseAgent):
                 raise ValueError(f"Duplicate tool name '{tool.name}' detected.")
             used_tool_name.append(tool.name)
             tools.append(tool)
-
 
         if self.blackboard_store:
             for tool in build_blackboard_tools(self.blackboard_store):
@@ -173,7 +182,7 @@ class GenericLangGraphChatAgent(BaseAgent):
 
         self.graph = create_agent(
             self.model,
-            checkpointer=memory,
+            checkpointer=self.checkpointer,
             system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
@@ -183,7 +192,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         if not self.blackboard_store:
             return
         if not self.blackboard_schema_name or not self.blackboard_schema_version:
-            raise ValueError("Blackboard schema_name and schema_version are required when blackboard is enabled.")
+            raise ValueError(
+                "Blackboard schema_name and schema_version are required when blackboard is enabled."
+            )
         self.blackboard_store.get_or_create(
             session_id=session_id,
             schema_name=self.blackboard_schema_name,

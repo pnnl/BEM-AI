@@ -1,7 +1,28 @@
-# AUTOMA-AI - Autonomous Multi-Agent Network
+# AUTOMA-AI - Autonomous Multi-Agent Network (Formerly BEM-AI)
 
-AUTOMA-AI is a dynamic multi-agent network system built on Google's A2A (Agent-to-Agent) and Anthropic's MCP (Model Context Protocol) protocols, combining the power of LangChain, Google GenAI, and modern agent orchestration for engineering task orchestration.
+AUTOMA-AI is an open-source framework for building production-ready AI agents powered by modern language models such as Gemini, ChatGPT, and Claude.
 
+It provides a structured way to turn LLMs from simple chat interfaces into task-oriented agents that can plan, reason, and interact with external systems. Out of the box, AUTOMA-AI equips agents with capabilities such as:
+
+- **Tool and API integration** (via MCP or AUTOMA-AI tool interface)
+- **Retrieval pipelines** for grounding responses in data
+- **Memory systems** for session and long-term context
+- **Skills and workflows** for structured task execution
+- **Multi-agent orchestration** for complex problem-solving
+
+AUTOMA-AI is designed with real-world deployment in mind. It supports AWS-based architectures and integrates with major cloud services, enabling teams to move from prototype to production quickly.
+
+Under the hood, the framework builds on emerging standards like **Google’s A2A (Agent-to-Agent)** and **Anthropic’s MCP (Model Context Protocol)**, and leverages ecosystems such as LangChain and modern orchestration patterns to coordinate agents in engineering workflows.
+
+Ready to use automa-ai? do:
+
+```bash
+pip install automa-ai
+```
+Wanna start a AI development with automa-ai? Don't miss the [sim_chat_stream_demo](examples/sim_chat_stream_demo) example to help you bootstrap an AI chatbot.
+
+NOTE:
+**BEM-AI** has moved to an example folder: [bem-ai](examples/sim_bem_network)
 
 ## ⚠️ Project Status
 
@@ -126,6 +147,20 @@ tools:
 
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
 See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
+
+### Checkpointer configuration
+
+`LANGGRAPHCHAT` agents can also be configured with an explicit checkpointer backend through `AgentFactory`.
+The default backend is in-memory. Redis is opt-in and requires a connection URL.
+
+```yaml
+checkpointer:
+  type: redis
+  redis_url: redis://localhost:6379
+```
+
+Then pass this to `AgentFactory(..., checkpointer_config=checkpointer)`.
+Use `type: default` to force the in-memory saver explicitly.
 
 ### A2A Server Base Path
 

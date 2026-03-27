@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_ollama import OllamaEmbeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, AzureOpenAIEmbeddings
+from pydantic import SecretStr
 
 from automa_ai.retrieval.config import EmbeddingConfig
 
@@ -36,6 +37,21 @@ def resolve_embeddings(cfg: EmbeddingConfig) -> Any:
             headers=cfg.headers or None,
             timeout=cfg.timeout_s,
             **extra,
+        )
+    if provider == "azure-openai":
+        if not cfg.api_key:
+            raise ValueError("EmbeddingConfig.api_key is required for the 'azure-openai' provider.")
+        if not cfg.model:
+            raise ValueError("EmbeddingConfig.model is required for the 'azure-openai' provider.")
+        if not cfg.api_version:
+            raise ValueError("EmbeddingConfig.api_version is required for the 'azure-openai' provider.")
+        if not cfg.base_url:
+            raise ValueError("EmbeddingConfig.base_url is required for the 'azure-openai' provider.")
+        return AzureOpenAIEmbeddings(
+            api_key=SecretStr(cfg.api_key),
+            base_url=cfg.base_url,
+            model=cfg.model,
+            api_version=cfg.api_version,
         )
 
     raise ValueError(
