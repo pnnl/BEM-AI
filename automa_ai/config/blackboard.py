@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -27,6 +28,14 @@ class BlackboardConfig(BaseModel):
     @model_validator(mode="before")
     def migrate_old_format(cls, data):
         if "backend" in data and "store" not in data:
+            warnings.warn(
+                "Passing backend configuration fields directly to BlackboardConfig is deprecated. "
+                "Please use the 'store' field with a BlackboardStoreConfig instead. "
+                "Example: BlackboardConfig(store={'backend': 'local_json', 'base_dir': '...'}). "
+                "The old format will be removed in a future version.",
+                DeprecationWarning,
+                stacklevel=2
+            )
             data["store"] = {
                 "backend": data["backend"],
                 "s3_bucket": data.get("s3_bucket"),
