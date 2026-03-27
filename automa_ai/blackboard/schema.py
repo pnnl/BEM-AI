@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -21,38 +22,39 @@ class BlackboardSchema:
 
 
 class BlackboardSchemaRegistry:
-    def __init__(self):
-        self._schemas: dict[tuple[str, str], BlackboardSchema] = {}
+    _schemas: dict[tuple[str, str], BlackboardSchema] = {}
 
+    @classmethod
     def register(
-        self,
+        cls,
         name: str,
         version: str,
         json_schema: dict[str, Any],
         description: str | None = None,
     ) -> None:
-        self._schemas[(name, version)] = BlackboardSchema(
+        cls._schemas[(name, version)] = BlackboardSchema(
             name=name,
             version=version,
             json_schema=json_schema,
             description=description,
         )
 
-    def resolve(self, name: str, version: str) -> BlackboardSchema:
+    @classmethod
+    def resolve(cls, name: str, version: str) -> BlackboardSchema:
         key = (name, version)
-        if key not in self._schemas:
+        if key not in cls._schemas:
             raise SchemaValidationError(f"Schema '{name}:{version}' is not registered.")
-        return self._schemas[key]
+        return cls._schemas[key]
 
 
 class BlackboardSchemaValidator:
     _fallback_warning_emitted = False
 
-    def __init__(self, registry: BlackboardSchemaRegistry):
-        self.registry = registry
+    def __init__(self):
+        self.schema_registry = BlackboardSchemaRegistry
 
     def validate(self, name: str, version: str, data: dict[str, Any]) -> None:
-        schema = self.registry.resolve(name, version)
+        schema = self.schema_registry.resolve(name, version)
         if jsonschema is not None:
             try:
                 jsonschema.validate(data, schema.json_schema)

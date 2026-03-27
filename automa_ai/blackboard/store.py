@@ -4,12 +4,16 @@ import copy
 import re
 from abc import ABC, abstractmethod
 from datetime import timezone, datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict
 
 from automa_ai.blackboard.errors import RevisionConflictError, DocumentNotFoundError
-from automa_ai.blackboard.models import BlackboardDocument, BlackboardPatch, BlackboardEvent
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
-from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.blackboard.models import BlackboardDocument, BlackboardPatch, BlackboardEvent, BlackboardBackend
+from automa_ai.blackboard.schema import BlackboardSchemaValidator
+
+if TYPE_CHECKING:
+    from automa_ai.config.blackboard import BlackboardConfig
 
 _PATH_TOKEN_RE = re.compile(r"([^.\[\]]+)|(\[(\d+)\])")
 
@@ -149,17 +153,99 @@ def _remove_path(data: dict[str, Any], path: str) -> tuple[Any, Any]:
             parent.pop(key)
     return before, None
 
+class BlackboardStoreConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    backend: BlackboardBackend | str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BlackboardStoreConfig":
+        return cls.model_validate(data)
+
+
+class BlackboardStoreRegistry:
+    """Registry for blackboard store backends."""
+    _stores: dict[str, type["BlackboardStore"]] = {}
+
+    @classmethod
+    def register(cls, backend: str | BlackboardBackend, store_cls: type["BlackboardStore"]):
+        """Register a blackboard store backend.
+
+        Args:
+            backend: Backend identifier (enum value or string)
+            store_cls: Store class to register
+
+        Raises:
+            TypeError: If store_cls is not a subclass of BlackboardStore
+        """
+        if not isinstance(store_cls, type):
+            raise TypeError(f"store_cls must be a class, not {type(store_cls)}")
+
+        backend_key = backend.value if isinstance(backend, BlackboardBackend) else backend
+        cls._stores[backend_key] = store_cls
+
+    @classmethod
+    def get(cls, backend: str | BlackboardBackend) -> type["BlackboardStore"]:
+        """Get a registered store class by backend identifier.
+
+        Args:
+            backend: Backend identifier (enum value or string)
+
+        Returns:
+            Store class
+
+        Raises:
+            KeyError: If backend is not registered
+        """
+        from automa_ai.blackboard.errors import BackendNotConfiguredError
+
+        backend_key = backend.value if isinstance(backend, BlackboardBackend) else backend
+        if backend_key not in cls._stores:
+            raise BackendNotConfiguredError(f"Unknown blackboard backend: {backend_key}")
+        return cls._stores[backend_key]
+
 
 class BlackboardStore(ABC):
-    def __init__(self, config: BlackboardConfig):
-        self.registry = BlackboardSchemaRegistry()
-        self.registry.register(
-            name=config.schema_name,
-            version=config.schema_version,
-            json_schema=config.schema,
-            description=config.schema_description,
-        )
-        self.validator = BlackboardSchemaValidator(self.registry)
+    _config_class: type[BlackboardStoreConfig]
+
+    def __init__(self, config: BlackboardStoreConfig | "BlackboardConfig"):
+        """Initialize the blackboard store.
+
+        Args:
+            config: BlackboardStoreConfig or BlackboardConfig (for backward compatibility)
+
+        Raises:
+            ValueError: If config is invalid
+        """
+        # Import here to avoid circular dependency
+        from automa_ai.config.blackboard import BlackboardConfig
+
+        # Handle BlackboardConfig (backward compatibility)
+        if isinstance(config, BlackboardConfig):
+            if config.store is None:
+                raise ValueError("BlackboardConfig.store must be set")
+            store_config = config.store
+            if isinstance(store_config, BlackboardStore):
+                raise ValueError("BlackboardConfig.store cannot be an already-instantiated BlackboardStore")
+            config = store_config
+
+        if isinstance(config, dict):
+            if not hasattr(self.__class__, "_config_class") or self.__class__._config_class is None:
+                raise AttributeError(
+                    f"{self.__class__.__name__} must define a '_config_class' attribute"
+                )
+            config = self.__class__._config_class.model_validate(config)
+
+        self.backend = config.backend
+        self.validator = BlackboardSchemaValidator()
+
+    @classmethod
+    def from_config(cls, config: dict | BlackboardStoreConfig):
+        if hasattr(cls, "_config_class") and cls._config_class is not None:
+            config = cls._config_class.model_validate(
+                config if isinstance(config, dict) else config.model_dump()
+            )
+
+        return cls(config)
 
     @abstractmethod
     def load(self, session_id: str) -> BlackboardDocument:
@@ -240,31 +326,42 @@ def bump_revision(doc: BlackboardDocument) -> BlackboardDocument:
     return doc
 
 
-def create_blackboard_store(config: BlackboardConfig) -> BlackboardStore:
+def create_blackboard_store(store_config: dict | BlackboardStoreConfig) -> BlackboardStore:
     """Create a blackboard store instance from configuration.
 
     Args:
-        config (BlackboardConfig): Configuration for the blackboard store
+        store_config: Configuration for the blackboard store (dict or BlackboardStoreConfig)
 
     Returns:
         BlackboardStore: Configured blackboard store instance
 
     Raises:
         BackendNotConfiguredError: If the specified backend is not supported
+        ValueError: If backend is not specified in config
     """
-    from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
-    from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
-    from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
-    from automa_ai.blackboard.errors import BackendNotConfiguredError
+    _ensure_builtin_backends_registered()
 
-    backend_map = {
-        "local_json": LocalJSONBlackboardStore,
-        "s3_json": S3JSONBlackboardStore,
-        "dynamodb_json": DynamoDBJSONBlackboardStore,
-    }
+    # Extract backend identifier
+    if isinstance(store_config, dict):
+        backend = store_config.get("backend")
+        if not backend:
+            raise ValueError("Backend must be specified in store config")
+    else:
+        backend = store_config.backend
 
-    backend_class = backend_map.get(config.backend)
-    if not backend_class:
-        raise BackendNotConfiguredError(f"Unknown blackboard backend: {config.backend}")
+    # Get store class from registry and create instance
+    store_cls = BlackboardStoreRegistry.get(backend)
+    return store_cls.from_config(store_config)
 
-    return backend_class(config=config)
+
+def _ensure_builtin_backends_registered():
+    """Ensure built-in backends are registered on first use."""
+    if not BlackboardStoreRegistry._stores:
+        # Import and register built-in backends
+        from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
+        from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
+        from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
+
+        BlackboardStoreRegistry.register(BlackboardBackend.LOCAL_JSON, LocalJSONBlackboardStore)
+        BlackboardStoreRegistry.register(BlackboardBackend.S3_JSON, S3JSONBlackboardStore)
+        BlackboardStoreRegistry.register(BlackboardBackend.DYNAMODB_JSON, DynamoDBJSONBlackboardStore)

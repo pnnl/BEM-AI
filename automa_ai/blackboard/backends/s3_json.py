@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
-from automa_ai.blackboard.models import BlackboardDocument
-from automa_ai.blackboard.store import BlackboardStore, bump_revision
-from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.blackboard.models import BlackboardBackend, BlackboardDocument
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import BlackboardStore, BlackboardStoreConfig, bump_revision
 
+class S3JSONBlackboardStoreConfig(BlackboardStoreConfig):
+    backend: Literal[BlackboardBackend.S3_JSON] = BlackboardBackend.S3_JSON
+    s3_bucket: str
+    s3_prefix: str = "blackboards"
 
 class S3JSONBlackboardStore(BlackboardStore):
-    def __init__(self, config: BlackboardConfig, s3_client=None):
-        super().__init__(config)
+    _config_class = S3JSONBlackboardStoreConfig
+
+    def __init__(self, config: S3JSONBlackboardStoreConfig, s3_client=None):
+        super().__init__(config=config)
         if not config.s3_bucket:
             raise BackendNotConfiguredError("s3_bucket is required for s3_json backend.")
         

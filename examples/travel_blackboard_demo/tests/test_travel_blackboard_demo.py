@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
+from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore, LocalJSONBlackboardStoreConfig
 from automa_ai.blackboard.models import BlackboardPatch
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry, BlackboardSchemaValidator
 from examples.travel_blackboard_demo.agents.common import (
@@ -20,15 +20,17 @@ SCHEMA_PATH = BASE_DIR / "blackboard_schema.json"
 
 def _build_store(tmp_path: Path) -> LocalJSONBlackboardStore:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    registry = BlackboardSchemaRegistry()
-    registry.register(
+    BlackboardSchemaRegistry.register(
         name="travel_booking",
         version="1.0.0",
         json_schema=schema,
         description="Travel workflow schema",
     )
-    validator = BlackboardSchemaValidator(registry)
-    return LocalJSONBlackboardStore(base_dir=str(tmp_path), validator=validator)
+
+    config = LocalJSONBlackboardStoreConfig(
+        base_dir=str(tmp_path)
+    )
+    return LocalJSONBlackboardStore.from_config(config)
 
 
 def test_scripted_workflow_writes_expected_blackboard_state(tmp_path: Path):
