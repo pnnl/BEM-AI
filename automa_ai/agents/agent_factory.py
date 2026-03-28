@@ -61,10 +61,10 @@ def resolve_chat_model(
             aws_secret_access_key=SecretStr(aws_secret_access_key),
         )
     elif backend == GenericLLM.OPENAI:
-        temp_key = os.getenv("OPENAI_KEY")
+        temp_key = os.getenv("OPENAI_API_KEY")
         assert (
             api_key or temp_key
-        ), "You must provide an API key (api_key) or have OPENAI_KEY in the environment to access OpenAI GPT models"
+        ), "You must provide an API key (api_key) or have OPENAI_API_KEY in the environment to access OpenAI GPT models"
         # Need support for API key
         if not api_key:
             # use the key from environment variable.
