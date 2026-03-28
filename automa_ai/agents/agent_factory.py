@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from a2a.types import AgentCard
 from google.adk.models.lite_llm import LiteLlm
@@ -123,13 +123,13 @@ def resolve_chat_model(
 
 def _build_checkpointer(
     config: CheckpointerConfig | Dict[str, Any] | str | None,
-) -> Any:
+) -> tuple[Any, Callable[[], None] | None]:
     if config is None:
-        return MemorySaver()
+        return MemorySaver(), None
 
     resolved = CheckpointerConfig.from_value(config)
     if resolved.type == "default":
-        return MemorySaver()
+        return MemorySaver(), None
 
     try:
         from langgraph.checkpoint.redis import RedisSaver
@@ -138,11 +138,27 @@ def _build_checkpointer(
             "Redis checkpointer support requires 'langgraph-checkpoint-redis'."
         ) from exc
 
-    checkpointer = RedisSaver(redis_url=resolved.redis_url)
-    if hasattr(checkpointer, "setup"):
-        checkpointer.setup()
+    checkpointer: Any
+    cleanup: Callable[[], None] | None = None
+    if hasattr(RedisSaver, "from_conn_string"):
+        saver_or_ctx = RedisSaver.from_conn_string(resolved.redis_url)
+        if hasattr(saver_or_ctx, "__enter__") and hasattr(saver_or_ctx, "__exit__"):
+            checkpointer = saver_or_ctx.__enter__()
+            cleanup = lambda: saver_or_ctx.__exit__(None, None, None)
+        else:
+            checkpointer = saver_or_ctx
+    else:
+        checkpointer = RedisSaver(redis_url=resolved.redis_url)
 
-    return checkpointer
+    try:
+        if hasattr(checkpointer, "setup"):
+            checkpointer.setup()
+    except Exception:
+        if cleanup is not None:
+            cleanup()
+        raise
+
+    return checkpointer, cleanup
 
 
 class AgentFactory:
@@ -284,6 +300,9 @@ class AgentFactory:
                 mcp_servers=mcp_servers,
             )
         elif self.agent_type == GenericAgentType.LANGGRAPHCHAT:
+            checkpointer, checkpointer_cleanup = _build_checkpointer(
+                self.checkpointer_config
+            )
             return GenericLangGraphChatAgent(
                 agent_name=self.card.name,
                 description=self.card.description,
@@ -299,7 +318,8 @@ class AgentFactory:
                 subagents=self.subagent_config if self.subagent_config else None,
                 skills_manager=skill_manager,
                 default_tools=built_tool_specs,
-                checkpointer=_build_checkpointer(self.checkpointer_config),
+                checkpointer=checkpointer,
+                checkpointer_cleanup=checkpointer_cleanup,
                 blackboard_store=blackboard_store,
                 blackboard_schema_name=blackboard_schema_name,
                 blackboard_schema_version=blackboard_schema_version,

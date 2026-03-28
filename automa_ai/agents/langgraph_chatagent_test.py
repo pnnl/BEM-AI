@@ -54,6 +54,23 @@ def test_agent_uses_injected_checkpointer():
     assert agent.checkpointer is sentinel
 
 
+def test_agent_close_runs_checkpointer_cleanup_once():
+    calls: list[str] = []
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        checkpointer_cleanup=lambda: calls.append("closed"),
+    )
+
+    agent.close()
+    agent.close()
+
+    assert calls == ["closed"]
+
+
 @pytest.mark.asyncio
 async def test_build_stream_inputs_includes_context_and_memory():
     agent = build_agent(retriever=DummyRetriever(), memory_manager=DummyMemoryManager())

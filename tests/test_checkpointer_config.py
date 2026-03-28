@@ -41,22 +41,69 @@ def test_build_checkpointer_uses_redis_saver_and_calls_setup(monkeypatch) -> Non
 
     monkeypatch.setitem(sys.modules, "langgraph.checkpoint.redis", fake_module)
 
-    checkpointer = agent_factory._build_checkpointer(
+    checkpointer, cleanup = agent_factory._build_checkpointer(
         {"type": "redis", "redis_url": "localhost:6379"}
     )
 
     assert isinstance(checkpointer, FakeRedisSaver)
     assert checkpointer.redis_url == "redis://localhost:6379"
     assert checkpointer.setup_called is True
+    assert cleanup is None
+
+
+def test_build_checkpointer_supports_context_manager_result(monkeypatch) -> None:
+    class FakeRedisSaver:
+        def __init__(self, redis_url: str) -> None:
+            self.redis_url = redis_url
+            self.setup_called = False
+
+        def setup(self) -> None:
+            self.setup_called = True
+
+    class FakeContextManager:
+        def __init__(self) -> None:
+            self.saver = FakeRedisSaver("redis://localhost:6379")
+            self.exited = False
+
+        def __enter__(self) -> FakeRedisSaver:
+            return self.saver
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            self.exited = True
+
+    fake_ctx = FakeContextManager()
+    fake_module = SimpleNamespace(
+        RedisSaver=SimpleNamespace(from_conn_string=lambda redis_url: fake_ctx)
+    )
+    import sys
+
+    monkeypatch.setitem(sys.modules, "langgraph.checkpoint.redis", fake_module)
+
+    checkpointer, cleanup = agent_factory._build_checkpointer(
+        {"type": "redis", "redis_url": "localhost:6379"}
+    )
+
+    assert checkpointer is fake_ctx.saver
+    assert checkpointer.setup_called is True
+    assert cleanup is not None
+
+    cleanup()
+
+    assert fake_ctx.exited is True
 
 
 def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> None:
     sentinel = object()
+    sentinel_cleanup = lambda: None
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(agent_factory, "load_tool_plugins", lambda: None)
     monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args: object())
-    monkeypatch.setattr(agent_factory, "_build_checkpointer", lambda config: sentinel)
+    monkeypatch.setattr(
+        agent_factory,
+        "_build_checkpointer",
+        lambda config: (sentinel, sentinel_cleanup),
+    )
 
     class DummyLangGraphChatAgent:
         def __init__(self, **kwargs) -> None:
@@ -78,3 +125,4 @@ def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> Non
     factory()
 
     assert captured["checkpointer"] is sentinel
+    assert captured["checkpointer_cleanup"] is sentinel_cleanup

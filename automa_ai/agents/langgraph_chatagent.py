@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import logging
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
@@ -57,6 +58,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         memory_manager: DefaultMemoryManager = None,
         default_tools: list[ToolSpec] | None = None,
         checkpointer: Any | None = None,
+        checkpointer_cleanup: Callable[[], None] | None = None,
         blackboard_store: BlackboardStore | None = None,
         blackboard_schema_name: str | None = None,
         blackboard_schema_version: str | None = None,
@@ -84,6 +86,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.metrics = None
         self.default_tool_specs = default_tools
         self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
+        self._checkpointer_cleanup = checkpointer_cleanup
+        self._checkpointer_closed = False
         self.blackboard_store = blackboard_store
         self.blackboard_schema_name = blackboard_schema_name
         self.blackboard_schema_version = blackboard_schema_version
@@ -94,9 +98,25 @@ class GenericLangGraphChatAgent(BaseAgent):
             self.metrics = MetricsCollector()
         self.subagents = subagents
 
+        # register close mechanism when shutdown if checkpointer has a cleanup function.
+        if self._checkpointer_cleanup is not None:
+            atexit.register(self.close)
+
         # Memory queue - object scope
         self._memory_write_queue: asyncio.Queue = asyncio.Queue()
         self._memory_writer_task: asyncio.Task | None = None
+
+    def close(self) -> None:
+        # Close agent behavior.
+        # checkpointer close.
+        if self._checkpointer_closed:
+            return
+        if self._checkpointer_cleanup is not None:
+            try:
+                self._checkpointer_cleanup()
+            except Exception:
+                logger.exception("Failed to close checkpointer cleanly.")
+        self._checkpointer_closed = True
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
