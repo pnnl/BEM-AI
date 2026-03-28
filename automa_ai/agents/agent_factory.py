@@ -138,27 +138,15 @@ def _build_checkpointer(
             "Redis checkpointer support requires 'langgraph-checkpoint-redis'."
         ) from exc
 
-    checkpointer: Any
-    cleanup: Callable[[], None] | None = None
-    if hasattr(RedisSaver, "from_conn_string"):
-        saver_or_ctx = RedisSaver.from_conn_string(resolved.redis_url)
-        if hasattr(saver_or_ctx, "__enter__") and hasattr(saver_or_ctx, "__exit__"):
-            checkpointer = saver_or_ctx.__enter__()
-            cleanup = lambda: saver_or_ctx.__exit__(None, None, None)
-        else:
-            checkpointer = saver_or_ctx
-    else:
-        checkpointer = RedisSaver(redis_url=resolved.redis_url)
+    checkpointer = RedisSaver(redis_url=resolved.redis_url)
 
     try:
         if hasattr(checkpointer, "setup"):
             checkpointer.setup()
     except Exception:
-        if cleanup is not None:
-            cleanup()
         raise
 
-    return checkpointer, cleanup
+    return checkpointer, None
 
 
 class AgentFactory:
