@@ -16,6 +16,7 @@ from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.response_parser import extract_and_parse_json
 from automa_ai.common.setup_logging import setup_file_logger
 from automa_ai.common.types import ServerConfig
+from automa_ai.common.utils import map_server_config_to_mcp_connection
 from automa_ai.metrics.collector import MetricsCollector
 from automa_ai.metrics.extractor import extract_metrics_from_chunk
 
@@ -68,11 +69,9 @@ class GenericLangGraphReactAgent(BaseAgent):
 
             self.client = MultiServerMCPClient(
                 {
-                    server_name: {
-                        "url": f"{self.mcp_servers[server_name].url}/sse" if self.mcp_servers[
-                                                                                 server_name].transport == "sse" else f"{self.mcp_servers[server_name].url}/mcp",
-                        "transport": self.mcp_servers[server_name].transport,
-                    }
+                    server_name: map_server_config_to_mcp_connection(
+                        self.mcp_servers[server_name]
+                    )
                     for server_name in self.mcp_servers
                 }
             )
@@ -372,4 +371,3 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 "require_user_input": False,
                                 "content": f"Tool call {tool_msg.name} has no content return or failed. check logs.",
                             }
-

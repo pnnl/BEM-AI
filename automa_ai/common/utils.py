@@ -45,8 +45,28 @@ def map_mcp_config_to_server_config(mcp_config: MCPServerConfig) -> ServerConfig
         host=mcp_config.host,
         port=mcp_config.port,
         transport=mcp_config.transport,
-        url=map_to_url(mcp_config.host, mcp_config.port)
+        url=map_to_url(mcp_config.host, mcp_config.port),
+        timeout=mcp_config.timeout,
+        sse_read_timeout=mcp_config.sse_read_timeout,
     )
+
+
+def map_server_config_to_mcp_connection(server_config: ServerConfig) -> dict:
+    """Map server config into a MultiServerMCPClient connection config."""
+    connection = {
+        "url": (
+            f"{server_config.url}/sse"
+            if server_config.transport == "sse"
+            else f"{server_config.url}/mcp"
+        ),
+        "transport": server_config.transport,
+    }
+    if server_config.transport != "stdio":
+        if server_config.timeout is not None:
+            connection["timeout"] = server_config.timeout
+        if server_config.sse_read_timeout is not None:
+            connection["sse_read_timeout"] = server_config.sse_read_timeout
+    return connection
 
 def map_to_url(hostname, port, protocol="http"):
     """

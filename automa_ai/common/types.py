@@ -38,6 +38,8 @@ class ServerConfig(BaseModel):
     port: int
     transport: Literal["stdio", "sse", "streamable-http"]
     url: str
+    timeout: float | None = None
+    sse_read_timeout: float | None = None
 
 
 class PlannerTask(BaseModel):

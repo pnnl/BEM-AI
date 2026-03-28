@@ -21,6 +21,8 @@ class MCPServerConfig:
     port: int
     serve: callable
     transport: Literal["stdio", "sse", "streamable-http"]
+    timeout: float | None = None
+    sse_read_timeout: float | None = None
     agent_cards_dir: str = "/automa_ai"
 
 
