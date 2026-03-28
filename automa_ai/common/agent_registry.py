@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import sys
 from multiprocessing import Process
@@ -19,14 +20,17 @@ from automa_ai.common.setup_logging import _init_child_logging
 
 logger = logging.getLogger(__name__)
 
+
 def _child_entrypoint(run_fn, logging_config):
     _init_child_logging(logging_config)
 
     # Load plugins BEFORE any agent is created
     from automa_ai.common.utils import load_memory_store_plugins, load_tool_plugins
+
     load_memory_store_plugins()
     load_tool_plugins()
     run_fn()
+
 
 def _normalize_base_path(path: str | None) -> str | None:
     if not path:
@@ -52,6 +56,19 @@ def _parse_agent_url(url: str):
     return parsed
 
 
+def _close_agent(agent: BaseAgent) -> None:
+    close_fn = getattr(agent, "close", None)
+    if not callable(close_fn):
+        return
+
+    try:
+        result = close_fn()
+        if inspect.isawaitable(result):
+            asyncio.run(result)
+    except Exception:
+        logger.exception("Failed to close agent %s cleanly.", agent.agent_name)
+
+
 class A2AAgentServer:
     def __init__(
         self,
@@ -73,6 +90,7 @@ class A2AAgentServer:
         self.shutdown_event = asyncio.Event()
 
     def run(self):
+        agent = None
         try:
             logger.info("Building the agent....")
             agent = self.agent_builder()
@@ -85,7 +103,8 @@ class A2AAgentServer:
 
             # Create server
             server = A2AStarletteApplication(
-                agent_card=self.card, http_handler=request_handler,
+                agent_card=self.card,
+                http_handler=request_handler,
             )
 
             app = server.build()
@@ -94,20 +113,19 @@ class A2AAgentServer:
                 from starlette.routing import Mount
 
                 app = Starlette(routes=[Mount(self.base_url_path, app=app)])
-                logger.info(
-                    "Mounting A2A server at base path %s", self.base_url_path
-                )
+                logger.info("Mounting A2A server at base path %s", self.base_url_path)
 
             logger.info(f"Starting server on {self.host_name}:{self.port}")
 
             # Run the server
-            uvicorn.run(
-                app, host=self.host_name, port=self.port, log_level="info"
-            )
+            uvicorn.run(app, host=self.host_name, port=self.port, log_level="info")
             logger.info("Uvicorn server exited")
         except Exception as e:
             logger.error(f"An error occurred during server startup: {e}")
             sys.exit(1)
+        finally:
+            if agent is not None:
+                _close_agent(agent)
 
 
 class A2AServerManager:
