@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class EmbeddingConfig(BaseModel):
-    provider: Literal["ollama", "azure-openai", "openai", "gemini"]
+    provider: Literal["ollama", "azure-openai", "openai"]
     model: str | None = None
     api_key: str | None = None
     api_version: str | None = None
