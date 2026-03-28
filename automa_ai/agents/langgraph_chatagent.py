@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import logging
 import os
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 def _build_checkpointer():
     redis_server = os.getenv("REDIS_SERVER")
     if not redis_server:
-        return MemorySaver()
+        return MemorySaver(), None
 
     redis_url = redis_server
     if "://" not in redis_url:
@@ -48,22 +49,22 @@ def _build_checkpointer():
             "REDIS_SERVER is set but Redis checkpointer dependencies are not available. "
             "Falling back to in-memory checkpointer."
         )
-        return MemorySaver()
+        return MemorySaver(), None
 
     try:
         if hasattr(RedisSaver, "from_conn_string"):
-            return RedisSaver.from_conn_string(redis_url)
-        return RedisSaver(redis_url)
+            saver_or_ctx = RedisSaver.from_conn_string(redis_url)
+            if hasattr(saver_or_ctx, "__enter__") and hasattr(saver_or_ctx, "__exit__"):
+                return saver_or_ctx.__enter__(), saver_or_ctx
+            return saver_or_ctx, None
+        return RedisSaver(redis_url), None
     except Exception:
         logger.exception(
             "Failed to initialize Redis checkpointer from REDIS_SERVER='%s'. "
             "Falling back to in-memory checkpointer.",
             redis_server,
         )
-        return MemorySaver()
-
-
-checkpointer = _build_checkpointer()
+        return MemorySaver(), None
 
 
 class GenericLangGraphChatAgent(BaseAgent):
@@ -117,10 +118,28 @@ class GenericLangGraphChatAgent(BaseAgent):
         if enable_metrics:
             self.metrics = MetricsCollector()
         self.subagents = subagents
+        self._checkpointer, self._checkpointer_context = _build_checkpointer()
+        self._checkpointer_closed = False
+        atexit.register(self.close)
 
         # Memory queue - object scope
         self._memory_write_queue: asyncio.Queue = asyncio.Queue()
         self._memory_writer_task: asyncio.Task | None = None
+
+    def close(self) -> None:
+        if self._checkpointer_closed:
+            return
+        if self._checkpointer_context is not None:
+            try:
+                self._checkpointer_context.__exit__(None, None, None)
+            except Exception:
+                logger.exception("Failed to close Redis checkpointer context cleanly.")
+            finally:
+                self._checkpointer_context = None
+        self._checkpointer_closed = True
+
+    def __del__(self):
+        self.close()
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
@@ -206,7 +225,7 @@ class GenericLangGraphChatAgent(BaseAgent):
 
         self.graph = create_agent(
             self.model,
-            checkpointer=checkpointer,
+            checkpointer=self._checkpointer,
             system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
