@@ -153,14 +153,46 @@ See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
 `LANGGRAPHCHAT` agents can also be configured with an explicit checkpointer backend through `AgentFactory`.
 The default backend is in-memory. Redis is opt-in and requires a connection URL.
 
+There are two Redis backends:
+
+- `redis_plain`: Uses only core Redis commands. Choose this for standard Redis-compatible deployments, including typical Amazon ElastiCache deployments that do not expose RediSearch and RedisJSON.
+- `redis_stack`: Uses LangGraph's Redis saver and requires both RediSearch and RedisJSON support. Choose this only when your Redis deployment supports commands such as `FT._LIST` and `JSON.GET`.
+
+Use `type: default` to force the in-memory saver explicitly.
+
+#### `redis_plain`
+
 ```yaml
 checkpointer:
-  type: redis
+  type: redis_plain
+  redis_url: redis://localhost:6379
+```
+
+`redis_plain` is intended for deployments where you want Redis-backed checkpoint persistence without Redis module dependencies.
+This is the safest choice for plain ElastiCache Redis/Valkey deployments.
+
+#### `redis_stack`
+
+```yaml
+checkpointer:
+  type: redis_stack
   redis_url: redis://localhost:6379
 ```
 
 Then pass this to `AgentFactory(..., checkpointer_config=checkpointer)`.
-Use `type: default` to force the in-memory saver explicitly.
+
+At startup, AUTOMA-AI validates that the configured Redis server supports:
+
+- `FT._LIST` for RediSearch
+- `JSON.GET` for RedisJSON
+
+If either command is unavailable, startup fails with a clear error and tells you to switch to `redis_plain`.
+
+#### Choosing the backend
+
+- Choose `redis_plain` when your deployment target is standard Redis or ElastiCache and you do not specifically need Redis Stack modules.
+- Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
+- Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
 
 ### A2A Server Base Path
 

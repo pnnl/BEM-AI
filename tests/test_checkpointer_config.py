@@ -7,17 +7,19 @@ from automa_ai.agents import agent_factory
 from automa_ai.config import CheckpointerConfig
 
 
-def test_checkpointer_config_normalizes_redis_url() -> None:
+@pytest.mark.parametrize("checkpointer_type", ["redis_plain", "redis_stack"])
+def test_checkpointer_config_normalizes_redis_url(checkpointer_type: str) -> None:
     cfg = CheckpointerConfig.from_value(
-        {"type": "redis", "redis_url": "localhost:6379"}
+        {"type": checkpointer_type, "redis_url": "localhost:6379"}
     )
 
     assert cfg.redis_url == "redis://localhost:6379"
 
 
-def test_checkpointer_config_requires_redis_url() -> None:
+@pytest.mark.parametrize("checkpointer_type", ["redis_plain", "redis_stack"])
+def test_checkpointer_config_requires_redis_url(checkpointer_type: str) -> None:
     with pytest.raises(ValueError, match="redis_url is required"):
-        CheckpointerConfig.from_value("redis")
+        CheckpointerConfig.from_value(checkpointer_type)
 
 
 def test_checkpointer_config_rejects_redis_url_for_default() -> None:
@@ -27,7 +29,33 @@ def test_checkpointer_config_rejects_redis_url_for_default() -> None:
         )
 
 
-def test_build_checkpointer_uses_redis_saver_and_calls_setup(monkeypatch) -> None:
+def test_build_checkpointer_uses_plain_redis_saver(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePlainRedisSaver:
+        def __init__(self, redis_url: str) -> None:
+            captured["redis_url"] = redis_url
+            self.setup_called = False
+
+        def setup(self) -> None:
+            self.setup_called = True
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    monkeypatch.setattr(agent_factory, "PlainRedisSaver", FakePlainRedisSaver)
+
+    checkpointer, cleanup = agent_factory._build_checkpointer(
+        {"type": "redis_plain", "redis_url": "localhost:6379"}
+    )
+
+    assert isinstance(checkpointer, FakePlainRedisSaver)
+    assert captured["redis_url"] == "redis://localhost:6379"
+    assert checkpointer.setup_called is True
+    assert cleanup == checkpointer.close
+
+
+def test_build_checkpointer_uses_redis_stack_saver_and_calls_setup(monkeypatch) -> None:
     class FakeRedisSaver:
         def __init__(self, redis_url: str) -> None:
             self.redis_url = redis_url
@@ -40,9 +68,10 @@ def test_build_checkpointer_uses_redis_saver_and_calls_setup(monkeypatch) -> Non
     import sys
 
     monkeypatch.setitem(sys.modules, "langgraph.checkpoint.redis", fake_module)
+    monkeypatch.setattr(agent_factory, "_validate_redis_stack_server", lambda url: None)
 
     checkpointer, cleanup = agent_factory._build_checkpointer(
-        {"type": "redis", "redis_url": "localhost:6379"}
+        {"type": "redis_stack", "redis_url": "localhost:6379"}
     )
 
     assert isinstance(checkpointer, FakeRedisSaver)
@@ -78,9 +107,10 @@ def test_build_checkpointer_supports_context_manager_result(monkeypatch) -> None
     import sys
 
     monkeypatch.setitem(sys.modules, "langgraph.checkpoint.redis", fake_module)
+    monkeypatch.setattr(agent_factory, "_validate_redis_stack_server", lambda url: None)
 
     checkpointer, cleanup = agent_factory._build_checkpointer(
-        {"type": "redis", "redis_url": "localhost:6379"}
+        {"type": "redis_stack", "redis_url": "localhost:6379"}
     )
 
     assert checkpointer is fake_ctx.saver
@@ -90,6 +120,19 @@ def test_build_checkpointer_supports_context_manager_result(monkeypatch) -> None
     cleanup()
 
     assert fake_ctx.exited is True
+
+
+def test_build_checkpointer_rejects_unsupported_redis_stack(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_factory,
+        "_validate_redis_stack_server",
+        lambda url: (_ for _ in ()).throw(ValueError("unsupported redis stack")),
+    )
+
+    with pytest.raises(ValueError, match="unsupported redis stack"):
+        agent_factory._build_checkpointer(
+            {"type": "redis_stack", "redis_url": "localhost:6379"}
+        )
 
 
 def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> None:
