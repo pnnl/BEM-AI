@@ -29,6 +29,7 @@ from automa_ai.config import CheckpointerConfig
 from automa_ai.config.blackboard import BlackboardConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
+from automa_ai.checkpoint import PlainRedisSaver
 
 logger = logging.getLogger(__name__)
 
@@ -131,22 +132,72 @@ def _build_checkpointer(
     if resolved.type == "default":
         return MemorySaver(), None
 
+    if resolved.type == "redis_plain":
+        checkpointer = PlainRedisSaver(redis_url=resolved.redis_url)
+        try:
+            checkpointer.setup()
+        except Exception:
+            checkpointer.close()
+            raise
+        return checkpointer, checkpointer.close
+
     try:
         from langgraph.checkpoint.redis import RedisSaver
     except ImportError as exc:
         raise ImportError(
-            "Redis checkpointer support requires 'langgraph-checkpoint-redis'."
+            "Redis stack checkpointer support requires 'langgraph-checkpoint-redis'."
         ) from exc
 
-    checkpointer = RedisSaver(redis_url=resolved.redis_url)
+    _validate_redis_stack_server(resolved.redis_url)
+
+    checkpointer: Any
+    cleanup: Callable[[], None] | None = None
+    if hasattr(RedisSaver, "from_conn_string"):
+        saver_or_ctx = RedisSaver.from_conn_string(resolved.redis_url)
+        if hasattr(saver_or_ctx, "__enter__") and hasattr(saver_or_ctx, "__exit__"):
+            checkpointer = saver_or_ctx.__enter__()
+            cleanup = lambda: saver_or_ctx.__exit__(None, None, None)
+        else:
+            checkpointer = saver_or_ctx
+    else:
+        checkpointer = RedisSaver(redis_url=resolved.redis_url)
 
     try:
         if hasattr(checkpointer, "setup"):
             checkpointer.setup()
     except Exception:
+        if cleanup is not None:
+            cleanup()
         raise
 
-    return checkpointer, None
+    return checkpointer, cleanup
+
+
+def _validate_redis_stack_server(redis_url: str) -> None:
+    from redis import Redis
+    from redis.exceptions import RedisError
+
+    client = Redis.from_url(redis_url)
+    try:
+        try:
+            client.execute_command("FT._LIST")
+        except RedisError as exc:
+            raise ValueError(
+                "Checkpointer type 'redis_stack' requires RediSearch support. "
+                "The configured Redis server rejected 'FT._LIST'. "
+                "Use 'redis_plain' for standard Redis deployments."
+            ) from exc
+
+        try:
+            client.execute_command("JSON.GET", "__automa_ai_checkpointer_probe__", "$")
+        except RedisError as exc:
+            raise ValueError(
+                "Checkpointer type 'redis_stack' requires RedisJSON support. "
+                "The configured Redis server rejected 'JSON.GET'. "
+                "Use 'redis_plain' for standard Redis deployments."
+            ) from exc
+    finally:
+        client.close()
 
 
 class AgentFactory:

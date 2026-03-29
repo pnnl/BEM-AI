@@ -24,9 +24,15 @@ def normalize_redis_url(redis_url: str) -> str:
 
 
 class CheckpointerConfig(BaseModel):
-    """Declarative checkpointer configuration for LangGraph chat agents."""
+    """Declarative checkpointer configuration for LangGraph chat agents.
 
-    type: Literal["default", "redis"] = Field(default="default")
+    Available backends:
+    - ``default``: in-memory LangGraph saver
+    - ``redis_plain``: AUTOMA-AI saver implemented with core Redis commands only
+    - ``redis_stack``: LangGraph Redis saver requiring RediSearch and RedisJSON
+    """
+
+    type: Literal["default", "redis_plain", "redis_stack"] = Field(default="default")
     redis_url: str | None = None
 
     @field_validator("redis_url")
@@ -38,14 +44,14 @@ class CheckpointerConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_type_specific_fields(self) -> "CheckpointerConfig":
-        if self.type == "redis":
+        if self.type in {"redis_plain", "redis_stack"}:
             if not self.redis_url:
                 raise ValueError(
-                    "redis_url is required when checkpointer type is 'redis'."
+                    "redis_url is required when checkpointer type is 'redis_plain' or 'redis_stack'."
                 )
         elif self.redis_url is not None:
             raise ValueError(
-                "redis_url is only supported when checkpointer type is 'redis'."
+                "redis_url is only supported when checkpointer type is 'redis_plain' or 'redis_stack'."
             )
         return self
 
