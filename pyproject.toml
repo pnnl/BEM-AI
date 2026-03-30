@@ -1,6 +1,6 @@
 [project]
 name = "automa_ai"
-version = "0.5.3"
+version = "0.5.8"
 description = "PNNL Auto Multi-Agent AI: Dynamic multi-agent system for building applications"
 requires-python = ">=3.12"
 authors = [{name = "Weili Xu", email = "weili.xu@pnnl.gov"}, {name = "Hanlong, Wan", email = "hanlong.wan@pnnl.gov"}]
@@ -27,12 +27,14 @@ dependencies = [
     "langchain-ollama>=1.0.1",
     "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
+    "langgraph-checkpoint-redis>=0.0.4",
     "litellm>=1.79.0",
     "networkx>=3.5",
     "pandas>=2.3.3",
     "pandas-stubs==2.3.3.251219",
     "pydantic>=2.12.3",
     "pyjwt>=2.11.0",
+    "redis>=6.4.0",
     "streamlit>=1.54.0",
     "uvicorn>=0.40.0",
     "multiprocessing-logging>=0.3.4",

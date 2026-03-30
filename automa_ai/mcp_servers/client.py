@@ -38,7 +38,7 @@ async def init_session(host, port, transport):
         url = f"http://{host}:{port}/sse"
         async with sse_client(url) as (read_stream, write_stream):
             async with ClientSession(
-                read_stream=read_stream, write_stream=write_stream
+                read_stream=read_stream, write_stream=write_stream,
             ) as session:
                 logger.debug("SSE ClientSession created, initializing...")
                 await session.initialize()
