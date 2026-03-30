@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 import warnings
 from dataclasses import dataclass
 from typing import Any

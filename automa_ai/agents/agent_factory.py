@@ -224,11 +224,31 @@ class AgentFactory:
             if not isinstance(bb_cfg, BlackboardConfig):
                 bb_cfg = BlackboardConfig.from_dict(bb_cfg)
             if bb_cfg.enabled:
-                store_config = BlackboardStoreConfig.model_validate(bb_cfg.store.model_dump())
-
-                blackboard_store = create_blackboard_store(
-                    store_config=store_config
-                )
+                store = bb_cfg.store
+                if store is None:
+                    raise ValueError(
+                        "Blackboard store configuration must be provided when the blackboard is enabled"
+                    )
+                if isinstance(store, BlackboardStore):
+                    # Store is already instantiated; use it directly.
+                    blackboard_store = store
+                else:
+                    if isinstance(store, BlackboardStoreConfig):
+                        store_config = store
+                    elif isinstance(store, dict):
+                        store_config = BlackboardStoreConfig.model_validate(store)
+                    elif hasattr(store, "model_dump"):
+                        # Backwards compatibility for Pydantic-based store configs.
+                        store_config = BlackboardStoreConfig.model_validate(
+                            store.model_dump()
+                        )
+                    else:
+                        raise TypeError(
+                            f"Unsupported type for blackboard store configuration: {type(store)!r}"
+                        )
+                    blackboard_store = create_blackboard_store(
+                        store_config=store_config
+                    )
 
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version

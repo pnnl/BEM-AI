@@ -5,7 +5,6 @@ from typing import Any, Literal
 
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardBackend, BlackboardDocument
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry
 from automa_ai.blackboard.store import BlackboardStore, BlackboardStoreConfig, bump_revision
 
 class S3JSONBlackboardStoreConfig(BlackboardStoreConfig):

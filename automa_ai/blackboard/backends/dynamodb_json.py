@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
 from automa_ai.blackboard.models import BlackboardBackend, BlackboardDocument
-from automa_ai.blackboard.schema import BlackboardSchemaRegistry
 from automa_ai.blackboard.store import BlackboardStore, bump_revision, BlackboardStoreConfig
 
 class DynamoDBJSONBlackboardStoreConfig(BlackboardStoreConfig):
@@ -17,7 +16,7 @@ class DynamoDBJSONBlackboardStore(BlackboardStore):
 
     This class expects that a DynamoDB table exists with name `config.dynamodb_table_name`
     """
-    _config_class: DynamoDBJSONBlackboardStoreConfig
+    _config_class = DynamoDBJSONBlackboardStoreConfig
 
     def __init__(self, config: DynamoDBJSONBlackboardStoreConfig, dynamodb_table=None):
         super().__init__(config=config)
