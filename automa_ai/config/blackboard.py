@@ -14,7 +14,7 @@ class BlackboardConfig(BaseModel):
     }
 
     enabled: bool = False
-    store: BlackboardStore | BlackboardStoreConfig | dict | None = None
+    store: BlackboardStoreConfig | dict | None = None
     schema_name: str
     schema_version: str
     schema: dict[str, Any] | None = None

@@ -18,7 +18,9 @@ from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.blackboard.store import BlackboardStore, create_blackboard_store, BlackboardStoreConfig
+from automa_ai.blackboard.errors import SchemaValidationError
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import create_blackboard_store, BlackboardStoreConfig
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
@@ -314,26 +316,22 @@ class AgentFactory:
                     raise ValueError(
                         "Blackboard store configuration must be provided when the blackboard is enabled"
                     )
-                if isinstance(store, BlackboardStore):
-                    # Store is already instantiated; use it directly.
-                    blackboard_store = store
-                else:
-                    if isinstance(store, BlackboardStoreConfig):
-                        store_config = store
-                    elif isinstance(store, dict):
-                        store_config = BlackboardStoreConfig.model_validate(store)
-                    elif hasattr(store, "model_dump"):
-                        # Backwards compatibility for Pydantic-based store configs.
-                        store_config = BlackboardStoreConfig.model_validate(
-                            store.model_dump()
-                        )
-                    else:
-                        raise TypeError(
-                            f"Unsupported type for blackboard store configuration: {type(store)!r}"
-                        )
-                    blackboard_store = create_blackboard_store(
-                        store_config=store_config
+                elif isinstance(store, BlackboardStoreConfig):
+                    store_config = store
+                elif isinstance(store, dict):
+                    store_config = BlackboardStoreConfig.model_validate(store)
+                elif hasattr(store, "model_dump"):
+                    # Backwards compatibility for Pydantic-based store configs.
+                    store_config = BlackboardStoreConfig.model_validate(
+                        store.model_dump()
                     )
+                else:
+                    raise TypeError(
+                        f"Unsupported type for blackboard store configuration: {type(store)!r}"
+                    )
+                blackboard_store = create_blackboard_store(
+                    store_config=store_config
+                )
 
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version

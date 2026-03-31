@@ -287,9 +287,10 @@ def test_backward_compatibility_with_blackboard_config(tmp_path: Path):
 
     # The migrate_old_format validator should have created config.store
     assert config.store is not None
-    assert isinstance(config.store, dict)
-    assert config.store["backend"] == "local_json"
-    assert config.store["base_dir"] == str(tmp_path)
+    print(type(config.store))
+    assert isinstance(config.store, BlackboardStoreConfig)
+    assert config.store.backend == "local_json"
+    assert config.store.base_dir == str(tmp_path)
 
     # Instantiate store directly using BlackboardConfig (backward compatibility)
     store = LocalJSONBlackboardStore(config)

@@ -224,8 +224,6 @@ class BlackboardStore(ABC):
             if config.store is None:
                 raise ValueError("BlackboardConfig.store must be set")
             store_config = config.store
-            if isinstance(store_config, BlackboardStore):
-                raise ValueError("BlackboardConfig.store cannot be an already-instantiated BlackboardStore")
             config = store_config
 
         if isinstance(config, dict):
