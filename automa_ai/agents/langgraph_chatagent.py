@@ -107,6 +107,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._memory_write_queue: asyncio.Queue = asyncio.Queue()
         self._memory_writer_task: asyncio.Task | None = None
 
+    def _checkpoint_thread_id(self, session_id: str) -> str:
+        return f"{self.agent_name}:{session_id}"
+
     def close(self) -> None:
         # Close agent behavior.
         # checkpointer close.
@@ -220,7 +223,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         )
 
     async def invoke(self, query, session_id: str) -> Any:
-        config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": self._checkpoint_thread_id(session_id)}}
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
 
@@ -264,7 +267,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                 print(self.metrics.summary_for_query(self.metrics.current_query_id))
             self.metrics.start_query(task_id)
         inputs = await self._build_stream_inputs(query, session_id)
-        config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": self._checkpoint_thread_id(session_id)}}
         logger.info(
             f"Running planner agent stream for session {session_id} {task_id} with input {query}"
         )
