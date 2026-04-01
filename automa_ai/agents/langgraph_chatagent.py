@@ -529,7 +529,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         if event.metadata and event.metadata.get("final"):
             content_str += "(final) "
         if isinstance(event.content, (dict, list)):
-            content_str += json.dumps(event.content, ensure_ascii=False)
+            content_str += json.dumps(event.content)
         else:
             content_str += str(event.content)
         return content_str
