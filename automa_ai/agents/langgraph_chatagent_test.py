@@ -72,6 +72,27 @@ def test_agent_close_runs_checkpointer_cleanup_once():
 
 
 @pytest.mark.asyncio
+async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
+    captured: dict = {}
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            captured["payload"] = payload
+            captured["config"] = config
+            return {"ok": True}
+
+    agent = build_agent()
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke("hello", "session-1")
+
+    assert result == {"ok": True}
+    assert captured["config"] == {
+        "configurable": {"thread_id": "test-agent:session-1"}
+    }
+
+
+@pytest.mark.asyncio
 async def test_build_stream_inputs_includes_context_and_memory():
     agent = build_agent(retriever=DummyRetriever(), memory_manager=DummyMemoryManager())
     inputs = await agent._build_stream_inputs("hello", "session-1")
