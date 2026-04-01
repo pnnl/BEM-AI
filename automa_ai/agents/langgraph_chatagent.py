@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import json
 import logging
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
@@ -527,7 +528,10 @@ class GenericLangGraphChatAgent(BaseAgent):
         content_str = ""
         if event.metadata and event.metadata.get("final"):
             content_str += "(final) "
-        content_str += event.content
+        if isinstance(event.content, (dict, list)):
+            content_str += json.dumps(event.content)
+        else:
+            content_str += str(event.content)
         return content_str
 
     @staticmethod
