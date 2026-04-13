@@ -30,7 +30,6 @@ class ToolRegistry:
 
 
 DEFAULT_TOOL_REGISTRY = ToolRegistry()
-FUNCTION_REGISTRY = {}
 
 
 def build_langchain_tools(
