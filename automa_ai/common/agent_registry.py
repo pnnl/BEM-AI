@@ -77,7 +77,6 @@ class A2AAgentServer:
         log_dir: str = "./logs",
         base_url_path: str | None = None,
         health_check_path: str = "/health",
-        enable_health_check: bool = True,
     ):
         self.agent_builder = agent_builder
         self.card = card
@@ -91,7 +90,6 @@ class A2AAgentServer:
         self.server: Optional[uvicorn.Server] = None
         self.shutdown_event = asyncio.Event()
         self.health_check_path = health_check_path
-        self.enable_health_check = enable_health_check
         self._agent: Optional[BaseAgent] = None
 
     def _build_health_response(self) -> dict:
@@ -120,26 +118,23 @@ class A2AAgentServer:
             )
 
             app = server.build()
-            
-            if self.enable_health_check or self.base_url_path:
-                from starlette.applications import Starlette
-                from starlette.routing import Mount, Route
 
-                routes = []
+            # Always add health check endpoint and handle base path if specified
+            from starlette.applications import Starlette
+            from starlette.routing import Mount, Route
+            from starlette.responses import JSONResponse
 
-                if self.enable_health_check:
-                    from starlette.responses import JSONResponse
+            async def health_check(request):
+                return JSONResponse(self._build_health_response())
 
-                    async def health_check(request):
-                        return JSONResponse(self._build_health_response())
+            routes = [
+                Route(self.health_check_path, health_check),
+                Mount(self.base_url_path or "/", app=app),
+            ]
+            app = Starlette(routes=routes)
 
-                    routes.append(Route(self.health_check_path, health_check))
-
-                routes.append(Mount(self.base_url_path or "/", app=app))
-                app = Starlette(routes=routes)
-
-                if self.base_url_path:
-                    logger.info("Mounting A2A server at base path %s", self.base_url_path)
+            if self.base_url_path:
+                logger.info("Mounting A2A server at base path %s", self.base_url_path)
 
             logger.info(f"Starting server on {self.host_name}:{self.port}")
 
