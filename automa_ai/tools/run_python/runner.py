@@ -40,19 +40,17 @@ class LocalSubprocessRunner:
 
         with tempfile.TemporaryDirectory(prefix="run_python_") as tmp:
             tmp_root = Path(tmp)
+            copied_inputs: set[str] = set()
             for rel_path in input_files:
                 src = _resolve_workspace_file(workspace_root, rel_path)
                 dest = _resolve_temp_file(tmp_root, rel_path)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
+                copied_inputs.add(str(dest.relative_to(tmp_root)))
 
             script = tmp_root / "__run_python__.py"
             script.write_text(code, encoding="utf-8")
-            env = {
-                "PYTHONNOUSERSITE": "1",
-                "MPLBACKEND": "Agg",
-                "PATH": os.environ.get("PATH", ""),
-            }
+            env = _build_subprocess_env()
 
             process = await asyncio.create_subprocess_exec(
                 self.config.python_executable,
@@ -89,6 +87,7 @@ class LocalSubprocessRunner:
                 max_artifacts=self.config.max_artifacts,
                 max_artifact_bytes=self.config.max_artifact_bytes,
                 warnings=warnings,
+                excluded_paths=copied_inputs,
             )
 
             return RunResult(
@@ -107,7 +106,11 @@ def _collect_artifacts(
     max_artifacts: int,
     max_artifact_bytes: int,
     warnings: list[str],
+    excluded_paths: set[str],
 ) -> list[dict[str, object]]:
+    if max_artifacts == 0:
+        return []
+
     results: list[dict[str, object]] = []
     candidates: list[Path] = []
 
@@ -120,8 +123,12 @@ def _collect_artifacts(
                 warnings.append(f"Expected output was not found: {rel}")
     else:
         for path in root.rglob("*"):
-            if path.is_file() and path.name != "__run_python__.py":
-                candidates.append(path)
+            if not path.is_file() or path.name == "__run_python__.py":
+                continue
+            rel_path = str(path.relative_to(root))
+            if rel_path in excluded_paths:
+                continue
+            candidates.append(path)
 
     for path in candidates:
         if len(results) >= max_artifacts:
@@ -164,3 +171,27 @@ def _truncate(value: str, max_chars: int, label: str, warnings: list[str]) -> st
         return value
     warnings.append(f"{label} was truncated to {max_chars} characters.")
     return value[:max_chars]
+
+
+def _build_subprocess_env() -> dict[str, str]:
+    """Build a minimal but platform-safe environment for Python subprocesses."""
+    allowed = {
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "TMP",
+        "TEMP",
+        "HOME",
+        "USERPROFILE",
+        "LANG",
+        "LC_ALL",
+    }
+    env: dict[str, str] = {}
+    for key in allowed:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    env["PYTHONNOUSERSITE"] = "1"
+    env["MPLBACKEND"] = "Agg"
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return env

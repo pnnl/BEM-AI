@@ -33,7 +33,8 @@ class RunPythonTool(BaseDefaultTool):
     def description(self) -> str:
         return (
             "Execute Python for calculations, structured-data parsing, charts/tables, "
-            "file transformations, and simulation preparation logic. No shell access."
+            "file transformations, and simulation preparation logic using a best-effort "
+            "sandbox policy. Not for untrusted code."
         )
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:

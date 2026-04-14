@@ -71,3 +71,4 @@ default_chroma = "automa_ai.memory.chroma_memory_store:ChromaVectorMemoryStore"
 
 [project.entry-points."automa_ai.tools"]
 web_search = "automa_ai.tools.web_search:build_web_search_tool"
+run_python = "automa_ai.tools.run_python:build_run_python_tool"

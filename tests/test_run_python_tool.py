@@ -5,7 +5,7 @@ import json
 import pytest
 
 from automa_ai.config.tools import ToolSpec
-from automa_ai.tools.registry import build_langchain_tools
+from automa_ai.tools import build_langchain_tools
 from automa_ai.tools.run_python.config import RunPythonToolConfig
 from automa_ai.tools.run_python.tool import RunPythonTool
 
@@ -95,3 +95,42 @@ async def test_run_python_policy_rejects_disallowed_import() -> None:
     assert result["success"] is False
     assert "Blocked import" in result["stderr"]
     assert "sandbox policy" in result["meta"]["warnings"][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_run_python_does_not_return_copied_inputs_as_artifacts(tmp_path) -> None:
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("seed", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": "print(open('input.txt', encoding='utf-8').read())",
+            "input_files": ["input.txt"],
+        }
+    )
+
+    assert result["success"] is True
+    assert result["artifacts"] == []
+
+
+@pytest.mark.asyncio
+async def test_run_python_disables_artifact_collection_when_max_artifacts_zero(
+    tmp_path,
+) -> None:
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate(
+            {"workspace_root": str(tmp_path), "max_artifacts": 0}
+        )
+    )
+    result = await tool.invoke(
+        {
+            "code": "open('result.txt', 'w', encoding='utf-8').write('ok')",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["artifacts"] == []
+    assert all("Artifact limit reached" not in w for w in result["meta"]["warnings"])

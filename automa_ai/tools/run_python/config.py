@@ -15,6 +15,7 @@ class RunPythonToolConfig(BaseModel):
     max_stdout_chars: int = Field(default=20_000, ge=100, le=500_000)
     max_stderr_chars: int = Field(default=20_000, ge=100, le=500_000)
     workspace_root: str | None = None
+    # This toggles import-level checks only and is not runtime network enforcement.
     allow_network: bool = False
     allowed_imports: list[str] = Field(default_factory=list)
     blocked_imports: list[str] = Field(

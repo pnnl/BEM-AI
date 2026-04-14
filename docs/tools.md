@@ -63,12 +63,13 @@ Configuration fields:
 - `timeout_s` (default `20`)
 - `max_stdout_chars`, `max_stderr_chars`
 - `workspace_root`
-- `allow_network`
+- `allow_network` (controls import-policy checks only; it is not runtime network isolation)
 - `allowed_imports`, `blocked_imports`
 - `max_artifacts`, `max_artifact_bytes`
 
 Sandbox limitations:
 - Runs Python only with a local subprocess runner.
+- Uses best-effort static policy checks; it is not a hardened sandbox for untrusted code.
 - Does not expose shell or bash execution.
 - Rejects blocked imports and known dangerous call patterns before execution.
 - Enforces timeout and output truncation.
