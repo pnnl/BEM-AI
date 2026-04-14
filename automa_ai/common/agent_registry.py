@@ -76,6 +76,7 @@ class A2AAgentServer:
         card: AgentCard,
         log_dir: str = "./logs",
         base_url_path: str | None = None,
+        health_check_path: str = "/health",
     ):
         self.agent_builder = agent_builder
         self.card = card
@@ -88,16 +89,25 @@ class A2AAgentServer:
         self.log_dir = log_dir
         self.server: Optional[uvicorn.Server] = None
         self.shutdown_event = asyncio.Event()
+        self.health_check_path = health_check_path
+        self._agent: Optional[BaseAgent] = None
+
+    def _build_health_response(self) -> dict:
+        """Override this to customize the health check response."""
+        return {
+            "status": "healthy" if self._agent is not None else "unhealthy",
+            "agent": self.name,
+        }
 
     def run(self):
-        agent = None
+        self._agent = None
         try:
             logger.info("Building the agent....")
-            agent = self.agent_builder()
-            logger.info(f"complete agent bootup for agent {agent.agent_name}....")
+            self._agent = self.agent_builder()
+            logger.info(f"complete agent bootup for agent {self._agent.agent_name}....")
             # Create client and request handler
             request_handler = DefaultRequestHandler(
-                agent_executor=GenericAgentExecutor(agent=agent),
+                agent_executor=GenericAgentExecutor(agent=self._agent),
                 task_store=InMemoryTaskStore(),
             )
 
@@ -108,11 +118,22 @@ class A2AAgentServer:
             )
 
             app = server.build()
-            if self.base_url_path:
-                from starlette.applications import Starlette
-                from starlette.routing import Mount
 
-                app = Starlette(routes=[Mount(self.base_url_path, app=app)])
+            # Always add health check endpoint and handle base path if specified
+            from starlette.applications import Starlette
+            from starlette.routing import Mount, Route
+            from starlette.responses import JSONResponse
+
+            async def health_check(request):
+                return JSONResponse(self._build_health_response())
+
+            routes = [
+                Route(self.health_check_path, health_check),
+                Mount(self.base_url_path or "/", app=app),
+            ]
+            app = Starlette(routes=routes)
+
+            if self.base_url_path:
                 logger.info("Mounting A2A server at base path %s", self.base_url_path)
 
             logger.info(f"Starting server on {self.host_name}:{self.port}")
@@ -124,8 +145,8 @@ class A2AAgentServer:
             logger.error(f"An error occurred during server startup: {e}")
             sys.exit(1)
         finally:
-            if agent is not None:
-                _close_agent(agent)
+            if self._agent is not None:
+                _close_agent(self._agent)
 
 
 class A2AServerManager:

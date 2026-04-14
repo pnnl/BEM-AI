@@ -86,3 +86,22 @@ def test_close_agent_supports_async_close():
     agent_registry._close_agent(DummyAgent())
 
     assert calls == ["closed"]
+
+def test_health_check_default_response():
+    card = _make_card("localhost:20000")
+    server = A2AAgentServer(lambda: None, card)
+    # Agent not built yet
+    assert server._build_health_response() == {
+        "status": "unhealthy",
+        "agent": "Test Agent",
+    }
+
+    class DummyAgent:
+        agent_name = "dummy"
+
+    server._agent = DummyAgent()
+    assert server._build_health_response() == {
+        "status": "healthy",
+        "agent": "Test Agent",
+    }
+    
