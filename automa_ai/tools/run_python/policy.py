@@ -12,8 +12,16 @@ class PolicyViolationError(ValueError):
 
 
 _BLOCKED_CALLS = {"__import__", "eval", "exec", "compile"}
-_BLOCKED_ATTRS = {"system", "popen", "Popen", "run", "call", "check_output", "check_call"}
-_BLOCKED_BASES = {"os", "subprocess"}
+_BLOCKED_ATTRS = {
+    "system",
+    "popen",
+    "Popen",
+    "run",
+    "call",
+    "check_output",
+    "check_call",
+    "import_module",
+}
 
 
 def validate_code_policy(code: str, config: RunPythonToolConfig) -> None:
@@ -36,17 +44,21 @@ def validate_code_policy(code: str, config: RunPythonToolConfig) -> None:
             if node.module:
                 _validate_import(node.module, blocked_imports, allowed_imports)
         elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_CALLS:
-                raise PolicyViolationError(f"Blocked function call: {node.func.id}")
-            if isinstance(node.func, ast.Attribute):
-                if (
-                    isinstance(node.func.value, ast.Name)
-                    and node.func.value.id in _BLOCKED_BASES
-                    and node.func.attr in _BLOCKED_ATTRS
-                ):
-                    raise PolicyViolationError(
-                        f"Blocked call pattern: {node.func.value.id}.{node.func.attr}"
-                    )
+            _validate_call(node)
+
+
+def _validate_call(node: ast.Call) -> None:
+    if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_CALLS:
+        raise PolicyViolationError(f"Blocked function call: {node.func.id}")
+
+    if isinstance(node.func, ast.Attribute) and node.func.attr in _BLOCKED_ATTRS:
+        raise PolicyViolationError(f"Blocked call pattern: *.{node.func.attr}")
+
+    if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+        if len(node.args) >= 2:
+            second = node.args[1]
+            if isinstance(second, ast.Constant) and second.value == "__import__":
+                raise PolicyViolationError("Blocked dynamic access to __import__.")
 
 
 def _validate_import(name: str, blocked: set[str], allowed: set[str]) -> None:

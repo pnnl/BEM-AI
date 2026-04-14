@@ -134,3 +134,51 @@ async def test_run_python_disables_artifact_collection_when_max_artifacts_zero(
     assert result["success"] is True
     assert result["artifacts"] == []
     assert all("Artifact limit reached" not in w for w in result["meta"]["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_run_python_returns_only_generated_outputs_without_expected(tmp_path) -> None:
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("seed", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": "open('output.txt', 'w', encoding='utf-8').write('ok')",
+            "input_files": ["input.txt"],
+        }
+    )
+
+    assert result["success"] is True
+    assert [a["path"] for a in result["artifacts"]] == ["output.txt"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_rejects_getattr_import_bypass() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke(
+        {"code": "getattr(__builtins__, '__import__')('os').system('echo unsafe')"}
+    )
+
+    assert result["success"] is False
+    assert "Blocked" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_invalid_input_file_returns_structured_error(tmp_path) -> None:
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": "print('x')",
+            "input_files": ["../outside.txt"],
+        }
+    )
+
+    assert result["success"] is False
+    assert result["exit_code"] == 1
+    assert "workspace_root" in result["stderr"]
+    assert "before Python process start" in result["meta"]["warnings"][0]

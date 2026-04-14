@@ -48,7 +48,7 @@ Output format:
 Input fields:
 - `code` (required)
 - `input_files` (default `[]`)
-- `expected_outputs` (default `[]`)
+- `expected_outputs` (default `[]`; if omitted, only files newly created/modified by execution are returned)
 - `timeout_s` (optional, capped by tool config)
 
 Output format:

@@ -40,16 +40,23 @@ class LocalSubprocessRunner:
 
         with tempfile.TemporaryDirectory(prefix="run_python_") as tmp:
             tmp_root = Path(tmp)
-            copied_inputs: set[str] = set()
             for rel_path in input_files:
                 src = _resolve_workspace_file(workspace_root, rel_path)
                 dest = _resolve_temp_file(tmp_root, rel_path)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
-                copied_inputs.add(str(dest.relative_to(tmp_root)))
+
+            baseline = _snapshot_workspace(tmp_root)
 
             script = tmp_root / "__run_python__.py"
-            script.write_text(code, encoding="utf-8")
+            script.write_text(
+                _build_wrapped_script(
+                    code=code,
+                    blocked_imports=self.config.blocked_imports,
+                    allow_network=self.config.allow_network,
+                ),
+                encoding="utf-8",
+            )
             env = _build_subprocess_env()
 
             process = await asyncio.create_subprocess_exec(
@@ -87,7 +94,7 @@ class LocalSubprocessRunner:
                 max_artifacts=self.config.max_artifacts,
                 max_artifact_bytes=self.config.max_artifact_bytes,
                 warnings=warnings,
-                excluded_paths=copied_inputs,
+                baseline=baseline,
             )
 
             return RunResult(
@@ -100,13 +107,23 @@ class LocalSubprocessRunner:
             )
 
 
+def _snapshot_workspace(root: Path) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        stat = path.stat()
+        snapshot[str(path.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+    return snapshot
+
+
 def _collect_artifacts(
     root: Path,
     expected_outputs: list[str],
     max_artifacts: int,
     max_artifact_bytes: int,
     warnings: list[str],
-    excluded_paths: set[str],
+    baseline: dict[str, tuple[int, int]],
 ) -> list[dict[str, object]]:
     if max_artifacts <= 0:
         return []
@@ -126,7 +143,9 @@ def _collect_artifacts(
             if not path.is_file() or path.name == "__run_python__.py":
                 continue
             rel_path = str(path.relative_to(root))
-            if rel_path in excluded_paths:
+            stat = path.stat()
+            current = (stat.st_size, stat.st_mtime_ns)
+            if rel_path in baseline and baseline[rel_path] == current:
                 continue
             candidates.append(path)
 
@@ -195,3 +214,40 @@ def _build_subprocess_env() -> dict[str, str]:
     env["MPLBACKEND"] = "Agg"
     env.setdefault("PYTHONIOENCODING", "utf-8")
     return env
+
+
+def _build_wrapped_script(
+    code: str,
+    blocked_imports: list[str],
+    allow_network: bool,
+) -> str:
+    blocked = sorted(set(blocked_imports))
+    return f"""
+import builtins
+import sys
+
+_BLOCKED_IMPORTS = {blocked!r}
+_ALLOW_NETWORK = {allow_network!r}
+_REAL_IMPORT = builtins.__import__
+
+
+def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split('.', 1)[0]
+    if root in _BLOCKED_IMPORTS:
+        raise ImportError(f"Blocked import: {{root}}")
+    return _REAL_IMPORT(name, globals, locals, fromlist, level)
+
+
+def _audit(event, args):
+    if event in {{'os.system', 'subprocess.Popen'}}:
+        raise RuntimeError(f"Blocked runtime operation: {{event}}")
+    if not _ALLOW_NETWORK and event.startswith('socket.'):
+        raise RuntimeError(f"Blocked runtime network operation: {{event}}")
+
+
+builtins.__import__ = _guarded_import
+sys.addaudithook(_audit)
+
+namespace = {{'__name__': '__main__', '__builtins__': builtins.__dict__}}
+exec(compile({code!r}, '<run_python>', 'exec'), namespace, namespace)
+""".lstrip()

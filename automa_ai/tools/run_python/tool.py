@@ -61,11 +61,25 @@ class RunPythonTool(BaseDefaultTool):
             }
 
         runner = LocalSubprocessRunner(cfg)
-        result = await runner.run(
-            code=args.code,
-            input_files=args.input_files,
-            expected_outputs=args.expected_outputs,
-        )
+        try:
+            result = await runner.run(
+                code=args.code,
+                input_files=args.input_files,
+                expected_outputs=args.expected_outputs,
+            )
+        except (ValueError, OSError) as exc:
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": str(exc),
+                "exit_code": 1,
+                "artifacts": [],
+                "meta": {
+                    "runner": cfg.runner,
+                    "warnings": ["Execution failed before Python process start."],
+                },
+            }
+
         return {
             "success": result.success,
             "stdout": result.stdout,
