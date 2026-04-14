@@ -108,7 +108,7 @@ def _collect_artifacts(
     warnings: list[str],
     excluded_paths: set[str],
 ) -> list[dict[str, object]]:
-    if max_artifacts == 0:
+    if max_artifacts <= 0:
         return []
 
     results: list[dict[str, object]] = []
