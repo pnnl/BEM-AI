@@ -182,3 +182,22 @@ async def test_run_python_invalid_input_file_returns_structured_error(tmp_path) 
     assert result["exit_code"] == 1
     assert "workspace_root" in result["stderr"]
     assert "before Python process start" in result["meta"]["warnings"][0]
+
+
+@pytest.mark.asyncio
+async def test_run_python_rejects_reserved_startup_filename(tmp_path) -> None:
+    reserved = tmp_path / "sitecustomize.py"
+    reserved.write_text("print('bad')", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": "print('ok')",
+            "input_files": ["sitecustomize.py"],
+        }
+    )
+
+    assert result["success"] is False
+    assert "Reserved input filename" in result["stderr"]

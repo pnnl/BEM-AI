@@ -72,6 +72,7 @@ Sandbox limitations:
 - Uses best-effort static policy checks; it is not a hardened sandbox for untrusted code.
 - Does not expose shell or bash execution.
 - Rejects blocked imports and known dangerous call patterns before execution.
+- Rejects reserved startup file names (`sitecustomize.py`, `usercustomize.py`, and `.pth`) in `input_files`.
 - Enforces timeout and output truncation.
 - Executes code in a temporary working directory and only returns files from that directory.
 

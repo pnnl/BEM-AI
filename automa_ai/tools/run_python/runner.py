@@ -12,6 +12,9 @@ from pathlib import Path
 
 from automa_ai.tools.run_python.config import RunPythonToolConfig
 
+_RESERVED_INPUT_FILENAMES = {"sitecustomize.py", "usercustomize.py"}
+_RESERVED_INPUT_SUFFIXES = {".pth"}
+
 
 @dataclass
 class RunResult:
@@ -41,6 +44,7 @@ class LocalSubprocessRunner:
         with tempfile.TemporaryDirectory(prefix="run_python_") as tmp:
             tmp_root = Path(tmp)
             for rel_path in input_files:
+                _validate_input_filename(rel_path)
                 src = _resolve_workspace_file(workspace_root, rel_path)
                 dest = _resolve_temp_file(tmp_root, rel_path)
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +171,14 @@ def _collect_artifacts(
             }
         )
     return results
+
+
+def _validate_input_filename(rel_path: str) -> None:
+    filename = Path(rel_path).name.lower()
+    if filename in _RESERVED_INPUT_FILENAMES:
+        raise ValueError(f"Reserved input filename is not allowed: {filename}")
+    if Path(filename).suffix.lower() in _RESERVED_INPUT_SUFFIXES:
+        raise ValueError(f"Reserved input file extension is not allowed: {filename}")
 
 
 def _resolve_workspace_file(workspace_root: Path, rel_path: str) -> Path:
