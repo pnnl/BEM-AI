@@ -57,7 +57,6 @@ Output format:
 - `meta`: `{runner, warnings}`
 
 Configuration fields:
-- `enabled` (default `true`)
 - `runner` (default `local_subprocess`)
 - `python_executable` (default `python`)
 - `timeout_s` (default `20`)
