@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 class RunPythonToolConfig(BaseModel):
     """Runtime configuration for the Python execution tool."""
 
-    enabled: bool = True
     runner: str = "local_subprocess"
     python_executable: str = "python"
     timeout_s: int = Field(default=20, ge=1, le=300)

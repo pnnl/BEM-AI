@@ -95,8 +95,6 @@ class RunPythonTool(BaseDefaultTool):
 
 def build_run_python_tool(config: dict[str, Any], _runtime_deps: Any) -> RunPythonTool:
     parsed = RunPythonToolConfig.model_validate(config)
-    if not parsed.enabled:
-        raise ValueError("run_python tool is disabled by configuration.")
     if parsed.runner != "local_subprocess":
         raise ValueError(f"Unsupported run_python runner: {parsed.runner}")
     return RunPythonTool(parsed)
