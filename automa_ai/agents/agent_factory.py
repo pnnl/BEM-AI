@@ -109,7 +109,15 @@ def resolve_chat_model(
             "GOOGLE_API_KEY"
         ), "You must add GOOGLE_API_KEY in the system environment."
         streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
-        max_retries = 2 if model_max_retries is None else model_max_retries
+        if model_max_retries is None:
+            max_retries = 2
+        else:
+            try:
+                max_retries = max(0, int(model_max_retries))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"model_max_retries must be a non-negative integer, got: {model_max_retries!r}"
+                ) from exc
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0,

@@ -347,7 +347,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                                 }
                                             )
                                             last_stream_text = stream_text
-                                elif ck.tool_calls:
+                                if ck.tool_calls:
                                     tool_activity_started = True
                                     tool_call_str = ""
                                     for tool_call in ck.tool_calls:
