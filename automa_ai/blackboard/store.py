@@ -179,6 +179,10 @@ class BlackboardStoreRegistry:
         """
         if not isinstance(store_cls, type):
             raise TypeError(f"store_cls must be a class, not {type(store_cls)}")
+        if not issubclass(store_cls, BlackboardStore):
+            raise TypeError(
+                f"store_cls must be a subclass of BlackboardStore, not {store_cls!r}"
+            )
 
         backend_key = backend.value if isinstance(backend, BlackboardBackend) else backend
         cls._stores[backend_key] = store_cls
