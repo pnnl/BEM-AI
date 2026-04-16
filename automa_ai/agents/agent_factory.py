@@ -18,7 +18,9 @@ from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.blackboard.store import create_blackboard_store
+from automa_ai.blackboard.errors import SchemaValidationError
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import create_blackboard_store, BlackboardStoreConfig
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
@@ -309,15 +311,52 @@ class AgentFactory:
             if not isinstance(bb_cfg, BlackboardConfig):
                 bb_cfg = BlackboardConfig.from_dict(bb_cfg)
             if bb_cfg.enabled:
-                blackboard_store = create_blackboard_store(bb_cfg)
+                store = bb_cfg.store
+                if store is None:
+                    raise ValueError(
+                        "Blackboard store configuration must be provided when the blackboard is enabled"
+                    )
+                elif isinstance(store, BlackboardStoreConfig):
+                    store_config = store
+                elif isinstance(store, dict):
+                    store_config = BlackboardStoreConfig.model_validate(store)
+                elif hasattr(store, "model_dump"):
+                    # Backwards compatibility for Pydantic-based store configs.
+                    store_config = BlackboardStoreConfig.model_validate(
+                        store.model_dump()
+                    )
+                else:
+                    raise TypeError(
+                        f"Unsupported type for blackboard store configuration: {type(store)!r}"
+                    )
+                blackboard_store = create_blackboard_store(
+                    store_config=store_config
+                )
+
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version
                 blackboard_initial_data = bb_cfg.initial_data
-                blackboard_contract = build_blackboard_contract(
-                    blackboard_store.registry.resolve(
+
+                try:
+                    schema = BlackboardSchemaRegistry.resolve(
                         bb_cfg.schema_name, bb_cfg.schema_version
                     )
-                )
+                except SchemaValidationError:
+                    if bb_cfg.schema is not None:
+                        BlackboardSchemaRegistry.register(
+                            name=blackboard_schema_name,
+                            version=blackboard_schema_version,
+                            json_schema=bb_cfg.schema,
+                        )
+                        schema = BlackboardSchemaRegistry.resolve(
+                            bb_cfg.schema_name, bb_cfg.schema_version
+                        )
+                    else:
+                        raise ValueError(
+                            "The blackboard schema was not provided and does not exist in the schema registry"
+                        )
+
+                blackboard_contract = build_blackboard_contract(schema)
 
         built_tool_specs: list[ToolSpec] | None = None
         if self.tools_config:

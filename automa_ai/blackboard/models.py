@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -9,6 +10,10 @@ from pydantic import BaseModel, Field
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
+class BlackboardBackend(str, Enum):
+    LOCAL_JSON="local_json"
+    S3_JSON="s3_json"
+    DYNAMODB_JSON="dynamodb_json"
 
 class BlackboardEvent(BaseModel):
     ts: datetime = Field(default_factory=utc_now)

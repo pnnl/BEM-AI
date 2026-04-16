@@ -4,12 +4,13 @@ import pytest
 
 from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
 from automa_ai.blackboard.errors import DocumentNotFoundError, RevisionConflictError
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import BlackboardStoreConfig
 from automa_ai.blackboard.tools import build_blackboard_tools
 from automa_ai.agents.remote_agent import (
     set_subagent_context_id,
     reset_subagent_context_id,
 )
-from automa_ai.config.blackboard import BlackboardConfig
 
 @pytest.fixture
 def session_id():
@@ -17,12 +18,20 @@ def session_id():
 
 @pytest.fixture
 def store(tmp_path: Path, session_id):
-    config = BlackboardConfig(
-        enabled=True,
+    config = BlackboardStoreConfig(
         backend="local_json",
-        schema_name="test",
-        schema_version="1",
-        schema=        {
+        base_dir=str(tmp_path.parent),
+    )
+    store = LocalJSONBlackboardStore(config=config)
+    store.create(session_id, "test", "1", {"items": []})
+    return store
+
+@pytest.fixture(scope="session", autouse=True)
+def register_blackboard_schema():
+    BlackboardSchemaRegistry.register(
+        name="test",
+        version="1",
+        json_schema=        {
             "type": "object",
             "properties": {
                 "items": {"type": "array", "items": {"type": "string"}},
@@ -31,17 +40,12 @@ def store(tmp_path: Path, session_id):
             },
             "required": ["items"],
         },
-        base_dir=str(tmp_path.parent),
+
     )
-    store = LocalJSONBlackboardStore(config=config)
-    store.create(session_id, "test", "1", {"items": []})
-    return store
 
 @pytest.fixture
 def tools(store):
     return {t.name: t for t in build_blackboard_tools(store)}
-
-
 
 def test_tool_wrapper_append_operation(tools, session_id):
     write_result = tools["blackboard_write"].func(
