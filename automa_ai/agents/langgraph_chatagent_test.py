@@ -87,9 +87,7 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
     result = await agent.invoke("hello", "session-1")
 
     assert result == {"ok": True}
-    assert captured["config"] == {
-        "configurable": {"thread_id": "test-agent:session-1"}
-    }
+    assert captured["config"] == {"configurable": {"thread_id": "test-agent:session-1"}}
 
 
 @pytest.mark.asyncio
@@ -146,3 +144,65 @@ async def test_emit_final_output_emits_data_for_json_artifact():
 
     assert item["response_type"] == "data"
     assert item["content"] == {"foo": "bar"}
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_transient_error_before_output():
+    class DummyGraph:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def astream(self, inputs, config, stream_mode="messages"):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError(
+                    "503 Service Unavailable: model experiencing high demand"
+                )
+            yield AIMessageChunk(content="retry succeeded"), {}
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        transient_retry_attempts=1,
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert agent.graph.calls == 2
+    assert items[-1]["is_task_complete"] is True
+    assert items[-1]["content"] == "retry succeeded"
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_retry_after_output_has_started():
+    class DummyGraph:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def astream(self, inputs, config, stream_mode="messages"):
+            self.calls += 1
+            yield AIMessageChunk(content="partial output"), {}
+            raise RuntimeError(
+                "503 Service Unavailable: model experiencing high demand"
+            )
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        transient_retry_attempts=1,
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert agent.graph.calls == 1
+    assert items[0]["content"] == "partial output"
+    assert items[-1]["is_task_complete"] is True
+    assert "internal error" in items[-1]["content"].lower()

@@ -23,6 +23,10 @@ from automa_ai.agents.remote_agent import (
 )
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.message_accumulator import AIMessageAccumulator
+from automa_ai.common.network_retry import (
+    compute_retry_delay,
+    is_retryable_network_error,
+)
 from automa_ai.common.response_parser import extract_and_parse_json
 from automa_ai.common.utils import map_server_config_to_mcp_connection
 from automa_ai.retrieval.base import BaseRetriever
@@ -65,6 +69,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         blackboard_schema_version: str | None = None,
         blackboard_initial_data: dict | None = None,
         blackboard_contract: str | None = None,
+        transient_retry_attempts: int = 0,
         enable_metrics: bool = False,
         debug: bool = False,
     ):
@@ -94,6 +99,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.blackboard_schema_version = blackboard_schema_version
         self.blackboard_initial_data = blackboard_initial_data or {}
         self.blackboard_contract = blackboard_contract
+        self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.debug = debug
         if enable_metrics:
             self.metrics = MetricsCollector()
@@ -279,133 +285,164 @@ class GenericLangGraphChatAgent(BaseAgent):
         # Collect all streaming messages first
         # At the start of the stream
         async def agent_chunk_forwarder():
-            message_accumulator = AIMessageAccumulator()
             """Forward agent chunks to output queue"""
-            # use to track the tool call steps
-            active_tool_calls = 0
-            last_stream_text: str | None = None
-            context_token = set_subagent_context_id(session_id)
-            emitter_token = set_subagent_emitter(emit_subagent_event)
+            retry_count = 0
             try:
-                async for chunk in self.graph.astream(
-                    inputs, config, stream_mode="messages"
-                ):
-                    if self.debug:
-                        print("Getting the chunk", chunk)
-                    ck, meta = chunk
+                while True:
+                    message_accumulator = AIMessageAccumulator()
+                    last_stream_text: str | None = None
+                    emitted_output = False
+                    tool_activity_started = False
+                    context_token = set_subagent_context_id(session_id)
+                    emitter_token = set_subagent_emitter(emit_subagent_event)
+                    try:
+                        async for chunk in self.graph.astream(
+                            inputs, config, stream_mode="messages"
+                        ):
+                            if self.debug:
+                                print("Getting the chunk", chunk)
+                            ck, meta = chunk
 
-                    if isinstance(ck, HumanMessage) and self.memory_manager:
-                        # Enqueue human message for memory
-                        await self._memory_write_queue.put(
-                            MemoryWriteEvent(
-                                message=ck, session_id=session_id, user_id=task_id
-                            )
-                        )
-
-                    # Process agent chunk
-                    if isinstance(ck, AIMessageChunk):
-                        if self.metrics:
-                            # Record tracking
-                            if ck.response_metadata:
-                                self.metrics.add(
-                                    extract_metrics_from_chunk(
-                                        ck,
+                            if isinstance(ck, HumanMessage) and self.memory_manager:
+                                # Enqueue human message for memory
+                                await self._memory_write_queue.put(
+                                    MemoryWriteEvent(
+                                        message=ck,
                                         session_id=session_id,
-                                        query_id=self.metrics.current_query_id,
+                                        user_id=task_id,
                                     )
                                 )
-                        # accumulate ai messages
-                        message_accumulator.add_chunk(ck)
-                        # is task completed?
-                        # is_last_model_step = self.is_last_chunk(ck, active_tool_calls)
-                        # print("Pass last step: ", is_last_model_step)
 
-                        if ck.content:
-                            content = self._normalize_chunk_content(ck)
-                            if content is not None:
-                                if isinstance(content, dict):
-                                    stream_text = str(content)
-                                else:
-                                    stream_text = str(content)
-                                # Emit incremental chunk text and suppress immediate duplicates.
-                                if stream_text and stream_text != last_stream_text:
+                            # Process agent chunk
+                            if isinstance(ck, AIMessageChunk):
+                                if self.metrics:
+                                    # Record tracking
+                                    if ck.response_metadata:
+                                        self.metrics.add(
+                                            extract_metrics_from_chunk(
+                                                ck,
+                                                session_id=session_id,
+                                                query_id=self.metrics.current_query_id,
+                                            )
+                                        )
+                                # accumulate ai messages
+                                message_accumulator.add_chunk(ck)
+
+                                if ck.content:
+                                    content = self._normalize_chunk_content(ck)
+                                    if content is not None:
+                                        stream_text = str(content)
+                                        # Emit incremental chunk text and suppress immediate duplicates.
+                                        if (
+                                            stream_text
+                                            and stream_text != last_stream_text
+                                        ):
+                                            emitted_output = True
+                                            await output_queue.put(
+                                                {
+                                                    "response_type": "text",
+                                                    "is_task_complete": False,
+                                                    "require_user_input": False,
+                                                    "content": stream_text,
+                                                }
+                                            )
+                                            last_stream_text = stream_text
+                                elif ck.tool_calls:
+                                    tool_activity_started = True
+                                    tool_call_str = ""
+                                    for tool_call in ck.tool_calls:
+                                        tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
+                                        tool_call_str += f"**Arguments**: {tool_call.get('args')}\n\n"
+
+                                    emitted_output = True
                                     await output_queue.put(
                                         {
                                             "response_type": "text",
                                             "is_task_complete": False,
                                             "require_user_input": False,
-                                            "content": stream_text,
+                                            "content": tool_call_str,
                                         }
                                     )
-                                    last_stream_text = stream_text
-                        elif ck.tool_calls:
-                            active_tool_calls += len(ck.tool_calls)
-                            tool_call_str = ""
-                            for tool_call in ck.tool_calls:
-                                tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
-                                tool_call_str += (
-                                    f"**Arguments**: {tool_call.get('args')}\n\n"
-                                )
+                            elif isinstance(ck, ToolMessage):
+                                tool_activity_started = True
+                                if ck.content:
+                                    content = f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
+                                    emitted_output = True
+                                    await output_queue.put(
+                                        {
+                                            "response_type": "text",
+                                            "is_task_complete": False,
+                                            "require_user_input": False,
+                                            "content": content,
+                                        }
+                                    )
+                                else:
+                                    emitted_output = True
+                                    await output_queue.put(
+                                        {
+                                            "response_type": "text",
+                                            "is_task_complete": False,
+                                            "require_user_input": False,
+                                            "content": f"Tool call {ck.name} has no content return or failed. check logs.",
+                                        }
+                                    )
 
-                            await output_queue.put(
-                                {
-                                    "response_type": "text",
-                                    "is_task_complete": False,
-                                    "require_user_input": False,
-                                    "content": tool_call_str,
-                                }
+                        await self._emit_final_output(
+                            output_queue, message_accumulator, session_id, task_id
+                        )
+                        break
+                    except Exception as exc:
+                        logger.exception(
+                            "Agent stream failed for %s (session_id=%s, task_id=%s)",
+                            self.agent_name,
+                            session_id,
+                            task_id,
+                        )
+                        should_retry = self._should_retry_stream_error(
+                            exc=exc,
+                            retry_count=retry_count,
+                            emitted_output=emitted_output,
+                            tool_activity_started=tool_activity_started,
+                        )
+                        if should_retry:
+                            retry_count += 1
+                            delay = compute_retry_delay(retry_count)
+                            logger.warning(
+                                "Retrying agent stream for %s after transient error "
+                                "(attempt %s/%s).",
+                                self.agent_name,
+                                retry_count,
+                                self.transient_retry_attempts,
                             )
-                        # else:
-                        # if is_last_model_step:
-                        #    await self._emit_final_output(
-                        #        output_queue,
-                        #        message_accumulator,
-                        #        session_id,
-                        #        task_id,
-                        #    )
-                        # continue
-                    elif isinstance(ck, ToolMessage):
-                        active_tool_calls -= 1
-                        if ck.content:
-                            # stream_buffer.append(ck.content)
-                            content = (
-                                f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
-                            )
-                            await output_queue.put(
-                                {
-                                    "response_type": "text",
-                                    "is_task_complete": False,
-                                    "require_user_input": False,
-                                    "content": content,
-                                }
-                            )
-                        else:
-                            # Fall back
-                            await output_queue.put(
-                                {
-                                    "response_type": "text",
-                                    "is_task_complete": False,
-                                    "require_user_input": False,
-                                    "content": f"Tool call {ck.name} has no content return or failed. check logs.",
-                                }
-                            )
+                            if delay > 0:
+                                await asyncio.sleep(delay)
+                            continue
 
-                await self._emit_final_output(
-                    output_queue, message_accumulator, session_id, task_id
-                )
+                        error_content = "I ran into an internal error while processing the request. Please try again."
+                        if self.debug:
+                            error_content = (
+                                "Agent runtime error while processing the request: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+                        await output_queue.put(
+                            {
+                                "response_type": "text",
+                                "is_task_complete": True,
+                                "require_user_input": False,
+                                "content": error_content,
+                            }
+                        )
+                        break
+                    finally:
+                        reset_subagent_emitter(emitter_token)
+                        reset_subagent_context_id(context_token)
             except Exception as exc:
                 logger.exception(
-                    "Agent stream failed for %s (session_id=%s, task_id=%s)",
-                    self.agent_name,
-                    session_id,
-                    task_id,
+                    "Agent stream forwarder failed for %s", self.agent_name
                 )
                 error_content = "I ran into an internal error while processing the request. Please try again."
                 if self.debug:
-                    error_content = (
-                        "Agent runtime error while processing the request: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
+                    error_content = f"Agent runtime error while processing the request: {type(exc).__name__}: {exc}"
                 await output_queue.put(
                     {
                         "response_type": "text",
@@ -415,8 +452,6 @@ class GenericLangGraphChatAgent(BaseAgent):
                     }
                 )
             finally:
-                reset_subagent_emitter(emitter_token)
-                reset_subagent_context_id(context_token)
                 await output_queue.put(None)
 
         if self.memory_manager:
@@ -536,6 +571,20 @@ class GenericLangGraphChatAgent(BaseAgent):
         else:
             content_str += str(event.content)
         return content_str
+
+    def _should_retry_stream_error(
+        self,
+        *,
+        exc: Exception,
+        retry_count: int,
+        emitted_output: bool,
+        tool_activity_started: bool,
+    ) -> bool:
+        if retry_count >= self.transient_retry_attempts:
+            return False
+        if emitted_output or tool_activity_started:
+            return False
+        return is_retryable_network_error(exc)
 
     @staticmethod
     def _normalize_chunk_content(chunk: AIMessageChunk) -> str | None:
