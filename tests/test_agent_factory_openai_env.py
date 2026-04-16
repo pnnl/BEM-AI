@@ -79,7 +79,7 @@ def test_resolve_chat_model_gemini_invalid_max_retries_raises(monkeypatch):
         agent_factory, "ChatGoogleGenerativeAI", DummyChatGoogleGenerativeAI
     )
 
-    with pytest.raises(ValueError, match="model_max_retries must be a non-negative integer"):
+    with pytest.raises(ValueError, match="model_max_retries must be convertible to an integer"):
         agent_factory.resolve_chat_model(
             GenericLLM.GEMINI,
             "gemini-2.5-flash",

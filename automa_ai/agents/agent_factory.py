@@ -116,7 +116,7 @@ def resolve_chat_model(
                 max_retries = max(0, int(model_max_retries))
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"model_max_retries must be a non-negative integer, got: {model_max_retries!r}"
+                    f"model_max_retries must be convertible to an integer, got: {model_max_retries!r}"
                 ) from exc
         return ChatGoogleGenerativeAI(
             model=model_name,
