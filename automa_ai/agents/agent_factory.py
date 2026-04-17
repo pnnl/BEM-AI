@@ -18,7 +18,9 @@ from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.blackboard.store import create_blackboard_store
+from automa_ai.blackboard.errors import SchemaValidationError
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import create_blackboard_store, BlackboardStoreConfig
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
@@ -41,6 +43,7 @@ def resolve_chat_model(
     base_url: str | None = None,
     api_key: str | None = None,
     api_version: str | None = None,
+    model_max_retries: int | None = None,
 ):
     if backend == GenericLLM.OLLAMA:
         return ChatOllama(model=model_name, base_url=base_url, temperature=0)
@@ -108,11 +111,20 @@ def resolve_chat_model(
             "GOOGLE_API_KEY"
         ), "You must add GOOGLE_API_KEY in the system environment."
         streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
+        if model_max_retries is None:
+            max_retries = 2
+        else:
+            try:
+                max_retries = max(0, int(model_max_retries))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"model_max_retries must be convertible to an integer, got: {model_max_retries!r}"
+                ) from exc
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0,
             timeout=None,
-            max_retries=2,
+            max_retries=max_retries,
             max_tokens=None,
             streaming=streaming,
         )
@@ -238,6 +250,8 @@ class AgentFactory:
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
+        model_max_retries: int | None = None,
+        transient_retry_attempts: int = 0,
         enable_metrics: bool = False,
         debug: bool = False,
     ):
@@ -258,6 +272,8 @@ class AgentFactory:
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
+        self.model_max_retries = model_max_retries
+        self.transient_retry_attempts = transient_retry_attempts
         self.enable_metrics = enable_metrics
         self.debug = debug
 
@@ -274,6 +290,7 @@ class AgentFactory:
             self.model_base_url,
             self.api_key,
             self.api_version,
+            self.model_max_retries,
         )
 
         mcp_servers = None
@@ -309,15 +326,52 @@ class AgentFactory:
             if not isinstance(bb_cfg, BlackboardConfig):
                 bb_cfg = BlackboardConfig.from_dict(bb_cfg)
             if bb_cfg.enabled:
-                blackboard_store = create_blackboard_store(bb_cfg)
+                store = bb_cfg.store
+                if store is None:
+                    raise ValueError(
+                        "Blackboard store configuration must be provided when the blackboard is enabled"
+                    )
+                elif isinstance(store, BlackboardStoreConfig):
+                    store_config = store
+                elif isinstance(store, dict):
+                    store_config = BlackboardStoreConfig.model_validate(store)
+                elif hasattr(store, "model_dump"):
+                    # Backwards compatibility for Pydantic-based store configs.
+                    store_config = BlackboardStoreConfig.model_validate(
+                        store.model_dump()
+                    )
+                else:
+                    raise TypeError(
+                        f"Unsupported type for blackboard store configuration: {type(store)!r}"
+                    )
+                blackboard_store = create_blackboard_store(
+                    store_config=store_config
+                )
+
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version
                 blackboard_initial_data = bb_cfg.initial_data
-                blackboard_contract = build_blackboard_contract(
-                    blackboard_store.registry.resolve(
+
+                try:
+                    schema = BlackboardSchemaRegistry.resolve(
                         bb_cfg.schema_name, bb_cfg.schema_version
                     )
-                )
+                except SchemaValidationError:
+                    if bb_cfg.schema is not None:
+                        BlackboardSchemaRegistry.register(
+                            name=blackboard_schema_name,
+                            version=blackboard_schema_version,
+                            json_schema=bb_cfg.schema,
+                        )
+                        schema = BlackboardSchemaRegistry.resolve(
+                            bb_cfg.schema_name, bb_cfg.schema_version
+                        )
+                    else:
+                        raise ValueError(
+                            "The blackboard schema was not provided and does not exist in the schema registry"
+                        )
+
+                blackboard_contract = build_blackboard_contract(schema)
 
         built_tool_specs: list[ToolSpec] | None = None
         if self.tools_config:
@@ -365,6 +419,7 @@ class AgentFactory:
                 blackboard_initial_data=blackboard_initial_data,
                 blackboard_contract=blackboard_contract,
                 memory_manager=memory_manager,
+                transient_retry_attempts=self.transient_retry_attempts,
                 enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )

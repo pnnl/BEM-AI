@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from automa_ai.blackboard.errors import BackendNotConfiguredError, DocumentNotFoundError, RevisionConflictError
-from automa_ai.blackboard.models import BlackboardDocument
-from automa_ai.blackboard.store import BlackboardStore, bump_revision
-from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.blackboard.models import BlackboardBackend, BlackboardDocument
+from automa_ai.blackboard.store import BlackboardStore, bump_revision, BlackboardStoreConfig
 
+class DynamoDBJSONBlackboardStoreConfig(BlackboardStoreConfig):
+    backend: Literal[BlackboardBackend.DYNAMODB_JSON] = BlackboardBackend.DYNAMODB_JSON
+    dynamodb_table_name: str
+    dynamodb_endpoint_url: str | None = None
 
 class DynamoDBJSONBlackboardStore(BlackboardStore):
     """Blackboard store that stores blackboards in AWS DynamoDB.
 
     This class expects that a DynamoDB table exists with name `config.dynamodb_table_name`
     """
-    def __init__(self, config: BlackboardConfig, dynamodb_table=None):
-        super().__init__(config)
+    _config_class = DynamoDBJSONBlackboardStoreConfig
+
+    def __init__(self, config: DynamoDBJSONBlackboardStoreConfig, dynamodb_table=None):
+        super().__init__(config=config)
 
         if dynamodb_table is not None:
             self.table = dynamodb_table

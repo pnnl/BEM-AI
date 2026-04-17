@@ -143,10 +143,16 @@ tools:
       rerank:
         provider: opensource
         top_k: 5
+  - type: run_python
+    config:
+      runner: local_subprocess
+      timeout_s: 20
+      workspace_root: .
+      allow_network: false  # Import-policy toggle only; not runtime network isolation.
 ```
 
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
-See `docs/tools.md` and `examples/web_search_demo.py` for a runnable example.
+See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_demo.py` for runnable examples.
 
 ### Checkpointer configuration
 
@@ -194,7 +200,9 @@ If either command is unavailable, startup fails with a clear error and tells you
 - Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
 - Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
 
-### A2A Server Base Path
+### A2A Server Configuration
+
+#### Base Path
 
 You can mount an A2A agent server under a URL prefix by passing `base_url_path` to
 `A2AAgentServer`. This is useful when serving behind a reverse proxy or when you
@@ -213,6 +221,28 @@ Notes:
 ```python 
 SimpleClient(agent_url=f"{A2A_SERVER_URL}/permit/")
 ```
+
+#### Health Check Endpoint
+
+Every A2A server automatically includes a health check endpoint that returns the agent's status. By default, it's available at `/health`, but you can customize the path:
+
+```python
+chatbot_a2a = A2AAgentServer(
+    chatbot, 
+    public_agent_card, 
+    health_check_path="/status"
+)
+```
+
+The health check returns a JSON response:
+```json
+{
+  "status": "healthy",
+  "agent": "Your Agent Name"
+}
+```
+
+The status is `"healthy"` when the agent is initialized and ready, or `"unhealthy"` during startup.
 
 ### Retriever configuration
 

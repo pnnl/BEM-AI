@@ -5,6 +5,7 @@ import pytest
 from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
 from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
 from automa_ai.blackboard.errors import RevisionConflictError
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
 from automa_ai.config.blackboard import BlackboardConfig
 
 
@@ -94,6 +95,23 @@ def dynamodb_blackboard():
     )
 
     return DynamoDBJSONBlackboardStore(config=config, dynamodb_table=fake_dynamodb_table)
+
+@pytest.fixture(scope="session", autouse=True)
+def register_blackboard_schema():
+    BlackboardSchemaRegistry.register(
+        name="test",
+        version="1",
+        json_schema=        {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "items": {"type": "string"}},
+                "meta": {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}}},
+                "field": {"type": "string"},
+            },
+            "required": ["items"],
+        },
+
+    )
 
 
 def test_s3_backend_mocked_roundtrip(s3_blackboard):
