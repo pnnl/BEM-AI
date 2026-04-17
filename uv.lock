@@ -341,7 +341,7 @@ wheels = [
 
 [[package]]
 name = "automa-ai"
-version = "0.5.7"
+version = "0.5.10"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },

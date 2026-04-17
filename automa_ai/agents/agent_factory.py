@@ -43,6 +43,7 @@ def resolve_chat_model(
     base_url: str | None = None,
     api_key: str | None = None,
     api_version: str | None = None,
+    model_max_retries: int | None = None,
 ):
     if backend == GenericLLM.OLLAMA:
         return ChatOllama(model=model_name, base_url=base_url, temperature=0)
@@ -110,11 +111,20 @@ def resolve_chat_model(
             "GOOGLE_API_KEY"
         ), "You must add GOOGLE_API_KEY in the system environment."
         streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
+        if model_max_retries is None:
+            max_retries = 2
+        else:
+            try:
+                max_retries = max(0, int(model_max_retries))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"model_max_retries must be convertible to an integer, got: {model_max_retries!r}"
+                ) from exc
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0,
             timeout=None,
-            max_retries=2,
+            max_retries=max_retries,
             max_tokens=None,
             streaming=streaming,
         )
@@ -240,6 +250,8 @@ class AgentFactory:
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
+        model_max_retries: int | None = None,
+        transient_retry_attempts: int = 0,
         enable_metrics: bool = False,
         debug: bool = False,
     ):
@@ -260,6 +272,8 @@ class AgentFactory:
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
+        self.model_max_retries = model_max_retries
+        self.transient_retry_attempts = transient_retry_attempts
         self.enable_metrics = enable_metrics
         self.debug = debug
 
@@ -276,6 +290,7 @@ class AgentFactory:
             self.model_base_url,
             self.api_key,
             self.api_version,
+            self.model_max_retries,
         )
 
         mcp_servers = None
@@ -404,6 +419,7 @@ class AgentFactory:
                 blackboard_initial_data=blackboard_initial_data,
                 blackboard_contract=blackboard_contract,
                 memory_manager=memory_manager,
+                transient_retry_attempts=self.transient_retry_attempts,
                 enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )
