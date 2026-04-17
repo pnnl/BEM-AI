@@ -293,6 +293,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     last_stream_text: str | None = None
                     emitted_output = False
                     tool_activity_started = False
+                    human_message_queued = False
                     context_token = set_subagent_context_id(session_id)
                     emitter_token = set_subagent_emitter(emit_subagent_event)
                     try:
@@ -304,7 +305,13 @@ class GenericLangGraphChatAgent(BaseAgent):
                             ck, meta = chunk
 
                             if isinstance(ck, HumanMessage) and self.memory_manager:
-                                # Enqueue human message for memory
+                                # Once the user turn is queued for persistence, do not
+                                # replay the full stream on transient errors. A replay
+                                # would enqueue the same human turn again and duplicate
+                                # memory for this session. This is a local guard only;
+                                # a future revisit should make memory persistence itself
+                                # retry-safe/idempotent so transport retries are not
+                                # coupled to memory side effects.
                                 await self._memory_write_queue.put(
                                     MemoryWriteEvent(
                                         message=ck,
@@ -312,6 +319,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                         user_id=task_id,
                                     )
                                 )
+                                human_message_queued = True
 
                             # Process agent chunk
                             if isinstance(ck, AIMessageChunk):
@@ -403,6 +411,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             retry_count=retry_count,
                             emitted_output=emitted_output,
                             tool_activity_started=tool_activity_started,
+                            human_message_queued=human_message_queued,
                         )
                         if should_retry:
                             retry_count += 1
@@ -579,10 +588,11 @@ class GenericLangGraphChatAgent(BaseAgent):
         retry_count: int,
         emitted_output: bool,
         tool_activity_started: bool,
+        human_message_queued: bool,
     ) -> bool:
         if retry_count >= self.transient_retry_attempts:
             return False
-        if emitted_output or tool_activity_started:
+        if emitted_output or tool_activity_started or human_message_queued:
             return False
         return is_retryable_network_error(exc)
 
