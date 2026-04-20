@@ -22,8 +22,6 @@ def test_tool_with_custom_name():
     def original_name(x: int) -> int:
         """Tool with custom name."""
         return x * 2
-    
-    print(original_name.__name__)
 
     assert original_name.__tool_name__ == f"custom_name"
     assert f"{__name__}.{original_name.__name__}" in CUSTOM_TOOL_REGISTRY._builders
