@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -23,27 +24,69 @@ class ToolRegistry:
             raise ValueError(f"Tool type '{tool_type}' is already registered.")
         self._builders[tool_type] = builder
 
-    def build(self, spec: ToolSpec, runtime_deps: RuntimeDeps) -> BaseDefaultTool:
-        if spec.type not in self._builders:
-            raise ValueError(f"Unknown tool type '{spec.type}'.")
-        return self._builders[spec.type](spec.config, runtime_deps)
+    def build(self, spec: ToolSpec, runtime_deps: RuntimeDeps | None = None) -> BaseDefaultTool:
+        tool_type = spec.type
+
+        # Use default runtime deps if not provided
+        if runtime_deps is None:
+            runtime_deps = RuntimeDeps()
+
+        # Auto-import if type contains dots (e.g., "mydir.tools.my_tool")
+        if tool_type not in self._builders and "." in tool_type:
+            self._try_auto_import(tool_type)
+
+        if tool_type not in self._builders:
+            raise ValueError(
+                f"Unknown tool type '{tool_type}'. "
+                f"Known tools: {sorted(self._builders)}"
+            )
+
+        return self._builders[tool_type](spec.config, runtime_deps)
+
+    def _try_auto_import(self, tool_type: str) -> None:
+        """Try importing module from dotted tool type.
+        """
+        parts = tool_type.rsplit(".", 1)
+        if len(parts) != 2:
+            return
+        
+        module_path, _ = parts
+        
+        try:
+            importlib.import_module(module_path)
+        except ModuleNotFoundError as e:
+            if e.name != module_path:
+                raise
+            return
 
 
 DEFAULT_TOOL_REGISTRY = ToolRegistry()
+CUSTOM_TOOL_REGISTRY = ToolRegistry()
 
 
 def build_langchain_tools(
     tool_specs: list[ToolSpec] | None, logger: logging.Logger | None = None
 ) -> list[Any]:
-    """Build configured tools and adapt them for LangChain."""
+    """Build configured tools and adapt them for LangChain.
+
+    Checks both DEFAULT_TOOL_REGISTRY (built-in tools) and CUSTOM_TOOL_REGISTRY
+    (user-defined @tool decorated functions). For custom tools, supports auto-import
+    via dotted paths (e.g., "mydir.tools.my_tool").
+    """
     if not tool_specs:
         return []
+
     runtime_deps = RuntimeDeps(
         logger_name=(logger.name if logger else "automa_ai.tools")
     )
     built: list[Any] = []
     for spec in tool_specs:
-        built.append(
-            DEFAULT_TOOL_REGISTRY.build(spec, runtime_deps).as_langchain_tool()
-        )
+        # Try DEFAULT_TOOL_REGISTRY first (built-ins like web_search)
+        try:
+            tool = DEFAULT_TOOL_REGISTRY.build(spec, runtime_deps)
+        except ValueError:
+            # Fall back to CUSTOM_TOOL_REGISTRY (user @tool decorators)
+            tool = CUSTOM_TOOL_REGISTRY.build(spec, runtime_deps)
+
+        built.append(tool.as_langchain_tool())
     return built
