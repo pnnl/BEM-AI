@@ -18,6 +18,7 @@ class BaseDefaultTool(abc.ABC):
     """Internal interface for default tools configured by users."""
 
     type: str
+    name: str | None = None
 
     @property
     @abc.abstractmethod
@@ -41,7 +42,7 @@ class BaseDefaultTool(abc.ABC):
             return await self.invoke(kwargs)
 
         return StructuredTool.from_function(
-            name=self.type,
+            name=self.name or self.type,
             description=self.description,
             args_schema=self.args_schema,
             coroutine=_arun,
