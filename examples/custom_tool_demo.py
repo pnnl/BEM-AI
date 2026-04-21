@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import math
-from automa_ai.tools.decorators import tool
+from automa_ai.tools import tool
 
 from a2a.types import AgentCard, AgentCapabilities
 

@@ -13,6 +13,9 @@ from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
 ToolBuilder = Callable[[dict[str, Any], RuntimeDeps], BaseDefaultTool]
 
 
+class ToolNotFoundError(ValueError):
+    pass
+
 class ToolRegistry:
     """Maps tool type to a builder implementation."""
 
@@ -20,8 +23,13 @@ class ToolRegistry:
         self._builders: dict[str, ToolBuilder] = {}
 
     def register(self, tool_type: str, builder: ToolBuilder) -> None:
-        if tool_type in self._builders:
+        if (
+            tool_type in self._builders 
+            or tool_type in DEFAULT_TOOL_REGISTRY._builders 
+            or tool_type in CUSTOM_TOOL_REGISTRY._builders
+        ):
             raise ValueError(f"Tool type '{tool_type}' is already registered.")
+        
         self._builders[tool_type] = builder
 
     def build(self, spec: ToolSpec, runtime_deps: RuntimeDeps | None = None) -> BaseDefaultTool:
@@ -36,7 +44,7 @@ class ToolRegistry:
             self._try_auto_import(tool_type)
 
         if tool_type not in self._builders:
-            raise ValueError(
+            raise ToolNotFoundError(
                 f"Unknown tool type '{tool_type}'. "
                 f"Known tools: {sorted(self._builders)}"
             )
@@ -52,12 +60,7 @@ class ToolRegistry:
         
         module_path, _ = parts
         
-        try:
-            importlib.import_module(module_path)
-        except ModuleNotFoundError as e:
-            if e.name != module_path:
-                raise
-            return
+        importlib.import_module(module_path)
 
 
 DEFAULT_TOOL_REGISTRY = ToolRegistry()
@@ -84,8 +87,8 @@ def build_langchain_tools(
         # Try DEFAULT_TOOL_REGISTRY first (built-ins like web_search)
         try:
             tool = DEFAULT_TOOL_REGISTRY.build(spec, runtime_deps)
-        except ValueError:
-            # Fall back to CUSTOM_TOOL_REGISTRY (user @tool decorators)
+        except ToolNotFoundError:
+            # Fall back to CUSTOM_TOOL_REGISTRY
             tool = CUSTOM_TOOL_REGISTRY.build(spec, runtime_deps)
 
         built.append(tool.as_langchain_tool())
