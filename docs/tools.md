@@ -4,6 +4,8 @@ Automa-AI supports two types of tools:
 1. **Built-in tools** - Framework-provided tools like `web_search`
 2. **Custom tools** - User-defined tools using `@tool` decorator
 
+> **Important:** Built-in tools are **not automatically available**. They, along with custom tools, must be explicitly enabled by the user through `tools_config`. If a tool is not included in the configuration, the agent will not be able to use it.
+
 ## Configuration format
 
 ```yaml
@@ -32,6 +34,8 @@ tools:
 
 ## Built-in tool: `web_search`
 
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
+
 Input fields:
 - `query` (required)
 - `top_k` (default `5`)
@@ -46,6 +50,8 @@ Output format:
 
 
 ## Built-in tool: `run_python`
+
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
 
 Input fields:
 - `code` (required)
