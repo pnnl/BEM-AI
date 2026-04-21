@@ -1,6 +1,10 @@
-# Default tools
+# Tools
 
-Automa-AI supports first-class default tools configured directly in agent config (not MCP).
+Automa-AI supports two types of tools:
+1. **Built-in tools** - Framework-provided tools like `web_search`
+2. **Custom tools** - User-defined tools using `@tool` decorator
+
+> **Important:** Built-in tools are **not automatically available**. They, along with custom tools, must be explicitly enabled by the user through `tools_config`. If a tool is not included in the configuration, the agent will not be able to use it.
 
 ## Configuration format
 
@@ -30,6 +34,8 @@ tools:
 
 ## Built-in tool: `web_search`
 
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
+
 Input fields:
 - `query` (required)
 - `top_k` (default `5`)
@@ -44,6 +50,8 @@ Output format:
 
 
 ## Built-in tool: `run_python`
+
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
 
 Input fields:
 - `code` (required)
@@ -117,3 +125,100 @@ Optional local embedding rerank helpers:
 ```bash
 pip install -e .[rerank]
 ```
+
+---
+
+## Custom Tools
+
+Define your own tools using the `@tool` decorator. Tools are automatically registered and can be used in agent config.
+
+### Basic usage
+
+```python
+# myapp/tools.py
+from automa_ai.tools import tool
+
+@tool
+def repeat_text(text: str, count: int = 1) -> str:
+    """Repeat text multiple times.
+    
+    Args:
+        text: Text to repeat
+        count: Number of times
+    """
+    return text * count
+```
+
+Reference in config using dotted path:
+
+```yaml
+tools:
+  - type: myapp.tools.repeat_text
+    config: {}
+```
+
+The framework will auto-import `myapp.tools`, triggering the decorator and registering the tool.
+
+### Async tools
+
+```python
+@tool
+async def fetch_data(url: str) -> dict:
+    """Fetch data from URL.
+    
+    Args:
+        url: URL to fetch
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        return {"data": response.json()}
+```
+
+### Tools with configuration
+
+For tools requiring API keys or settings:
+
+```python
+from pydantic import BaseModel
+
+class SearchConfig(BaseModel):
+    api_key: str
+    endpoint: str = "https://api.example.com"
+
+@tool(config_schema=SearchConfig)
+def search(query: str, *, config: SearchConfig) -> dict:
+    """Search using configured API.
+    
+    Args:
+        query: Search query
+    """
+    # Config is injected automatically
+    return call_api(query, config.api_key, config.endpoint)
+```
+
+Config in YAML:
+
+```yaml
+tools:
+  - type: myapp.tools.search
+    config:
+      api_key: ${SEARCH_API_KEY}
+      endpoint: "https://custom.api.com"
+```
+
+### Custom name and description
+
+```python
+@tool(name="web_search", description="Search the web")
+def my_search_tool(query: str) -> dict:
+    """This docstring is overridden by description parameter."""
+    return {"results": [...]}
+```
+
+### Features
+
+- **Schema inference**: Automatically generates Pydantic schemas from type hints
+- **Docstring parsing**: Extracts parameter descriptions from Google-style docstrings
+- **Config injection**: Pass configuration at instantiation time
+- **Auto-import**: Tools are imported automatically based on config `type` field
+- **Sync/async**: Both sync and async functions supported
