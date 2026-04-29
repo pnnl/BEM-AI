@@ -2,20 +2,21 @@ import json
 import logging
 import uuid
 from enum import Enum
-from typing import AsyncIterable, Any
+from typing import Any, AsyncIterable
 
 import httpx
 import networkx as nx
-from a2a.client import A2AClient, create_text_message_object
+
+from google.protobuf.json_format import ParseDict
+
+from a2a.client import ClientConfig, create_client
+from a2a.helpers.proto_helpers import new_text_message
 from a2a.types import (
     AgentCard,
-    SendStreamingMessageRequest,
-    MessageSendParams,
-    SendStreamingMessageResponse,
-    TaskArtifactUpdateEvent,
-    TaskStatusUpdateEvent,
+    Role,
+    SendMessageRequest,
+    StreamResponse,
     TaskState,
-    SendStreamingMessageSuccessResponse,
 )
 
 from automa_ai.common.utils import get_agent_mcp_server_config
@@ -35,10 +36,7 @@ class Status(Enum):
 
 
 class WorkflowNode:
-    """Represents a single node in a workflow graph
-    Each node encapsulates a specific task to be executed, such as finding an agent or invoking an agent's capabilities.
-    It manages its own state (e.g., READY, RUNNING, COMPLETED, PAUSE) and can execute its assigned task.
-    """
+    """Represents a single node in a workflow graph."""
 
     def __init__(
         self, task: str, node_key: str | None = None, node_label: str | None = None
@@ -47,12 +45,11 @@ class WorkflowNode:
         self.node_key = node_key
         self.node_label = node_label
         self.task = task
-        # self.history = history
         self.result = None
         self.state = Status.READY
 
     async def get_planner_resource(self) -> AgentCard | None:
-        logger.info(f"Getting resource for node {self.id}")
+        logger.info("Getting resource for node %s", self.id)
         config = get_agent_mcp_server_config()
         async with client.init_session(
             config.host, config.port, config.transport
@@ -62,26 +59,26 @@ class WorkflowNode:
             )
             data = json.loads(response.contents[0].text)
             if data:
-                return AgentCard(**data["agent_card"])
-            else:
-                return None
+                return ParseDict(data["agent_card"], AgentCard())
+            return None
 
     async def find_agent_for_task(self) -> AgentCard | None:
-        logger.info(f"Finding agent for task - {self.task}")
+        logger.info("Finding agent for task - %s", self.task)
         config = get_agent_mcp_server_config()
         async with client.init_session(
             config.host, config.port, config.transport
         ) as session:
             result = await client.find_agent(session, self.task)
             agent_card_json = json.loads(result.content[0].text)
-            logger.info(f"Found agent {agent_card_json} for task {self.task}")
-            return AgentCard(**agent_card_json)
+            logger.info(
+                "Found agent %s for task %s", agent_card_json, self.task
+            )
+            return ParseDict(agent_card_json, AgentCard())
 
     async def run_node(
         self, query: str, task_id: str, context_id: str, blackboard: dict
-    ) -> AsyncIterable[dict[str, Any]]:
-        logger.info(f"Executing node {self.id}")
-        agent_card = None
+    ) -> AsyncIterable[StreamResponse]:
+        logger.info("Executing node %s", self.id)
         if self.node_key == "planner":
             agent_card = await self.get_planner_resource()
             if agent_card is None:
@@ -89,34 +86,23 @@ class WorkflowNode:
         else:
             agent_card = await self.find_agent_for_task()
 
-        #print(f"In the node, check out the blackboard: {blackboard}")
-
         async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as httpx_client:
-            # alternatively, a url would work too.
-            a2a_client = A2AClient(httpx_client, agent_card)
-            payload: dict[str, any] = {
-                "message": {
-                    "messageId": str(uuid.uuid4()),
-                    "role": "user",
-                    "parts": [{"kind": "text", "text": str({"query": query, "blackboard": blackboard})}],
-                    "taskId": None,
-                    "contextId": context_id,
-                }
-            }
-            msg = create_text_message_object(content=str({"query": query, "blackboard": blackboard}))
-            request = SendStreamingMessageRequest(
-                id=str(uuid.uuid4()), params=MessageSendParams(**payload)
+            a2a_client = await create_client(
+                agent_card,
+                client_config=ClientConfig(httpx_client=httpx_client),
             )
-            response_stream = a2a_client.send_message_streaming(request)
-            async for chunk in response_stream:
-                # print(f"this is error chunk: {chunk}")
-                logger.info(f"chunk returned {chunk}")
-                # Save the artifact as a result of the node
-                if isinstance(chunk.root, SendStreamingMessageResponse) and isinstance(
-                    chunk.root.result, TaskArtifactUpdateEvent
-                ):
-                    artifact = chunk.root.result.artifact
-                    self.results = artifact
+            request = SendMessageRequest(
+                message=new_text_message(
+                    text=str({"query": query, "blackboard": blackboard}),
+                    context_id=context_id,
+                    task_id=task_id,
+                    role=Role.ROLE_USER,
+                )
+            )
+            async for chunk in a2a_client.send_message(request):
+                logger.info("chunk returned %s", chunk)
+                if chunk.HasField("artifact_update"):
+                    self.result = chunk.artifact_update.artifact
                 yield chunk
 
 
@@ -133,7 +119,7 @@ class WorkflowGraph:
         self.paused_node_id = None
 
     def add_node(self, node) -> None:
-        logger.info(f"Adding one {node.id}")
+        logger.info("Adding one %s", node.id)
         self.graph.add_node(node.id, query=node.task)
         self.nodes[node.id] = node
         self.latest_node = node.id
@@ -145,11 +131,10 @@ class WorkflowGraph:
 
     def update_blackboard(self, blackboard):
         self.blackboard = {**self.blackboard, **blackboard}
-        #print(self.blackboard)
 
     async def run_workflow(
         self, start_node_id: str | None = None
-    ) -> AsyncIterable[dict[str, any]]:
+    ) -> AsyncIterable[StreamResponse]:
         logger.info("Executing workflow graph")
         if not start_node_id or start_node_id not in self.nodes:
             start_nodes = [n for n, d in self.graph.in_degree() if d == 0]
@@ -164,31 +149,29 @@ class WorkflowGraph:
 
         complete_graph = list(nx.topological_sort(self.graph))
         sub_graph = [n for n in complete_graph if n in applicable_graph]
-        logger.info(f"Sub graph {sub_graph} size {len(sub_graph)}")
+        logger.info("Sub graph %s size %s", sub_graph, len(sub_graph))
         self.state = Status.RUNNING
-        # Alternative is to loop over all nodes, but we only need the connected nodes.
         for node_id in sub_graph:
             node = self.nodes[node_id]
             node.state = Status.RUNNING
             query = self.graph.nodes[node_id].get("query")
             task_id = self.graph.nodes[node_id].get("task_id")
             context_id = self.graph.nodes[node_id].get("context_id")
-            async for chunk in node.run_node(query, task_id, context_id, self.blackboard):
-                # When the workflow node is paused, do not yield any chunks
-                # but, let the loop complete.
+            async for chunk in node.run_node(
+                query, task_id, context_id, self.blackboard
+            ):
                 if node.state != Status.PAUSED:
-                    if isinstance(chunk.root, SendStreamingMessageSuccessResponse) and (
-                        isinstance(chunk.root.result, TaskStatusUpdateEvent)
-                    ):
-                        task_status_event = chunk.root.result
+                    if chunk.HasField("status_update"):
+                        task_status_event = chunk.status_update
                         context_id = task_status_event.context_id
                         logger.info(
-                            "🧠 Workflow task status update event: %s",
+                            "Workflow task status update event: %s",
                             task_status_event,
                         )
 
                         if (
-                            task_status_event.status.state == TaskState.input_required
+                            task_status_event.status.state
+                            == TaskState.TASK_STATE_INPUT_REQUIRED
                             and context_id
                         ):
                             node.state = Status.PAUSED

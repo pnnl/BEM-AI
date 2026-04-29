@@ -2,7 +2,6 @@ import asyncio
 import os
 from pathlib import Path
 
-from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 from dotenv import load_dotenv
 
 from automa_ai.agents import GenericAgentType, GenericLLM
@@ -62,33 +61,34 @@ Keep your answer concise and always use chain-of-thought to address user's quest
 CHATBOT_SERVER_URL = os.environ.get("CHATBOT_SERVER_URL")
 
 # Define the primary skill
-skill = AgentSkill(
-    id="ruleset_analysis",
-    name="Ruleset Assistant",
-    description=(
-        "Assistant to analysis rules"
-    ),
-    tags=["assistant", "energy code", "compliance", "helpdesk"],
-    examples=[
+skill = {
+    "id": "ruleset_analysis",
+    "name": "Ruleset Assistant",
+    "description": "Assistant to analysis rules",
+    "tags": ["assistant", "energy code", "compliance", "helpdesk"],
+    "examples": [
         "I have a heat rejection device, what rules are applicable to my design",
     ],
-)
+}
 
 # --8<-- [start:AgentCard]
 # Public-facing agent card
-public_agent_card = AgentCard(
-    name="Ruleset Assistant Agent",
-    description=(
-        "Assistant to analysis rules"
-    ),
-    url=CHATBOT_SERVER_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[skill],  # Only the primary skill for the public card
-    supports_authenticated_extended_card=False,
-)
+public_agent_card = {
+    "name": "Ruleset Assistant Agent",
+    "description": "Assistant to analysis rules",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": CHATBOT_SERVER_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [skill],
+}
 
 # chat_bot_model_name = os.environ.get("CHAT_BOT_MODEL_NAME")
 chat_bot_model_name = os.environ.get("CLAUDE_MODEL_NAME")

@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from a2a.types import AgentCard, AgentSkill, AgentCapabilities
+from a2a.types import AgentSkill
 from dotenv import load_dotenv
 
 from automa_ai.agents import GenericAgentType, GenericLLM
@@ -192,17 +192,32 @@ skill = AgentSkill(
 
 # --8<-- [start:AgentCard]
 # This will be the public-facing agent card
-public_agent_card = AgentCard(
-    name="Automa AI Assistant Agent",
-    description="Assistant to provide support and help to users using automa_ai package.",
-    url=CHATBOT_SERVER_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[skill],  # Only the basic skill for the public card
-    supports_authenticated_extended_card=False,
-)
+public_agent_card = {
+    "name": "Automa AI Assistant Agent",
+    "description": "Assistant to provide support and help to users using automa_ai package.",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {
+        "streaming": True,
+    },
+    "supportedInterfaces": [
+        {
+            "url": CHATBOT_SERVER_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [
+        {
+            "id": skill.id,
+            "name": skill.name,
+            "description": skill.description,
+            "tags": list(skill.tags),
+            "examples": list(skill.examples),
+        }
+    ],
+}
 chat_bot_model_name = os.environ.get("CHAT_BOT_MODEL_NAME")
 chat_bot_base_url = os.environ.get("CHAT_BOT_MODEL_BASE_URL") or None
 
@@ -214,7 +229,7 @@ chatbot = AgentFactory(
     agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=GenericLLM.OLLAMA,
     model_base_url=chat_bot_base_url,
-    # mcp_configs={"weather_mcp": weather_mcp_config},
+    mcp_configs={"weather_mcp": weather_mcp_config},
     skills_config=skill_config,
     tools_config=tools_config,
     enable_metrics=True,

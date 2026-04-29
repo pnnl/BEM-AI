@@ -192,8 +192,7 @@ def load_blackboard_config(schema_path: Path, base_dir: Path) -> BlackboardConfi
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     return BlackboardConfig(
         enabled=True,
-        backend="local_json",
-        base_dir=str(base_dir),
+        store={"backend": "local_json", "base_dir": str(base_dir)},
         schema_name="travel_booking",
         schema_version="1.0.0",
         schema_description="Travel planning and booking shared state.",

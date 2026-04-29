@@ -1,8 +1,10 @@
 import logging
 import os
+from copy import deepcopy
 from typing import Any, Callable, Dict, List
 
 from a2a.types import AgentCard
+from google.protobuf.json_format import MessageToDict, ParseDict
 from google.adk.models.lite_llm import LiteLlm
 from langchain_anthropic import ChatAnthropic
 from langchain_aws import ChatBedrockConverse
@@ -15,7 +17,6 @@ from pydantic import BaseModel, SecretStr
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.adk_agent import GenericADKAgent
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
-from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.blackboard.errors import SchemaValidationError
@@ -233,7 +234,7 @@ class AgentFactory:
 
     def __init__(
         self,
-        card: AgentCard,
+        card: AgentCard | Dict[str, Any],
         instructions: str,
         model_name: str,
         agent_type: GenericAgentType,
@@ -255,7 +256,12 @@ class AgentFactory:
         enable_metrics: bool = False,
         debug: bool = False,
     ):
-        self.card = card
+        if isinstance(card, AgentCard):
+            self._card_data = MessageToDict(
+                card, preserving_proto_field_name=False, always_print_fields_with_no_presence=True
+            )
+        else:
+            self._card_data = deepcopy(card)
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type
@@ -280,8 +286,13 @@ class AgentFactory:
     def get_agent(self):
         return self.__call__()
 
+    @property
+    def card(self) -> AgentCard:
+        return ParseDict(deepcopy(self._card_data), AgentCard())
+
     def __call__(self) -> BaseAgent:
         load_tool_plugins()
+        card = self.card
 
         chat_model = resolve_chat_model(
             self.chat_model,
@@ -294,13 +305,13 @@ class AgentFactory:
         )
 
         mcp_servers = None
-        logger.info(f"Checking MCP servers to the agent: {self.card.name}...")
+        logger.info(f"Checking MCP servers to the agent: {card.name}...")
         if self.mcp_configs:
             mcp_servers = {
                 server_name: map_mcp_config_to_server_config(config)
                 for server_name, config in self.mcp_configs.items()
             }
-        logger.info(f"Successful log the MCP servers for agent: {self.card.name}...")
+        logger.info(f"Successful log the MCP servers for agent: {card.name}...")
         logger.info(f"Initializing a {self.agent_type.value} agent")
 
         # Resolve memories
@@ -357,11 +368,11 @@ class AgentFactory:
                         bb_cfg.schema_name, bb_cfg.schema_version
                     )
                 except SchemaValidationError:
-                    if bb_cfg.schema is not None:
+                    if bb_cfg.json_schema is not None:
                         BlackboardSchemaRegistry.register(
                             name=blackboard_schema_name,
                             version=blackboard_schema_version,
-                            json_schema=bb_cfg.schema,
+                            json_schema=bb_cfg.json_schema,
                         )
                         schema = BlackboardSchemaRegistry.resolve(
                             bb_cfg.schema_name, bb_cfg.schema_version
@@ -386,8 +397,8 @@ class AgentFactory:
 
         if self.agent_type == GenericAgentType.ADK:
             return GenericADKAgent(
-                agent_name=self.card.name,
-                description=self.card.description,
+                agent_name=card.name,
+                description=card.description,
                 instructions=self.instructions,
                 chat_model=chat_model,
                 mcp_servers=mcp_servers,
@@ -397,8 +408,8 @@ class AgentFactory:
                 self.checkpointer_config
             )
             return GenericLangGraphChatAgent(
-                agent_name=self.card.name,
-                description=self.card.description,
+                agent_name=card.name,
+                description=card.description,
                 instructions=self.instructions,
                 response_format=self.response_format,
                 chat_model=chat_model,
@@ -426,8 +437,8 @@ class AgentFactory:
 
         elif self.agent_type == GenericAgentType.LANGGRAPH:
             return GenericLangGraphReactAgent(
-                agent_name=self.card.name,
-                description=self.card.description,
+                agent_name=card.name,
+                description=card.description,
                 instructions=self.instructions,
                 response_format=self.response_format,
                 chat_model=chat_model,
@@ -437,9 +448,13 @@ class AgentFactory:
             )
 
         elif self.agent_type == GenericAgentType.ORCHESTRATOR:
+            from automa_ai.agents.orchestrator_network_agent import (
+                OrchestratorNetworkAgent,
+            )
+
             return OrchestratorNetworkAgent(
-                agent_name=self.card.name,
-                description=self.card.description,
+                agent_name=card.name,
+                description=card.description,
                 instructions=self.instructions,
                 chat_model=chat_model,
             )

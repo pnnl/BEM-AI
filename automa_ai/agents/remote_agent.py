@@ -1,16 +1,32 @@
-from typing import Any, Optional, Callable, AsyncIterable, AsyncGenerator, Awaitable
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable
 from contextvars import ContextVar
-from uuid import uuid4
-
-from a2a.client.transports import JsonRpcTransport
-from a2a.types import AgentCard, Task, Message, MessageSendParams, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, \
-    TaskState, TextPart, DataPart
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
 from dataclasses import dataclass
-from automa_ai.common.base_agent import BaseAgent
+from copy import deepcopy
+from typing import Any, Callable, Optional
+
 import httpx
 import re
+
+from google.protobuf.json_format import MessageToDict, ParseDict
+
+from a2a.client import Client, ClientConfig, create_client
+from a2a.helpers.proto_helpers import get_message_text, new_text_message
+from a2a.types import (
+    AgentCard,
+    Message,
+    Part,
+    Role,
+    SendMessageRequest,
+    StreamResponse,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatusUpdateEvent,
+)
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
+
+from automa_ai.common.base_agent import BaseAgent
 
 _subagent_context_id: ContextVar[str | None] = ContextVar(
     "subagent_context_id",
@@ -58,45 +74,71 @@ def build_subagent_delegation_instruction(subagents) -> str:
 
     return "\n".join(lines)
 
+
 def compute_final(chunks: list[str]) -> str:
-    # Last numeric expression result
     for chunk in reversed(chunks):
         if chunk.strip().isdigit():
             return chunk.strip()
     return chunks[-1]
 
+
+def _part_to_value(part: Part) -> Any:
+    if part.HasField("text"):
+        return part.text
+    if part.HasField("data"):
+        return MessageToDict(part.data)
+    if part.HasField("url"):
+        return part.url
+    if part.HasField("raw"):
+        return part.raw
+    return ""
+
+
+def _first_part_value(parts: list[Part]) -> Any:
+    if not parts:
+        return ""
+    return _part_to_value(parts[0])
+
+
 @dataclass
 class SubAgentSpec:
     name: str
     description: str
-    agent_card: AgentCard
+    agent_card: AgentCard | dict[str, Any]
 
     @property
     def tool_name(self) -> str:
-        """
-        Tool-safe name for LLM function calling.
-        """
         return re.sub(r"[^a-zA-Z0-9_]", "_", self.name).lower()
+
+    @property
+    def resolved_agent_card(self) -> AgentCard:
+        if isinstance(self.agent_card, AgentCard):
+            return self.agent_card
+        return ParseDict(deepcopy(self.agent_card), AgentCard())
+
 
 @dataclass
 class A2AToolResult:
-    final: Optional[str]
+    final: Optional[Any]
     chunks: list[str]
     task_id: str
 
+
 @dataclass
 class StreamEvent:
-    source: str            # "coordinator" | "subagent:math"
-    type: str              # "text" | "tool" | "subagent_chunk"
+    source: str
+    type: str
     content: str
     metadata: dict | None = None
 
+
 class A2AToolAdapter:
-    def __init__(self, *, subagent, emit_event: Callable[[StreamEvent], Awaitable[None]],):
-        """
-            subagent: RemoteAgent
-            on_chunk: optional callback for streaming text chunks
-        """
+    def __init__(
+        self,
+        *,
+        subagent,
+        emit_event: Callable[[StreamEvent], Awaitable[None]],
+    ):
         self.subagent = subagent
         self.emit_event = emit_event
 
@@ -106,39 +148,47 @@ class A2AToolAdapter:
             await active_emitter(event)
 
     async def run(self, task: str, context_id: str | None = None) -> A2AToolResult:
-        a2a_task = await self.subagent.invoke(task, context_id=context_id)
+        a2a_result = await self.subagent.invoke(task, context_id=context_id)
         chunks: list[str] = []
 
-        # --- collect from history ---
-        for msg in a2a_task.history:
-            for part in msg.parts:
-                if part.root.kind == "text":
-                    text = part.root.text
-                    chunks.append(text)
-                    await self._emit(
-                        StreamEvent(
-                            source=f"subagent:{self.subagent.agent_name}",
-                            type="subagent_chunk",
-                            content=part.root.text.rstrip() + "\n",
-                            metadata=None
-                        )
+        if isinstance(a2a_result, Message):
+            text = get_message_text(a2a_result)
+            if text:
+                chunks.append(text)
+                await self._emit(
+                    StreamEvent(
+                        source=f"subagent:{self.subagent.agent_name}",
+                        type="subagent_chunk",
+                        content=text.rstrip() + "\n",
+                        metadata=None,
                     )
+                )
+            final = text
+            task_id = a2a_result.task_id
+        else:
+            for msg in a2a_result.history:
+                text = get_message_text(msg)
+                if not text:
+                    continue
+                chunks.append(text)
+                await self._emit(
+                    StreamEvent(
+                        source=f"subagent:{self.subagent.agent_name}",
+                        type="subagent_chunk",
+                        content=text.rstrip() + "\n",
+                        metadata=None,
+                    )
+                )
 
-        final = ""
-        # --- extract final answer from artifact ---
-        artifact = a2a_task.artifacts[0] if a2a_task.artifacts else None
-        if artifact:
-            # if DataPart, take its content
-            if hasattr(artifact.parts[0].root, "data"):
-                final = artifact.parts[0].root.data
-            elif hasattr(artifact.parts[0].root, "text"):
-                final = artifact.parts[0].root.text
+            artifact = a2a_result.artifacts[0] if a2a_result.artifacts else None
+            final = _first_part_value(list(artifact.parts)) if artifact else ""
+            task_id = a2a_result.id
 
         await self._emit(
             StreamEvent(
                 source=f"subagent:{self.subagent.agent_name}",
                 type="subagent_chunk",
-                content=final,
+                content=str(final),
                 metadata={"final": True},
             )
         )
@@ -146,7 +196,7 @@ class A2AToolAdapter:
         return A2AToolResult(
             final=final,
             chunks=chunks,
-            task_id=a2a_task.id,
+            task_id=task_id,
         )
 
     async def stream(
@@ -156,77 +206,51 @@ class A2AToolAdapter:
     ) -> AsyncIterable[A2AToolResult]:
         chunks: list[str] = []
         async for chunk in self.subagent.stream(task, context_id=context_id):
-            # print(f"Remote receiving chunk, type: {type(chunk)}, chunk: {chunk}")
             if isinstance(chunk, TaskStatusUpdateEvent):
-                # context_id = chunk.context_id
-                # If the node is completed, then move to the next node
-                if chunk.status.state == TaskState.completed:
-                    # Task status update provides status but no artifacts
+                if chunk.status.state == TaskState.TASK_STATE_COMPLETED:
                     continue
-                if chunk.status.state == TaskState.input_required:
-                    question = chunk.status.message.parts[
-                        0
-                    ].root.text
-                    #TODO question needs to be looped back to orchestrator
-                    # This status should be aligned with orchestrator status
+                if chunk.status.state == TaskState.TASK_STATE_INPUT_REQUIRED:
+                    question = get_message_text(chunk.status.message)
                     await self._emit(
                         StreamEvent(
                             source=f"subagent:{self.subagent.agent_name}",
                             type="subagent_chunk",
                             content=question,
-                            metadata=None
+                            metadata=None,
                         )
                     )
                     chunks.append(question)
-                if chunk.status.state == TaskState.working:
-                    message = chunk.status.message.parts[0].root.text
-                    # print(f"emitting event: {message}")
+                if chunk.status.state == TaskState.TASK_STATE_WORKING:
+                    message = get_message_text(chunk.status.message)
                     await self._emit(
                         StreamEvent(
                             source=f"subagent:{self.subagent.agent_name}",
                             type="subagent_chunk",
                             content=message,
-                            metadata=None
+                            metadata=None,
                         )
                     )
                     chunks.append(message)
             if isinstance(chunk, TaskArtifactUpdateEvent):
-                artifact = chunk.artifact
-                # self.results.append(artifact)
-                if isinstance(artifact.parts[0].root, TextPart):
-                    text = artifact.parts[0].root.text
-                    await self._emit(
-                        StreamEvent(
-                            source=f"subagent:{self.subagent.agent_name}",
-                            type="subagent_chunk",
-                            content=text,
-                            metadata=None
-                        )
+                final = _first_part_value(list(chunk.artifact.parts))
+                await self._emit(
+                    StreamEvent(
+                        source=f"subagent:{self.subagent.agent_name}",
+                        type="subagent_chunk",
+                        content=str(final),
+                        metadata=None,
                     )
-                    yield A2AToolResult(
-                        final=text,
-                        chunks=chunks,
-                        task_id=chunk.task_id,
-                    )
-                if isinstance(artifact.parts[0].root, DataPart):
-                    artifact_data = artifact.parts[0].root.data
-                    await self._emit(
-                        StreamEvent(
-                            source=f"subagent:{self.subagent.agent_name}",
-                            type="subagent_chunk",
-                            content=artifact_data,
-                            metadata=None
-                        )
-                    )
-                    yield A2AToolResult(
-                        final=artifact_data,
-                        chunks=chunks,
-                        task_id=chunk.task_id,
-                    )
+                )
+                yield A2AToolResult(
+                    final=final,
+                    chunks=chunks,
+                    task_id=chunk.task_id,
+                )
 
 
 class SubAgentInput(BaseModel):
     task: str = Field(description="Task description to delegate to the sub-agent")
+
 
 def make_subagent_tool(
     spec: SubAgentSpec,
@@ -235,7 +259,7 @@ def make_subagent_tool(
 ):
     subagent = RemoteAgent(
         agent_name=spec.tool_name,
-        subagent_card=spec.agent_card,
+        subagent_card=spec.resolved_agent_card,
         description=spec.description,
     )
 
@@ -253,15 +277,15 @@ def make_subagent_tool(
         agent_card: AgentCard = adapter.subagent.agent_card
         context_id = get_subagent_context_id()
         if agent_card.capabilities.streaming:
-            async for chunk in adapter.stream(delegated_task, context_id=context_id):
+            async for chunk in adapter.stream(
+                delegated_task, context_id=context_id
+            ):
                 chunks.append(chunk)
         else:
             result = await adapter.run(delegated_task, context_id=context_id)
             chunks.append(result)
 
-        result = None
-        if chunks:
-            result = chunks[-1]
+        result = chunks[-1] if chunks else None
 
         if result:
             return {
@@ -269,12 +293,14 @@ def make_subagent_tool(
                 "chunks": result.chunks,
                 "task_id": result.task_id,
             }
-        else:
-            return {
-                "final": f"No result produced by the subagent {adapter.subagent.agent_name}",
-                "chunks": "",
-                "task_id": "",
-            }
+        return {
+            "final": (
+                "No result produced by the subagent "
+                f"{adapter.subagent.agent_name}"
+            ),
+            "chunks": "",
+            "task_id": "",
+        }
 
     return StructuredTool.from_function(
         name=spec.tool_name,
@@ -285,12 +311,13 @@ def make_subagent_tool(
 
 
 class RemoteAgent(BaseAgent):
-    """An interface to stream connections to a hands off agent"""
+    """An interface to stream connections to a hands off agent."""
+
     def __init__(
-            self,
-            agent_name: str,
-            subagent_card: AgentCard,
-            description: str,
+        self,
+        agent_name: str,
+        subagent_card: AgentCard,
+        description: str,
     ):
         super().__init__(
             agent_name=agent_name,
@@ -298,44 +325,96 @@ class RemoteAgent(BaseAgent):
             content_types=["text", "text/plain"],
         )
 
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(None))
+        self._httpx_client = httpx.AsyncClient(timeout=httpx.Timeout(None))
         self.agent_card = subagent_card
-        self._transport = JsonRpcTransport(
-            httpx_client=self._client,
-            agent_card=self.agent_card,
+        self._streaming_client: Client | None = None
+        self._non_streaming_client: Client | None = None
+
+    async def _get_client(self, *, streaming: bool) -> Client:
+        if streaming and self._streaming_client is None:
+            self._streaming_client = await create_client(
+                self.agent_card,
+                client_config=ClientConfig(
+                    httpx_client=self._httpx_client,
+                    streaming=True,
+                ),
+            )
+        if not streaming and self._non_streaming_client is None:
+            self._non_streaming_client = await create_client(
+                self.agent_card,
+                client_config=ClientConfig(
+                    httpx_client=self._httpx_client,
+                    streaming=False,
+                ),
+            )
+        return (
+            self._streaming_client
+            if streaming
+            else self._non_streaming_client
         )
 
-    async def invoke(self, message: str, context_id: str | None = None) -> Task | Message:
-        payload: dict[str, Any] = {
-            "message": {
-                "role": "user",
-                "parts": [{"kind": "text", "text": message}],
-                "message_id": uuid4().hex
-            }
-        }
-        if context_id:
-            payload["message"]["context_id"] = context_id
-
-        return await self._transport.send_message(
-            request=MessageSendParams(**payload)
+    def _build_request(
+        self, message: str, context_id: str | None = None
+    ) -> SendMessageRequest:
+        return SendMessageRequest(
+            message=new_text_message(
+                text=message,
+                context_id=context_id,
+                role=Role.ROLE_USER,
+            )
         )
+
+    @staticmethod
+    def _unwrap_response(
+        response: StreamResponse,
+    ) -> Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None:
+        if response.HasField("status_update"):
+            return response.status_update
+        if response.HasField("artifact_update"):
+            return response.artifact_update
+        if response.HasField("task"):
+            return response.task
+        if response.HasField("message"):
+            return response.message
+        return None
+
+    async def invoke(
+        self, message: str, context_id: str | None = None
+    ) -> Task | Message:
+        client = await self._get_client(streaming=False)
+        request = self._build_request(message, context_id=context_id)
+
+        last_response: Message | Task | None = None
+        async for chunk in client.send_message(request):
+            event = self._unwrap_response(chunk)
+            if isinstance(event, Message | Task):
+                last_response = event
+
+        if last_response is None:
+            raise RuntimeError(
+                f"Subagent {self.agent_name} returned no terminal response."
+            )
+        return last_response
 
     async def stream(
         self,
         message: str,
         context_id: str | None = None,
-    ) -> AsyncGenerator[Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent, None]:
-        payload: dict[str, Any] = {
-            "message": {
-                "role": "user",
-                "parts": [{"kind": "text", "text": message}],
-                "message_id": uuid4().hex
-            }
-        }
-        if context_id:
-            payload["message"]["context_id"] = context_id
-        async for chunk in self._transport.send_message_streaming(request=MessageSendParams(**payload)):
-            yield chunk
+    ) -> AsyncGenerator[
+        Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+        None,
+    ]:
+        client = await self._get_client(streaming=True)
+        request = self._build_request(message, context_id=context_id)
+
+        async for chunk in client.send_message(request):
+            event = self._unwrap_response(chunk)
+            if event is not None:
+                yield event
 
     async def close(self):
-        await self._client.aclose()
+        if self._streaming_client is not None:
+            await self._streaming_client.close()
+        if self._non_streaming_client is not None:
+            await self._non_streaming_client.close()
+        await self._httpx_client.aclose()
