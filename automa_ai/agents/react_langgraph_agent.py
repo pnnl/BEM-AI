@@ -120,7 +120,13 @@ class GenericLangGraphReactAgent(BaseAgent):
         response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
         return response
 
-    async def stream(self, query, session_id, task_id) -> AsyncIterable[dict[str, Any]]:
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        **kwargs
+    ) -> AsyncIterable[dict[str, Any]]:
         # use to track the tool call steps
         active_tool_calls = 0
         # queue for tool/subagent streaming
@@ -159,9 +165,9 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         # Assemble message
         inputs = {"messages": [{"role": "user", "content": augmented_query}]}
-        config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": context_id}}
         self.logger.info(
-            f"Running planner agent stream for session {session_id} {task_id} with input {query}"
+            f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
         if not self.graph:
             await self.init_graph(emitter)
@@ -202,7 +208,7 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 if message.response_metadata:
                                     self.metrics.add(extract_metrics_from_chunk(
                                         message,
-                                        session_id=session_id,
+                                        session_id=context_id,
                                         query_id=self.metrics.current_query_id
                                     ))
                         if isinstance(message, AIMessage) and message.content:

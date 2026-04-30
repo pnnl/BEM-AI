@@ -79,7 +79,7 @@ class GenericADKAgent(BaseAgent):
         logger.info(f"Running {self.agent_name} for session {session_id}")
         raise NotImplementedError("Please use the streaming function.")
 
-    async def stream(self, query, context_id, task_id) -> AsyncIterable[dict[str, Any]]:
+    async def stream(self, query, context_id, task_id, **kwargs) -> AsyncIterable[dict[str, Any]]:
         logger.info(
             f"Running {self.agent_name} stream for session {context_id} {task_id} - {query}"
         )

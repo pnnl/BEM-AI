@@ -1,5 +1,6 @@
 import abc
 from abc import ABC
+from typing import Any, AsyncIterable
 
 from pydantic import BaseModel, Field
 
@@ -20,4 +21,8 @@ class BaseAgent(BaseModel, ABC):
 
     @abc.abstractmethod
     async def invoke(self, query, sessionId):
+        raise NotImplementedError()
+    
+    @abc.abstractmethod
+    async def stream(self, query, context_id, task_id, user_id: str | None = None, metadata: dict[str, Any] | None = None) -> AsyncIterable[dict[str, Any]]:
         raise NotImplementedError()

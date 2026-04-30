@@ -1,7 +1,8 @@
 from datetime import datetime
+import json
 import uuid
 from enum import Enum
-from typing import Dict, Any
+from typing import Dict, Any, Mapping
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,11 @@ class MemoryEntry(BaseModel):
     session_id: str = Field(
         default_factory=lambda:str(uuid.uuid4()),
         description="Unique identifier for this session entry."
+    )
+
+    task_id: str = Field(
+        default=None,
+        description="Unique identifier for the task associated with this memory entry."
     )
 
     user_id: str = Field(
@@ -73,3 +79,36 @@ class MemoryEntry(BaseModel):
         default_factory=datetime.now,
         description="The most recent time this memory entry was accessed."
     )
+
+    @classmethod
+    def from_db_row(cls, row: Mapping[str, Any]) -> "MemoryEntry":
+        return cls(
+            id=row["id"],
+            record_id=row["record_id"],
+            session_id=row["session_id"],
+            task_id=row["task_id"],
+            user_id=row["user_id"],
+            content=row["content"],
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            timestamp=datetime.fromtimestamp(row["timestamp"]),
+            memory_type=MemoryType(row["memory_type"]),
+            importance_score=row["importance_score"],
+            access_count=row["access_count"],
+            last_accessed=datetime.fromtimestamp(row["last_accessed"]),
+        )
+    
+    def to_db_tuple(self) -> tuple:
+        return (
+            self.id,
+            self.record_id,
+            self.session_id,
+            self.task_id,
+            self.user_id,
+            self.content,
+            json.dumps(self.metadata),
+            self.timestamp.timestamp(),
+            self.memory_type.value,
+            self.importance_score,
+            self.access_count,
+            self.last_accessed.timestamp(),
+        )
