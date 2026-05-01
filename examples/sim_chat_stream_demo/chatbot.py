@@ -3,7 +3,6 @@ import logging
 import os
 from pathlib import Path
 
-from a2a.types import AgentSkill
 from dotenv import load_dotenv
 
 from automa_ai.agents import GenericAgentType, GenericLLM
@@ -182,13 +181,13 @@ mcp_manager.start_all()
 
 CHATBOT_SERVER_URL = os.environ.get("CHATBOT_SERVER_URL")
 
-skill = AgentSkill(
-    id="automa_assistant",
-    name="Automa AI Assistant",
-    description="Assistant to explain what is automa and how to work with automa",
-    tags=["assistant"],
-    examples=["Tell me about yourself", "Can you tell me what you can do?"],
-)
+skill = {
+    "id": "automa_assistant",
+    "name": "Automa AI Assistant",
+    "description": "Assistant to explain what is automa and how to work with automa",
+    "tags": ["assistant"],
+    "examples": ["Tell me about yourself", "Can you tell me what you can do?"],
+}
 
 # --8<-- [start:AgentCard]
 # This will be the public-facing agent card
@@ -208,15 +207,7 @@ public_agent_card = {
             "protocolVersion": "1.0",
         }
     ],
-    "skills": [
-        {
-            "id": skill.id,
-            "name": skill.name,
-            "description": skill.description,
-            "tags": list(skill.tags),
-            "examples": list(skill.examples),
-        }
-    ],
+    "skills": [skill],
 }
 chat_bot_model_name = os.environ.get("CHAT_BOT_MODEL_NAME")
 chat_bot_base_url = os.environ.get("CHAT_BOT_MODEL_BASE_URL") or None

@@ -387,7 +387,7 @@ class RemoteAgent(BaseAgent):
         last_response: Message | Task | None = None
         async for chunk in client.send_message(request):
             event = self._unwrap_response(chunk)
-            if isinstance(event, Message | Task):
+            if isinstance(event, (Message, Task)):
                 last_response = event
 
         if last_response is None:
