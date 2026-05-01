@@ -13,7 +13,6 @@ from automa_ai.common.agent_runner import AgentRunner
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.types import ServerConfig
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +78,14 @@ class GenericADKAgent(BaseAgent):
         logger.info(f"Running {self.agent_name} for session {session_id}")
         raise NotImplementedError("Please use the streaming function.")
 
-    async def stream(self, query, context_id, task_id, **kwargs) -> AsyncIterable[dict[str, Any]]:
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncIterable[dict[str, Any]]:
         logger.info(
             f"Running {self.agent_name} stream for session {context_id} {task_id} - {query}"
         )
