@@ -45,6 +45,11 @@ from automa_ai.blackboard.tools import build_blackboard_tools
 
 logger = logging.getLogger(__name__)
 
+try:
+    from langgraph_checkpoint_aws import AgentCoreMemorySaver
+except ImportError:
+    AgentCoreMemorySaver = None
+
 
 class GenericLangGraphChatAgent(BaseAgent):
     """A generic LangGraph react agent"""
@@ -675,6 +680,16 @@ class GenericLangGraphChatAgent(BaseAgent):
         context_id: str,
         user_id: str | None = None,
     ) -> dict[str, Any]:
+        if (
+            AgentCoreMemorySaver is not None
+            and isinstance(self.checkpointer, AgentCoreMemorySaver)
+            and user_id is None
+        ):
+            raise ValueError(
+                "AgentCoreMemorySaver requires user_id to be set for proper namespacing of memory. "
+                "Please provide a user_id when invoking the agent."
+            )
+
         configurable = {"thread_id": self._checkpoint_thread_id(context_id)}
 
         if user_id is not None:
