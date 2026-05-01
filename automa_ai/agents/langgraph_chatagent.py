@@ -282,7 +282,15 @@ class GenericLangGraphChatAgent(BaseAgent):
                 print(self.metrics.summary_for_query(self.metrics.current_query_id))
             self.metrics.start_query(task_id)
         inputs = await self._build_stream_inputs(query, context_id, task_id, user_id, metadata)
-        config = {"configurable": {"thread_id": self._checkpoint_thread_id(context_id)}}
+
+        lc_configurable = {
+            "thread_id": self._checkpoint_thread_id(context_id),
+        }
+
+        if user_id is not None:
+            lc_configurable["actor_id"] = user_id
+    
+        config = {"configurable": lc_configurable}
         logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )

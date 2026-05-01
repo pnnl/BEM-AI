@@ -125,7 +125,8 @@ class GenericLangGraphReactAgent(BaseAgent):
         query,
         context_id,
         task_id,
-        **kwargs
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AsyncIterable[dict[str, Any]]:
         # use to track the tool call steps
         active_tool_calls = 0
@@ -165,7 +166,14 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         # Assemble message
         inputs = {"messages": [{"role": "user", "content": augmented_query}]}
-        config = {"configurable": {"thread_id": context_id}}
+        lc_configurable = {
+            "thread_id": context_id,
+        }
+
+        if user_id is not None:
+            lc_configurable["actor_id"] = user_id
+    
+        config = {"configurable": lc_configurable}
         self.logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )

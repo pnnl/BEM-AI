@@ -38,6 +38,7 @@ dependencies = [
     "streamlit>=1.54.0",
     "uvicorn>=0.40.0",
     "multiprocessing-logging>=0.3.4",
+    "langgraph-checkpoint-aws>=1.0.7",
 ]
 packages = [{include = "automa_ai", from = "."}]
 
