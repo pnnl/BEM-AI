@@ -68,7 +68,6 @@ class CheckpointerConfig(BaseModel):
                 raise ValueError(
                     "memory_id is required when checkpointer type is 'agentcore'."
                 )
-            # region is optional but strongly recommended
             if self.redis_url is not None:
                 raise ValueError(
                     "redis_url is not valid for agentcore checkpointer."

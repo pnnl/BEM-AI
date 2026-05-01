@@ -105,7 +105,7 @@ class GenericLangGraphReactAgent(BaseAgent):
         self,
         query,
         context_id,
-        task_id,
+        task_id: str | None = None,
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ):
