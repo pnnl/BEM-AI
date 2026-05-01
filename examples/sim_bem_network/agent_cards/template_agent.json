@@ -1,31 +1,34 @@
 {
   "name": "Energy Model Generator Agent",
-  "description": "Generate a typical energy model based on building type, standard and climate zone",
-  "url": "http://localhost:10105/",
+  "description": "Generates a typical OpenStudio model from building type, standard, and climate zone.",
   "version": "0.0.1",
   "capabilities": {
     "streaming": true,
-    "pushNotifications": true,
-    "stateTransitionHistory": false
+    "pushNotifications": true
   },
+  "supportedInterfaces": [
+    {
+      "url": "http://localhost:10105/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "defaultInputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "defaultOutputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "skills": [
     {
       "id": "generate_energy_model",
       "name": "Generate energy model",
-      "description": "Generate a typical energy model based on building type, standard version and climate zone",
+      "description": "Loads a typical OpenStudio model based on building type, standard version, and climate zone.",
       "tags": [
-        "Generate energy model"
+        "generate energy model"
       ],
-      "example": [
-        "Generate an energy model for a primary school building."
+      "examples": [
+        "Generate an energy model for a medium office building."
       ]
     }
   ]

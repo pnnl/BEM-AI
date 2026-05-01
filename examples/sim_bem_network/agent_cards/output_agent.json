@@ -1,32 +1,35 @@
 {
   "name": "Energy Output Agent",
-  "description": "Retrieve simulation outputs such as annual site EUI and others",
-  "url": "http://localhost:10107/",
+  "description": "Retrieves annual site EUI results from a simulated OpenStudio model.",
   "version": "0.0.1",
   "capabilities": {
     "streaming": true,
-    "pushNotification": true,
-    "stateTransitionHistory": false
+    "pushNotifications": true
   },
+  "supportedInterfaces": [
+    {
+      "url": "http://localhost:10107/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "defaultInputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "defaultOutputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "skills": [
     {
       "id": "retrieve_eui",
-      "name": "energy use intensity",
-      "description": "Get the annual site energy use intensity (EUI) from simulation",
+      "name": "Retrieve annual site EUI",
+      "description": "Retrieves annual site energy use intensity from simulation outputs.",
       "tags": [
-        "EUI evaluation"
+        "eui",
+        "output"
       ],
-      "example": [
-        "Get the energy use intensity from the simulation",
-        "Retrieve EUI from the model"
+      "examples": [
+        "Retrieve annual site EUI for the simulated model."
       ]
     }
   ]

@@ -1,31 +1,34 @@
 {
   "name": "Planner Agent",
-  "description": "Helps breakdown a building energy modeling request into actionable tasks",
-  "url": "http://localhost:10102/",
+  "description": "Breaks a building energy modeling request into actionable tasks.",
   "version": "0.0.1",
   "capabilities": {
     "streaming": true,
-    "pushNotifications": true,
-    "stateTransitionHistory": false
+    "pushNotifications": true
   },
+  "supportedInterfaces": [
+    {
+      "url": "http://localhost:10102/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "defaultInputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "defaultOutputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "skills": [
     {
       "id": "planner",
       "name": "Task Planner",
-      "description": "Helps breakdown a building energy modeling request into actionable tasks",
+      "description": "Breaks a building energy modeling request into actionable tasks.",
       "tags": [
         "planner"
       ],
       "examples": [
-        "Create an energy model task list for a new school"
+        "Create an energy model task list for a new school."
       ]
     }
   ]

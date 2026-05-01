@@ -49,7 +49,7 @@ CLIENT_PID=$!
 
 echo ""
 echo "✅ Both processes running:"
-echo "   - Server PID: $SERVER_PID (http://localhost:10100)"
+echo "   - Server PID: $SERVER_PID (http://localhost:10001)"
 echo "   - Client PID: $CLIENT_PID (http://localhost:$STREAMLIT_PORT)"
 echo ""
 echo "🧭 Logs:"
@@ -75,4 +75,3 @@ trap cleanup SIGINT
 while true; do
     sleep 1
 done
-
