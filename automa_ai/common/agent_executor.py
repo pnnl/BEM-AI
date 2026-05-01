@@ -16,7 +16,6 @@ from a2a.types import (
 )
 from a2a.utils import new_task, new_agent_text_message
 from a2a.utils.errors import ServerError
-from streamlit import context
 
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
