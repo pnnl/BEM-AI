@@ -173,16 +173,17 @@ def build_chroma_filter(
     **kwargs
 ) -> Optional[Dict[str, Any]]:
     merged = {}
-    # Merge all filter with canoncical fields taking precedence over metadata and kwargs
+    # Merge all filters, with canonical fields taking precedence only when explicitly provided.
     if kwargs:
         merged.update(kwargs)
     if metadata:
         merged.update(metadata)
-    merged.update({
-        "session_id": session_id,
-        "task_id": task_id,
-        "user_id": user_id,
-    })
+    if session_id is not None:
+        merged["session_id"] = session_id
+    if task_id is not None:
+        merged["task_id"] = task_id
+    if user_id is not None:
+        merged["user_id"] = user_id
 
     clauses = [
         {field: {"$eq": value}}
