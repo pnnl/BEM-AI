@@ -29,12 +29,12 @@ class MemoryEntry(BaseModel):
         description="Unique identifier for this session entry."
     )
 
-    task_id: str = Field(
+    task_id: str | None = Field(
         default=None,
         description="Unique identifier for the task associated with this memory entry."
     )
 
-    user_id: str = Field(
+    user_id: str | None = Field(
         default=None,
         description="Unique identifier for the user."
     )
@@ -44,7 +44,7 @@ class MemoryEntry(BaseModel):
         description="The textual message or information stored in memory."
     )
 
-    metadata: Dict[str, Any] = Field(
+    metadata: Dict[str, Any] | None = Field(
         default_factory=dict,
         description=(
             "Additional structured metadata associated with the memory entry, "
@@ -80,22 +80,6 @@ class MemoryEntry(BaseModel):
         description="The most recent time this memory entry was accessed."
     )
 
-    @classmethod
-    def from_db_row(cls, row: Mapping[str, Any]) -> "MemoryEntry":
-        return cls(
-            id=row["id"],
-            record_id=row["record_id"],
-            session_id=row["session_id"],
-            task_id=row["task_id"],
-            user_id=row["user_id"],
-            content=row["content"],
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-            timestamp=datetime.fromtimestamp(row["timestamp"]),
-            memory_type=MemoryType(row["memory_type"]),
-            importance_score=row["importance_score"],
-            access_count=row["access_count"],
-            last_accessed=datetime.fromtimestamp(row["last_accessed"]),
-        )
     
     def to_db_tuple(self) -> tuple:
         return (

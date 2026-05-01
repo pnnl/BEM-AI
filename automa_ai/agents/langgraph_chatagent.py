@@ -297,13 +297,6 @@ class GenericLangGraphChatAgent(BaseAgent):
             query, context_id, task_id, user_id, metadata
         )
 
-        configurable = {
-            "thread_id": self._checkpoint_thread_id(context_id),
-        }
-
-        if user_id is not None:
-            configurable["actor_id"] = user_id
-
         config = self._build_runnable_config(context_id, user_id)
         logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"

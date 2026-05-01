@@ -34,7 +34,7 @@ class SQLiteMemoryStore(BaseMemoryStore):
                 CREATE TABLE IF NOT EXISTS memories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
+                    user_id TEXT,
                     content TEXT NOT NULL,
                     metadata TEXT,
                     timestamp REAL,
@@ -49,20 +49,27 @@ class SQLiteMemoryStore(BaseMemoryStore):
     def write_memory(self, entries: List[MemoryEntry]) -> None:
         """Write a memory entry to SQLite storage."""
 
-        query = """
-            INSERT INTO memories (
-                record_id, session_id, user_id, content, metadata,
-                timestamp, memory_type, importance_score, access_count, last_accessed
-            )
-            VALUES (
-                :record_id, :session_id, :user_id, :content, :metadata,
-                :timestamp, :memory_type, :importance_score, :access_count, :last_accessed
-            )
-        """
-
         with sqlite3.connect(self.db_path) as conn:
-            conn.executemany(query, [e.to_db_dict() for e in entries])
-            conn.commit()
+            data_to_insert = [
+                (
+                    entry.session_id,
+                    entry.user_id,
+                    entry.content,
+                    json.dumps(entry.metadata),
+                    entry.timestamp.timestamp(),
+                    entry.memory_type.value,
+                    entry.importance_score,
+                    entry.access_count,
+                    entry.last_accessed.timestamp()
+                )
+                for entry in entries
+            ]
+
+            conn.executemany("""
+                        INSERT INTO memories 
+                        (session_id, user_id, content, metadata, timestamp, memory_type, importance_score, access_count, last_accessed)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, data_to_insert)
 
     def read_memories(
         self,
@@ -100,7 +107,18 @@ class SQLiteMemoryStore(BaseMemoryStore):
 
         memories = []
         for row in rows:
-            entry = MemoryEntry.from_db_row(row)
+            entry = MemoryEntry(
+                id=row[0],
+                session_id=row[1],
+                user_id=row[2],
+                content=row[3],
+                metadata=json.loads(row[4]) if row[4] else {},
+                timestamp=datetime.fromtimestamp(row[5]),
+                memory_type=MemoryType(row[6]),
+                importance_score=row[7],
+                access_count=row[8],
+                last_accessed=datetime.fromtimestamp(row[9])
+            )
             memories.append(entry)
 
         return memories
