@@ -228,8 +228,15 @@ class GenericLangGraphChatAgent(BaseAgent):
             initial_data=self.blackboard_initial_data,
         )
 
-    async def invoke(self, query, session_id: str) -> Any:
-        config = {"configurable": {"thread_id": self._checkpoint_thread_id(session_id)}}
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        config = self._build_runnable_config(context_id, user_id)
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
 
@@ -240,10 +247,10 @@ class GenericLangGraphChatAgent(BaseAgent):
             """
             await subagent_event_queue.put(e)
 
-        self._ensure_blackboard(session_id)
+        self._ensure_blackboard(context_id)
         if not self.graph:
             await self.init_graph(emit_subagent_event)
-        context_token = set_subagent_context_id(session_id)
+        context_token = set_subagent_context_id(context_id)
         emitter_token = set_subagent_emitter(emit_subagent_event)
         try:
             response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
@@ -281,16 +288,18 @@ class GenericLangGraphChatAgent(BaseAgent):
                 # If a new task, write out the previous task.
                 print(self.metrics.summary_for_query(self.metrics.current_query_id))
             self.metrics.start_query(task_id)
-        inputs = await self._build_stream_inputs(query, context_id, task_id, user_id, metadata)
+        inputs = await self._build_stream_inputs(
+            query, context_id, task_id, user_id, metadata
+        )
 
-        lc_configurable = {
+        configurable = {
             "thread_id": self._checkpoint_thread_id(context_id),
         }
 
         if user_id is not None:
-            lc_configurable["actor_id"] = user_id
-    
-        config = {"configurable": lc_configurable}
+            configurable["actor_id"] = user_id
+
+        config = self._build_runnable_config(context_id, user_id)
         logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
@@ -523,7 +532,12 @@ class GenericLangGraphChatAgent(BaseAgent):
             try:
                 # Write to short-term store
                 await self.memory_manager.add_memory(
-                    event.message, session_id=event.session_id, task_id=event.task_id, user_id=event.user_id, metadata=event.metadata, memory_type=MemoryType.SHORT_TERM
+                    event.message,
+                    session_id=event.session_id,
+                    task_id=event.task_id,
+                    user_id=event.user_id,
+                    metadata=event.metadata,
+                    memory_type=MemoryType.SHORT_TERM,
                 )
                 asyncio.create_task(self.memory_manager.manage_memory_size())
             except Exception as e:
@@ -561,7 +575,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         )
 
         if memory_additional_system_query.strip():
-            additional_system_query = f"{additional_system_query}\n\n{memory_additional_system_query}"
+            additional_system_query = (
+                f"{additional_system_query}\n\n{memory_additional_system_query}"
+            )
 
         messages = [{"role": "user", "content": query}]
         if additional_system_query.strip():
@@ -618,7 +634,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         if emitted_output or tool_activity_started or human_message_queued:
             return False
         return is_retryable_network_error(exc)
-    
+
     async def _build_memory_context(
         self,
         query: str,
@@ -653,6 +669,18 @@ class GenericLangGraphChatAgent(BaseAgent):
         if self.debug:
             logger.info("Retrieved memory context: %s", section)
         return section
+
+    def _build_runnable_config(
+        self,
+        context_id: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        configurable = {"thread_id": self._checkpoint_thread_id(context_id)}
+
+        if user_id is not None:
+            configurable["actor_id"] = user_id
+
+        return {"configurable": configurable}
 
     @staticmethod
     def _normalize_chunk_content(chunk: AIMessageChunk) -> str | None:

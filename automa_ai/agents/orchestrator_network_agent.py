@@ -58,7 +58,14 @@ class OrchestratorNetworkAgent(BaseAgent):
         self.summary_instruction = instructions
         self.chat_model = chat_model
 
-    async def invoke(self, query, sessionId):
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
         # no actual usage.
         pass
 

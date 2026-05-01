@@ -101,8 +101,15 @@ class GenericLangGraphReactAgent(BaseAgent):
             tools=tools
         )
 
-    async def invoke(self, query, sessionId):
-        config = {"configurable": {"thread_id": sessionId}}
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
+        config = self._build_runnable_config(context_id, user_id)
         # queue for tool/subagent streaming
         subagent_event_queue: Queue[StreamEvent] = Queue()
 
@@ -166,14 +173,8 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         # Assemble message
         inputs = {"messages": [{"role": "user", "content": augmented_query}]}
-        lc_configurable = {
-            "thread_id": context_id,
-        }
 
-        if user_id is not None:
-            lc_configurable["actor_id"] = user_id
-    
-        config = {"configurable": lc_configurable}
+        config = self._build_runnable_config(context_id, user_id)
         self.logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
@@ -385,3 +386,15 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 "require_user_input": False,
                                 "content": f"Tool call {tool_msg.name} has no content return or failed. check logs.",
                             }
+
+    def _build_runnable_config(
+        self,
+        context_id: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        configurable = {"thread_id": context_id}
+
+        if user_id is not None:
+            configurable["actor_id"] = user_id
+
+        return {"configurable": configurable}

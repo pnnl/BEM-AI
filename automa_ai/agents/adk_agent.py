@@ -74,8 +74,14 @@ class GenericADKAgent(BaseAgent):
         )
         self.runner = AgentRunner()
 
-    async def invoke(self, query, session_id) -> dict:
-        logger.info(f"Running {self.agent_name} for session {session_id}")
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict:
         raise NotImplementedError("Please use the streaming function.")
 
     async def stream(

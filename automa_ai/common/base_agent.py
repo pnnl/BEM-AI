@@ -20,7 +20,7 @@ class BaseAgent(BaseModel, ABC):
     content_types: list[str] = Field(description="Supported content types.")
 
     @abc.abstractmethod
-    async def invoke(self, query, sessionId):
+    async def invoke(self, query, context_id, task_id, user_id: str | None = None, metadata: dict[str, Any] | None = None):
         raise NotImplementedError()
     
     @abc.abstractmethod
