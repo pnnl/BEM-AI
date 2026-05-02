@@ -32,11 +32,11 @@ Shared state:
 
 ## Files
 
-- [sim_bem_network_orchestrator.py](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/sim_bem_network_orchestrator.py): server bootstrap
-- [streamlit_ui.py](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/streamlit_ui.py): chat UI
-- [agent_cards](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/agent_cards): plain JSON agent cards
-- [app_mcps/model_mcp.py](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/app_mcps/model_mcp.py): model-template MCP server
-- [app_mcps/os_mcp.py](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/app_mcps/os_mcp.py): OpenStudio modification and simulation MCP server
+- [sim_bem_network_orchestrator.py](./sim_bem_network_orchestrator.py): server bootstrap
+- [streamlit_ui.py](./streamlit_ui.py): chat UI
+- [agent_cards](./agent_cards): plain JSON agent cards
+- [app_mcps/model_mcp.py](./app_mcps/model_mcp.py): model-template MCP server
+- [app_mcps/os_mcp.py](./app_mcps/os_mcp.py): OpenStudio modification and simulation MCP server
 
 ## Setup
 
@@ -47,7 +47,7 @@ Prerequisites:
 - `openstudio`
 - a working OpenStudio CLI path in `.env`
 
-Create `.env` from [example.env](/Users/xuwe123/github/BEM-AI/examples/sim_bem_network/example.env) and set:
+Create `.env` from [example.env](./example.env) and set:
 
 - `PLANNER_MODEL_NAME`
 - `PLANNER_MODEL_BASE_URL` if needed
