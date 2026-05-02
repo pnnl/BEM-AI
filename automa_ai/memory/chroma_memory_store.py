@@ -23,15 +23,13 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         if not db_path:
             raise ValueError("db_path must be defined for ChromaVectorMemoryStore.")
 
-        return cls(
-            persist_directory=db_path
-        )
+        return cls(persist_directory=db_path)
 
     def __init__(
-            self,
-            persist_directory: str,
-            collection_name: str = "memory_store",
-            embeddings: Optional[Embeddings] = None,
+        self,
+        persist_directory: str,
+        collection_name: str = "memory_store",
+        embeddings: Optional[Embeddings] = None,
     ):
         self.embeddings = embeddings
         self.collection_name = collection_name
@@ -42,7 +40,7 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         self.vectorstore = Chroma(
             collection_name=collection_name,
             embedding_function=self.embeddings,
-            persist_directory=str(self.persist_directory)
+            persist_directory=str(self.persist_directory),
         )
 
         # Keep a mapping of document IDs to memory entries
@@ -58,7 +56,8 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         texts = [entry.content for entry in entries]
         metadatas = [
             {
-                **entry.metadata,
+                **(entry.metadata or {}),
+                "record_id": entry.record_id,
                 "session_id": entry.session_id,
                 "task_id": entry.task_id,
                 "user_id": entry.user_id,
@@ -67,18 +66,13 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
                 "importance_score": entry.importance_score,
                 "access_count": entry.access_count,
                 "last_accessed": entry.last_accessed.isoformat(),
-                
             }
             for entry in entries
         ]
         record_ids = [entry.record_id for entry in entries]
 
         # Add all entries at once
-        self.vectorstore.add_texts(
-            texts=texts,
-            metadatas=metadatas,
-            ids=record_ids
-        )
+        self.vectorstore.add_texts(texts=texts, metadatas=metadatas, ids=record_ids)
 
         # Keep in memory mapping
         for entry in entries:
@@ -95,7 +89,9 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         **kwargs,
     ) -> List[MemoryEntry]:
         """Read memory entries using semantic search."""
-        filter_dict = build_chroma_filter(session_id=session_id, user_id=user_id, **kwargs)
+        filter_dict = build_chroma_filter(
+            session_id=session_id, user_id=user_id, **kwargs
+        )
         if query:
             # Semantic search
             if filter_dict:
@@ -112,7 +108,7 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
 
             memories = []
             for doc, score in results:
-                record_id = doc.metadata.get("record_id")
+                record_id = doc.metadata.get("record_id") or getattr(doc, "id", None)
                 if record_id in self.memory_mapping:
                     memory = self.memory_mapping[record_id]
                     # Filter by memory type if specified
@@ -126,6 +122,17 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         else:
             # Return recent memories
             memories = list(self.memory_mapping.values())
+            memories = [
+                memory
+                for memory in memories
+                if _matches_memory_filters(
+                    memory,
+                    session_id=session_id,
+                    task_id=kwargs.get("task_id"),
+                    user_id=user_id,
+                    metadata=kwargs.get("metadata"),
+                )
+            ]
             if memory_type:
                 memories = [m for m in memories if m.memory_type == memory_type]
 
@@ -152,17 +159,37 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
             self.vectorstore = Chroma(
                 collection_name=self.collection_name,
                 embedding_function=self.embeddings,
-                persist_directory=str(self.persist_directory)
+                persist_directory=str(self.persist_directory),
             )
         else:
             # Clear specific memory type
             to_delete = [
-                mid for mid, memory in self.memory_mapping.items()
+                mid
+                for mid, memory in self.memory_mapping.items()
                 if memory.memory_type == memory_type
             ]
             for mid in to_delete:
                 self.delete_memory(mid)
 
+
+def _matches_memory_filters(
+    memory: MemoryEntry,
+    *,
+    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> bool:
+    if session_id is not None and memory.session_id != session_id:
+        return False
+    if task_id is not None and memory.task_id != task_id:
+        return False
+    if user_id is not None and memory.user_id != user_id:
+        return False
+    if metadata:
+        memory_metadata = memory.metadata or {}
+        return all(memory_metadata.get(key) == value for key, value in metadata.items())
+    return True
 
 
 def build_chroma_filter(
@@ -170,7 +197,7 @@ def build_chroma_filter(
     task_id: Optional[str] = None,
     user_id: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None,
-    **kwargs
+    **kwargs,
 ) -> Optional[Dict[str, Any]]:
     merged = {}
     # Merge all filters, with canonical fields taking precedence only when explicitly provided.
@@ -186,9 +213,7 @@ def build_chroma_filter(
         merged["user_id"] = user_id
 
     clauses = [
-        {field: {"$eq": value}}
-        for field, value in merged.items()
-        if value is not None
+        {field: {"$eq": value}} for field, value in merged.items() if value is not None
     ]
 
     if not clauses:

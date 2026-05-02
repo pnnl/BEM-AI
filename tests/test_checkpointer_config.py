@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import sys
 
 import pytest
 
@@ -133,6 +134,48 @@ def test_build_checkpointer_rejects_unsupported_redis_stack(monkeypatch) -> None
         agent_factory._build_checkpointer(
             {"type": "redis_stack", "redis_url": "localhost:6379"}
         )
+
+
+def test_build_checkpointer_uses_agentcore_saver(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAgentCoreMemorySaver:
+        def __init__(self, memory_id: str, *, region_name: str) -> None:
+            captured["memory_id"] = memory_id
+            captured["region_name"] = region_name
+
+    fake_agentcore_module = SimpleNamespace(
+        AgentCoreMemorySaver=FakeAgentCoreMemorySaver
+    )
+    fake_boto3_module = SimpleNamespace(
+        Session=lambda: SimpleNamespace(region_name="us-west-2")
+    )
+
+    monkeypatch.setitem(sys.modules, "langgraph_checkpoint_aws", fake_agentcore_module)
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3_module)
+
+    checkpointer, cleanup = agent_factory._build_checkpointer(
+        {"type": "agentcore", "memory_id": "mem-123"}
+    )
+
+    assert isinstance(checkpointer, FakeAgentCoreMemorySaver)
+    assert captured == {"memory_id": "mem-123", "region_name": "us-west-2"}
+    assert cleanup is None
+
+
+def test_build_checkpointer_requires_agentcore_region(monkeypatch) -> None:
+    fake_agentcore_module = SimpleNamespace(
+        AgentCoreMemorySaver=lambda *args, **kwargs: object()
+    )
+    fake_boto3_module = SimpleNamespace(
+        Session=lambda: SimpleNamespace(region_name=None)
+    )
+
+    monkeypatch.setitem(sys.modules, "langgraph_checkpoint_aws", fake_agentcore_module)
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3_module)
+
+    with pytest.raises(ValueError, match="AWS region must be provided"):
+        agent_factory._build_checkpointer({"type": "agentcore", "memory_id": "mem-123"})
 
 
 def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> None:
