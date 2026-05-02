@@ -23,7 +23,7 @@ def test_checkpointer_config_requires_redis_url(checkpointer_type: str) -> None:
 
 
 def test_checkpointer_config_rejects_redis_url_for_default() -> None:
-    with pytest.raises(ValueError, match="only supported"):
+    with pytest.raises(ValueError, match="No extra fields are allowed"):
         CheckpointerConfig.from_value(
             {"type": "default", "redis_url": "redis://localhost:6379"}
         )
@@ -157,7 +157,22 @@ def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> Non
     )
 
     factory = agent_factory.AgentFactory(
-        card=SimpleNamespace(name="agent", description="desc"),
+        card={
+            "name": "agent",
+            "description": "desc",
+            "version": "1.0.0",
+            "defaultInputModes": ["text"],
+            "defaultOutputModes": ["text"],
+            "capabilities": {"streaming": True},
+            "supportedInterfaces": [
+                {
+                    "url": "localhost:10000",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "1.0",
+                }
+            ],
+            "skills": [],
+        },
         instructions="test",
         model_name="model",
         agent_type=GenericAgentType.LANGGRAPHCHAT,

@@ -1,6 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Optional, List
+from typing import Any, Optional, List
 from automa_ai.memory.memory_types import MemoryEntry, MemoryType
 
 
@@ -25,35 +25,36 @@ class BaseMemoryStore(ABC):
     def read_memories(
             self,
             query: Optional[str] = None,
-            session_id: Optional[str] = None,
-            user_id: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None,
-            limit: int = 10
+            *,
+            limit: int = 10,
+            **kwargs,
     ) -> List[MemoryEntry]:
-        """Read memory entries from storage."""
+        """Read memory entries from storage.
+
+        Standard kwargs: session_id, task_id, user_id, metadata, memory_type.
+        """
         pass
 
     @abstractmethod
     async def aread_memories(
             self,
             query: Optional[str] = None,
-            session_id: Optional[str] = None,
-            user_id: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None,
-            limit: int = 10
+            *,
+            limit: int = 10,
+            **kwargs,
     ) -> List[MemoryEntry]:
-        memory_list = await asyncio.to_thread(self.read_memories, query, session_id, user_id, memory_type, limit)
+        memory_list = await asyncio.to_thread(self.read_memories, query, limit=limit, **kwargs)
         return memory_list
 
     @abstractmethod
-    def delete_memory(self, memory_id: str) -> bool:
+    def delete_memory(self, record_id: str) -> bool:
         """Delete a specific memory entry."""
         pass
 
     @abstractmethod
-    async def adelete_memory(self, memory_id: str) -> bool:
+    async def adelete_memory(self, record_id: str) -> bool:
         """Asynchronous Delete a specific memory entry."""
-        delete = await asyncio.to_thread(self.delete_memory, memory_id)
+        delete = await asyncio.to_thread(self.delete_memory, record_id)
         return delete
 
     @abstractmethod
