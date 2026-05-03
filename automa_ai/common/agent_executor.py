@@ -90,6 +90,8 @@ class GenericAgentExecutor(AgentExecutor):
         if error:
             raise ServerError(error=InvalidParamsError())
 
+        metadata = context.message.metadata or {}
+
         query = context.get_user_input()
         task = context.current_task
 
@@ -105,7 +107,9 @@ class GenericAgentExecutor(AgentExecutor):
         last_text_sent = None
         terminal_state_reached = False
 
-        async for item in self.agent.stream(query, task.context_id, task.id):
+        user_id = metadata.get("user_id") or metadata.get("userId") if metadata else None
+
+        async for item in self.agent.stream(query, task.context_id, task.id, user_id, metadata):
             # Agent-to-agent call may return fully formed A2A event wrappers.
             if hasattr(item, "root") and isinstance(item.root, SendStreamingMessageResponse):
                 event = item.root.result
