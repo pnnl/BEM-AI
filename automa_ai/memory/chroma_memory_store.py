@@ -58,13 +58,16 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         texts = [entry.content for entry in entries]
         metadatas = [
             {
+                **entry.metadata,
                 "session_id": entry.session_id,
+                "task_id": entry.task_id,
                 "user_id": entry.user_id,
-                "memory_id": entry.record_id,
+                "timestamp": entry.timestamp.isoformat(),
                 "memory_type": entry.memory_type.value,
                 "importance_score": entry.importance_score,
-                "timestamp": entry.timestamp.isoformat(),
-                **entry.metadata
+                "access_count": entry.access_count,
+                "last_accessed": entry.last_accessed.isoformat(),
+                
             }
             for entry in entries
         ]
@@ -82,15 +85,17 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
             self.memory_mapping[entry.record_id] = entry
 
     def read_memories(
-            self,
-            query: Optional[str] = None,
-            session_id: Optional[str] = None,
-            user_id: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None,
-            limit: int = 10
+        self,
+        query: Optional[str] = None,
+        *,
+        limit: int = 10,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        memory_type: Optional[MemoryType] = None,
+        **kwargs,
     ) -> List[MemoryEntry]:
         """Read memory entries using semantic search."""
-        filter_dict = build_chroma_filter(session_id, user_id)
+        filter_dict = build_chroma_filter(session_id=session_id, user_id=user_id, **kwargs)
         if query:
             # Semantic search
             if filter_dict:
@@ -107,9 +112,9 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
 
             memories = []
             for doc, score in results:
-                memory_id = doc.metadata.get("memory_id")
-                if memory_id in self.memory_mapping:
-                    memory = self.memory_mapping[memory_id]
+                record_id = doc.metadata.get("record_id")
+                if record_id in self.memory_mapping:
+                    memory = self.memory_mapping[record_id]
                     # Filter by memory type if specified
                     if memory_type is None or memory.memory_type == memory_type:
                         memories.append(memory)
@@ -127,13 +132,13 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
             memories.sort(key=lambda x: x.timestamp, reverse=True)
             return memories[:limit]
 
-    def delete_memory(self, memory_id: str) -> bool:
+    def delete_memory(self, record_id: str) -> bool:
         """Delete a specific memory entry."""
-        if memory_id in self.memory_mapping:
+        if record_id in self.memory_mapping:
             # Remove from vector store
-            self.vectorstore.delete([memory_id])
+            self.vectorstore.delete([record_id])
             # Remove from mapping
-            del self.memory_mapping[memory_id]
+            del self.memory_mapping[record_id]
             return True
         return False
 
@@ -162,20 +167,32 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
 
 def build_chroma_filter(
     session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    **kwargs
 ) -> Optional[Dict[str, Any]]:
-    clauses = []
-
+    merged = {}
+    # Merge all filters, with canonical fields taking precedence only when explicitly provided.
+    if kwargs:
+        merged.update(kwargs)
+    if metadata:
+        merged.update(metadata)
     if session_id is not None:
-        clauses.append({"session_id": {"$eq": session_id}})
-
+        merged["session_id"] = session_id
+    if task_id is not None:
+        merged["task_id"] = task_id
     if user_id is not None:
-        clauses.append({"user_id": {"$eq": user_id}})
+        merged["user_id"] = user_id
+
+    clauses = [
+        {field: {"$eq": value}}
+        for field, value in merged.items()
+        if value is not None
+    ]
 
     if not clauses:
-        return None  # no filter at all
-
+        return None
     if len(clauses) == 1:
-        return clauses[0]  # avoid unnecessary $and
-
+        return clauses[0]
     return {"$and": clauses}

@@ -305,11 +305,18 @@ class RemoteAgent(BaseAgent):
             agent_card=self.agent_card,
         )
 
-    async def invoke(self, message: str, context_id: str | None = None) -> Task | Message:
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Task | Message:
         payload: dict[str, Any] = {
             "message": {
                 "role": "user",
-                "parts": [{"kind": "text", "text": message}],
+                "parts": [{"kind": "text", "text": query}],
                 "message_id": uuid4().hex
             }
         }

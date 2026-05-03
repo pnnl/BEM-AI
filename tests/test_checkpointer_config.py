@@ -23,7 +23,7 @@ def test_checkpointer_config_requires_redis_url(checkpointer_type: str) -> None:
 
 
 def test_checkpointer_config_rejects_redis_url_for_default() -> None:
-    with pytest.raises(ValueError, match="only supported"):
+    with pytest.raises(ValueError, match="No extra fields are allowed"):
         CheckpointerConfig.from_value(
             {"type": "default", "redis_url": "redis://localhost:6379"}
         )

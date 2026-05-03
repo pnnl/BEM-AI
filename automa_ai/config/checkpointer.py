@@ -30,10 +30,19 @@ class CheckpointerConfig(BaseModel):
     - ``default``: in-memory LangGraph saver
     - ``redis_plain``: AUTOMA-AI saver implemented with core Redis commands only
     - ``redis_stack``: LangGraph Redis saver requiring RediSearch and RedisJSON
+    - ``agentcore``: AWS AgentCore persistent memory saver
     """
 
-    type: Literal["default", "redis_plain", "redis_stack"] = Field(default="default")
+    type: Literal["default", "redis_plain", "redis_stack", "agentcore"] = Field(
+        default="default"
+    )
+
+    # Redis
     redis_url: str | None = None
+
+    # AgentCore
+    memory_id: str | None = None
+    region: str | None = None
 
     @field_validator("redis_url")
     @classmethod
@@ -49,10 +58,27 @@ class CheckpointerConfig(BaseModel):
                 raise ValueError(
                     "redis_url is required when checkpointer type is 'redis_plain' or 'redis_stack'."
                 )
-        elif self.redis_url is not None:
-            raise ValueError(
-                "redis_url is only supported when checkpointer type is 'redis_plain' or 'redis_stack'."
-            )
+            if self.memory_id or self.region:
+                raise ValueError(
+                    "memory_id/region are not valid for Redis checkpointers."
+                )
+
+        elif self.type == "agentcore":
+            if not self.memory_id:
+                raise ValueError(
+                    "memory_id is required when checkpointer type is 'agentcore'."
+                )
+            if self.redis_url is not None:
+                raise ValueError(
+                    "redis_url is not valid for agentcore checkpointer."
+                )
+
+        else:  # default
+            if any([self.redis_url, self.memory_id, self.region]):
+                raise ValueError(
+                    "No extra fields are allowed when checkpointer type is 'default'."
+                )
+
         return self
 
     @classmethod

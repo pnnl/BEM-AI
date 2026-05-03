@@ -58,7 +58,14 @@ class OrchestratorNetworkAgent(BaseAgent):
         self.summary_instruction = instructions
         self.chat_model = chat_model
 
-    async def invoke(self, query, sessionId):
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
         # no actual usage.
         pass
 
@@ -125,7 +132,7 @@ class OrchestratorNetworkAgent(BaseAgent):
         self.task_blackboard.clear()
         self.query_history.clear()
 
-    async def stream(self, query, context_id, task_id) -> AsyncIterable[dict[str, Any]]:
+    async def stream(self, query, context_id, task_id, user_id: str | None = None, metadata: dict[str, Any] | None = None) -> AsyncIterable[dict[str, Any]]:
         """Execute and stream response."""
         logger.info(
             f"Running {self.agent_name} stream for session {context_id}, task {task_id} - {query}"

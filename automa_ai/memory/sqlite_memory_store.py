@@ -21,9 +21,7 @@ class SQLiteMemoryStore(BaseMemoryStore):
         if not db_path:
             raise ValueError("db_path must be defined for SQLiteMemoryStore.")
 
-        return cls(
-            db_path = db_path
-        )
+        return cls(db_path=db_path)
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -36,7 +34,7 @@ class SQLiteMemoryStore(BaseMemoryStore):
                 CREATE TABLE IF NOT EXISTS memories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
+                    user_id TEXT,
                     content TEXT NOT NULL,
                     metadata TEXT,
                     timestamp REAL,
@@ -50,6 +48,7 @@ class SQLiteMemoryStore(BaseMemoryStore):
 
     def write_memory(self, entries: List[MemoryEntry]) -> None:
         """Write a memory entry to SQLite storage."""
+
         with sqlite3.connect(self.db_path) as conn:
             data_to_insert = [
                 (
@@ -71,29 +70,30 @@ class SQLiteMemoryStore(BaseMemoryStore):
                         (session_id, user_id, content, metadata, timestamp, memory_type, importance_score, access_count, last_accessed)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, data_to_insert)
-            conn.commit()
 
     def read_memories(
-            self,
-            query: Optional[str] = None,
-            session_id: Optional[str] = None,
-            user_id: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None,
-            limit: int = 10
+        self,
+        query: Optional[str] = None,
+        *,
+        limit: int = 10,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        memory_type: Optional[MemoryType] = None,
+        **kwargs,
     ) -> List[MemoryEntry]:
         """Read memory entries from SQLite storage."""
         sql = "SELECT * FROM memories"
         params = []
         conditions = []
-        if session_id:
-            conditions.append("session_id = ?")
-            params.append(session_id)
-        if user_id:
-            conditions.append("user_id = ?")
-            params.append(user_id)
-        if memory_type:
-            conditions.append("memory_type = ?")
-            params.append(memory_type.value)
+
+        for key, value in [
+            ("session_id", session_id),
+            ("user_id", user_id),
+            ("memory_type", memory_type.value if memory_type else None),
+        ]:
+            if value:
+                conditions.append(f"{key} = ?")
+                params.append(value)
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
@@ -107,7 +107,6 @@ class SQLiteMemoryStore(BaseMemoryStore):
 
         memories = []
         for row in rows:
-            # print("retrieved row: ", row)
             entry = MemoryEntry(
                 id=row[0],
                 session_id=row[1],
@@ -124,10 +123,10 @@ class SQLiteMemoryStore(BaseMemoryStore):
 
         return memories
 
-    def delete_memory(self, memory_id: str) -> bool:
+    def delete_memory(self, record_id: str) -> bool:
         """Delete a specific memory entry."""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            cursor = conn.execute("DELETE FROM memories WHERE id = ?", (record_id,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -137,5 +136,7 @@ class SQLiteMemoryStore(BaseMemoryStore):
             if memory_type is None:
                 conn.execute("DELETE FROM memories")
             else:
-                conn.execute("DELETE FROM memories WHERE memory_type = ?", (memory_type.value,))
+                conn.execute(
+                    "DELETE FROM memories WHERE memory_type = ?", (memory_type.value,)
+                )
             conn.commit()
