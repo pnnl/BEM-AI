@@ -354,14 +354,28 @@ class RemoteAgent(BaseAgent):
         )
 
     def _build_request(
-        self, message: str, context_id: str | None = None
+        self,
+        message: str,
+        context_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SendMessageRequest:
+        message_metadata = dict(metadata or {})
+        if user_id is not None:
+            message_metadata.setdefault("user_id", user_id)
+
+        a2a_message = new_text_message(
+            text=message,
+            context_id=context_id,
+            task_id=task_id,
+            role=Role.ROLE_USER,
+        )
+        if message_metadata:
+            a2a_message.metadata.update(message_metadata)
+
         return SendMessageRequest(
-            message=new_text_message(
-                text=message,
-                context_id=context_id,
-                role=Role.ROLE_USER,
-            )
+            message=a2a_message
         )
 
     @staticmethod
@@ -379,10 +393,21 @@ class RemoteAgent(BaseAgent):
         return None
 
     async def invoke(
-        self, message: str, context_id: str | None = None
+        self,
+        message: str,
+        context_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Task | Message:
         client = await self._get_client(streaming=False)
-        request = self._build_request(message, context_id=context_id)
+        request = self._build_request(
+            message,
+            context_id=context_id,
+            task_id=task_id,
+            user_id=user_id,
+            metadata=metadata,
+        )
 
         last_response: Message | Task | None = None
         async for chunk in client.send_message(request):
@@ -400,12 +425,21 @@ class RemoteAgent(BaseAgent):
         self,
         message: str,
         context_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AsyncGenerator[
         Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
         None,
     ]:
         client = await self._get_client(streaming=True)
-        request = self._build_request(message, context_id=context_id)
+        request = self._build_request(
+            message,
+            context_id=context_id,
+            task_id=task_id,
+            user_id=user_id,
+            metadata=metadata,
+        )
 
         async for chunk in client.send_message(request):
             event = self._unwrap_response(chunk)

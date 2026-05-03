@@ -9,6 +9,7 @@ readme = "README.md"
 dependencies = [
     "a2a-sdk>=1.0.2",
     "asyncclick>=8.3.0.7",
+    "boto3>=1.41.4",
     "bs4>=0.0.2",
     "chromadb>=1.5.8",
     "deepeval>=3.9.9",
@@ -38,6 +39,7 @@ dependencies = [
     "streamlit>=1.54.0",
     "uvicorn>=0.40.0",
     "multiprocessing-logging>=0.3.4",
+    "langgraph-checkpoint-aws>=1.0.7",
 ]
 packages = [{include = "automa_ai", from = "."}]
 

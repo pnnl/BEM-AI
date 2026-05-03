@@ -32,7 +32,7 @@ from automa_ai.common.utils import map_server_config_to_mcp_connection
 from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
-from automa_ai.memory.memory_types import MemoryType
+from automa_ai.memory.memory_types import MemoryEntry, MemoryType
 from automa_ai.metrics.collector import MetricsCollector
 from automa_ai.metrics.extractor import extract_metrics_from_chunk
 from automa_ai.prompt_engineering.prompt_template import RESPONSE_PROMPT
@@ -44,6 +44,11 @@ from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
 
 logger = logging.getLogger(__name__)
+
+try:
+    from langgraph_checkpoint_aws import AgentCoreMemorySaver
+except ImportError:
+    AgentCoreMemorySaver = None
 
 
 class GenericLangGraphChatAgent(BaseAgent):
@@ -228,8 +233,15 @@ class GenericLangGraphChatAgent(BaseAgent):
             initial_data=self.blackboard_initial_data,
         )
 
-    async def invoke(self, query, session_id: str) -> Any:
-        config = {"configurable": {"thread_id": self._checkpoint_thread_id(session_id)}}
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        config = self._build_runnable_config(context_id, user_id)
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
 
@@ -240,10 +252,10 @@ class GenericLangGraphChatAgent(BaseAgent):
             """
             await subagent_event_queue.put(e)
 
-        self._ensure_blackboard(session_id)
+        self._ensure_blackboard(context_id)
         if not self.graph:
             await self.init_graph(emit_subagent_event)
-        context_token = set_subagent_context_id(session_id)
+        context_token = set_subagent_context_id(context_id)
         emitter_token = set_subagent_emitter(emit_subagent_event)
         try:
             response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
@@ -252,7 +264,16 @@ class GenericLangGraphChatAgent(BaseAgent):
             reset_subagent_context_id(context_token)
         return response
 
-    async def stream(self, query, session_id, task_id) -> AsyncIterable[dict[str, Any]]:
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncIterable[dict[str, Any]]:
+        metadata = metadata or {}
+
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
         # queue for agent streaming
@@ -272,12 +293,15 @@ class GenericLangGraphChatAgent(BaseAgent):
                 # If a new task, write out the previous task.
                 print(self.metrics.summary_for_query(self.metrics.current_query_id))
             self.metrics.start_query(task_id)
-        inputs = await self._build_stream_inputs(query, session_id)
-        config = {"configurable": {"thread_id": self._checkpoint_thread_id(session_id)}}
-        logger.info(
-            f"Running planner agent stream for session {session_id} {task_id} with input {query}"
+        inputs = await self._build_stream_inputs(
+            query, context_id, task_id, user_id, metadata
         )
-        self._ensure_blackboard(session_id)
+
+        config = self._build_runnable_config(context_id, user_id)
+        logger.info(
+            f"Running planner agent stream for session {context_id} {task_id} with input {query}"
+        )
+        self._ensure_blackboard(context_id)
         if not self.graph:
             await self.init_graph(emit_subagent_event)
 
@@ -294,7 +318,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     emitted_output = False
                     tool_activity_started = False
                     human_message_queued = False
-                    context_token = set_subagent_context_id(session_id)
+                    context_token = set_subagent_context_id(context_id)
                     emitter_token = set_subagent_emitter(emit_subagent_event)
                     try:
                         async for chunk in self.graph.astream(
@@ -315,8 +339,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 await self._memory_write_queue.put(
                                     MemoryWriteEvent(
                                         message=ck,
-                                        session_id=session_id,
-                                        user_id=task_id,
+                                        session_id=context_id,
+                                        task_id=task_id,
+                                        user_id=user_id,
+                                        metadata=metadata,
                                     )
                                 )
                                 human_message_queued = True
@@ -329,7 +355,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                         self.metrics.add(
                                             extract_metrics_from_chunk(
                                                 ck,
-                                                session_id=session_id,
+                                                session_id=context_id,
                                                 query_id=self.metrics.current_query_id,
                                             )
                                         )
@@ -396,14 +422,19 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     )
 
                         await self._emit_final_output(
-                            output_queue, message_accumulator, session_id, task_id
+                            output_queue=output_queue,
+                            message_accumulator=message_accumulator,
+                            session_id=context_id,
+                            task_id=task_id,
+                            user_id=user_id,
+                            metadata=metadata,
                         )
                         break
                     except Exception as exc:
                         logger.exception(
                             "Agent stream failed for %s (session_id=%s, task_id=%s)",
                             self.agent_name,
-                            session_id,
+                            context_id,
                             task_id,
                         )
                         should_retry = self._should_retry_stream_error(
@@ -493,19 +524,31 @@ class GenericLangGraphChatAgent(BaseAgent):
     async def _start_memory_writer(self):
         """Background task that writes memory entries without blocking the forwarder."""
         while True:
-            event = await self._memory_write_queue.get()
+            event: MemoryWriteEvent = await self._memory_write_queue.get()
             if event is None:  # Shutdown signal
                 break
             try:
                 # Write to short-term store
                 await self.memory_manager.add_memory(
-                    event.message, session_id=event.session_id, user_id=event.user_id
+                    event.message,
+                    session_id=event.session_id,
+                    task_id=event.task_id,
+                    user_id=event.user_id,
+                    metadata=event.metadata,
+                    memory_type=MemoryType.SHORT_TERM,
                 )
                 asyncio.create_task(self.memory_manager.manage_memory_size())
             except Exception as e:
                 logger.exception("Memory manager failed")
 
-    async def _build_stream_inputs(self, query: str, session_id: str) -> dict[str, Any]:
+    async def _build_stream_inputs(
+        self,
+        query: str,
+        context_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         context = ""
         if self.retriever:
             context = await self.retriever.asimilarity_search(query)
@@ -521,24 +564,18 @@ class GenericLangGraphChatAgent(BaseAgent):
         else:
             additional_system_query = ""
 
-        if self.memory_manager:
-            memory_list = await self.memory_manager.retrieve_memories(
-                query,
-                session_id=session_id,
-                memory_types=[MemoryType.SHORT_TERM, MemoryType.LONG_TERM],
-                include_short_term=True,
-                include_long_term=True,
-            )
-            if memory_list:
-                formatted_memories = [
-                    f"{m.timestamp}: {m.content}" for m in memory_list
-                ]
-                additional_system_query = f"""
-                    {additional_system_query}
+        memory_additional_system_query = await self._build_memory_context(
+            query,
+            context_id=context_id,
+            task_id=task_id,
+            user_id=user_id,
+            metadata=metadata,
+        )
 
-                    You are also given the following context from the past conversations with the user:
-                    {formatted_memories}
-                    """
+        if memory_additional_system_query.strip():
+            additional_system_query = (
+                f"{additional_system_query}\n\n{memory_additional_system_query}"
+            )
 
         messages = [{"role": "user", "content": query}]
         if additional_system_query.strip():
@@ -596,6 +633,63 @@ class GenericLangGraphChatAgent(BaseAgent):
             return False
         return is_retryable_network_error(exc)
 
+    async def _build_memory_context(
+        self,
+        query: str,
+        *,
+        context_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Retrieve and format prior-conversation memory for the given query."""
+        if not self.memory_manager:
+            return ""
+
+        memory_list = await self.memory_manager.retrieve_memories(
+            query,
+            session_id=context_id,
+            task_id=task_id,
+            user_id=user_id,
+            metadata=metadata,
+            memory_types=[MemoryType.SHORT_TERM, MemoryType.LONG_TERM],
+            include_short_term=True,
+            include_long_term=True,
+        )
+        if not memory_list:
+            return ""
+
+        formatted = "\n".join(f"{m.timestamp}: {m.content}" for m in memory_list)
+        section = (
+            "You are also given the following context from past conversations "
+            f"with the user:\n{formatted}"
+        )
+        if self.debug:
+            logger.info("Retrieved memory context: %s", section)
+        return section
+
+    def _build_runnable_config(
+        self,
+        context_id: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        if (
+            AgentCoreMemorySaver is not None
+            and isinstance(self.checkpointer, AgentCoreMemorySaver)
+            and user_id is None
+        ):
+            raise ValueError(
+                "AgentCoreMemorySaver requires user_id to be set for proper namespacing of memory. "
+                "Please provide a user_id when invoking the agent."
+            )
+
+        configurable = {"thread_id": self._checkpoint_thread_id(context_id)}
+
+        if user_id is not None:
+            configurable["actor_id"] = user_id
+
+        return {"configurable": configurable}
+
     @staticmethod
     def _normalize_chunk_content(chunk: AIMessageChunk) -> str | None:
         content = chunk.content
@@ -622,6 +716,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         message_accumulator: AIMessageAccumulator,
         session_id: str,
         task_id: str,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         final_text = message_accumulator.get_assistant_text()
         artifact_text = message_accumulator.get_artifact_text()
@@ -630,7 +726,11 @@ class GenericLangGraphChatAgent(BaseAgent):
         if self.memory_manager:
             await self._memory_write_queue.put(
                 MemoryWriteEvent(
-                    message=ai_message, session_id=session_id, user_id=task_id
+                    message=ai_message,
+                    session_id=session_id,
+                    task_id=task_id,
+                    user_id=user_id,
+                    metadata=metadata,
                 )
             )
         if artifact_text:

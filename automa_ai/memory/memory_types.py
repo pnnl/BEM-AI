@@ -1,7 +1,8 @@
 from datetime import datetime
+import json
 import uuid
 from enum import Enum
-from typing import Dict, Any
+from typing import Dict, Any, Mapping
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +29,12 @@ class MemoryEntry(BaseModel):
         description="Unique identifier for this session entry."
     )
 
-    user_id: str = Field(
+    task_id: str | None = Field(
+        default=None,
+        description="Unique identifier for the task associated with this memory entry."
+    )
+
+    user_id: str | None = Field(
         default=None,
         description="Unique identifier for the user."
     )
@@ -38,7 +44,7 @@ class MemoryEntry(BaseModel):
         description="The textual message or information stored in memory."
     )
 
-    metadata: Dict[str, Any] = Field(
+    metadata: Dict[str, Any] | None = Field(
         default_factory=dict,
         description=(
             "Additional structured metadata associated with the memory entry, "
@@ -73,3 +79,20 @@ class MemoryEntry(BaseModel):
         default_factory=datetime.now,
         description="The most recent time this memory entry was accessed."
     )
+
+    
+    def to_db_tuple(self) -> tuple:
+        return (
+            self.id,
+            self.record_id,
+            self.session_id,
+            self.task_id,
+            self.user_id,
+            self.content,
+            json.dumps(self.metadata),
+            self.timestamp.timestamp(),
+            self.memory_type.value,
+            self.importance_score,
+            self.access_count,
+            self.last_accessed.timestamp(),
+        )
