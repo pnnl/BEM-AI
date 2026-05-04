@@ -71,7 +71,7 @@ Useful `AgentFactory` integration points:
 - `subagent_config` for A2A delegation
 - `retriever_spec` for retrieval-backed agents
 - `skills_config` for prompt skills
-- `tools_config` for default tools
+- `tools_config` for default tools; use built-in short names such as `web_search` or fully qualified dotted paths for custom `@tool` functions
 - `memory_config` for long/short-term memory
 - `blackboard_config` for shared workflow state
 

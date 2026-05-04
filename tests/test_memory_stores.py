@@ -26,7 +26,7 @@ class FakeVectorStore:
         self.deleted_ids.extend(ids)
 
 
-def test_chroma_write_handles_null_metadata_and_records_record_id() -> None:
+def test_chroma_write_records_memory_id() -> None:
     vectorstore = FakeVectorStore()
     store = ChromaVectorMemoryStore.__new__(ChromaVectorMemoryStore)
     store.vectorstore = vectorstore
@@ -38,17 +38,16 @@ def test_chroma_write_handles_null_metadata_and_records_record_id() -> None:
         task_id="task-1",
         user_id="user-1",
         content="remember me",
-        metadata=None,
         memory_type=MemoryType.SHORT_TERM,
     )
 
     store.write_memory([entry])
 
-    assert vectorstore.metadatas[0]["record_id"] == "memory-1"
+    assert vectorstore.metadatas[0]["memory_id"] == "memory-1"
     assert store.read_memories(query="remember", session_id="session-1") == [entry]
 
 
-def test_sqlite_filters_and_deletes_by_memory_record_id(tmp_path) -> None:
+def test_sqlite_filters_and_deletes_by_database_id(tmp_path) -> None:
     store = SQLiteMemoryStore(str(tmp_path / "memory.sqlite"))
     matching = MemoryEntry(
         record_id="memory-1",
@@ -58,25 +57,25 @@ def test_sqlite_filters_and_deletes_by_memory_record_id(tmp_path) -> None:
         content="matching memory",
         memory_type=MemoryType.SHORT_TERM,
     )
-    other_task = MemoryEntry(
+    other_user = MemoryEntry(
         record_id="memory-2",
         session_id="session-1",
-        task_id="task-2",
-        user_id="user-1",
+        task_id="task-1",
+        user_id="user-2",
         content="other memory",
         memory_type=MemoryType.SHORT_TERM,
     )
 
-    store.write_memory([matching, other_task])
+    store.write_memory([matching, other_user])
 
     memories = store.read_memories(
         session_id="session-1",
-        task_id="task-1",
         user_id="user-1",
         limit=10,
     )
 
-    assert [memory.record_id for memory in memories] == ["memory-1"]
-    assert store.delete_memory("memory-1") is True
+    assert [memory.content for memory in memories] == ["matching memory"]
+    assert memories[0].id is not None
+    assert store.delete_memory(str(memories[0].id)) is True
     remaining = store.read_memories(session_id="session-1", limit=10)
-    assert [memory.record_id for memory in remaining] == ["memory-2"]
+    assert [memory.content for memory in remaining] == ["other memory"]
