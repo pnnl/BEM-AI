@@ -391,6 +391,7 @@ dependencies = [
     { name = "pandas-stubs" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "pyyaml" },
     { name = "redis" },
     { name = "streamlit" },
     { name = "uvicorn" },
@@ -417,7 +418,6 @@ sim-chat-stream-demo = [
 ]
 web = [
     { name = "duckduckgo-search" },
-    { name = "pyyaml" },
     { name = "rank-bm25" },
     { name = "trafilatura" },
 ]
@@ -465,7 +465,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'eplus-mcp-demo'", specifier = ">=6.4.0" },
     { name = "pydantic", specifier = ">=2.12.3" },
     { name = "pyjwt", specifier = ">=2.11.0" },
-    { name = "pyyaml", marker = "extra == 'web'", specifier = ">=6.0.2" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rank-bm25", marker = "extra == 'web'", specifier = ">=0.2.2" },
     { name = "redis", specifier = ">=6.4.0" },
     { name = "sentence-transformers", marker = "extra == 'rerank'", specifier = ">=3.4.1" },

@@ -1,0 +1,39 @@
+spec_version: v1
+
+agent_card:
+  name: TravelCarAgent
+  description: Creates deterministic car rental quotes and writes them to the shared blackboard.
+  version: 1.0.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:33003/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: car_quotes
+      name: Car Rental Quote Builder
+      description: Builds car rental quotes and booking confirmations.
+      tags: [travel, car]
+      examples:
+        - Find car options at SFO airport.
+        - Book selected car quote.
+
+instructions:
+  path: ../prompts/car.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  enable_metrics: false
+  debug: false
+
+tools:
+  tools:
+    - type: travel_car_provider
+    - type: travel_booking_provider
