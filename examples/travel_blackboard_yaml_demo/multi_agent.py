@@ -11,7 +11,6 @@ from automa_ai.common.agent_registry import A2AServerManager
 from automa_ai.config.agent_spec import YamlAgentSpec, load_a2a_server_from_yaml
 from examples.travel_blackboard_yaml_demo.agents.common import (
     load_blackboard_config,
-    register_travel_tools,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +48,6 @@ def load_yaml_spec(path: Path, blackboard_config: dict) -> YamlAgentSpec:
 
 
 async def main() -> None:
-    register_travel_tools()
     BLACKBOARD_BASE_DIR.mkdir(parents=True, exist_ok=True)
     blackboard_config = load_blackboard_config(
         SCHEMA_PATH,

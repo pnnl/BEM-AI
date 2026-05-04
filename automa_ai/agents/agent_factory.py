@@ -258,7 +258,9 @@ class AgentFactory:
     ):
         if isinstance(card, AgentCard):
             self._card_data = MessageToDict(
-                card, preserving_proto_field_name=False, always_print_fields_with_no_presence=True
+                card,
+                preserving_proto_field_name=False,
+                always_print_fields_with_no_presence=True,
             )
         else:
             self._card_data = deepcopy(card)
@@ -355,9 +357,7 @@ class AgentFactory:
                     raise TypeError(
                         f"Unsupported type for blackboard store configuration: {type(store)!r}"
                     )
-                blackboard_store = create_blackboard_store(
-                    store_config=store_config
-                )
+                blackboard_store = create_blackboard_store(store_config=store_config)
 
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version

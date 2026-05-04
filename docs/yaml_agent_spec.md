@@ -192,6 +192,9 @@ mcp:
 
 tools:
   tools:
+    - type: my_project.tools.search_building_codes
+      config:
+        top_k: 5
     - type: web_search
       config:
         provider: opensource
@@ -372,17 +375,28 @@ subagents:
     spec_path: ./math_agent.yaml
 ```
 
-Resolved subagent cards must use the A2A 1.0 `supportedInterfaces` shape.
+Resolved subagent cards must use the A2A 1.0 `supportedInterfaces` shape. The
+loader validates cards loaded from `spec_path`, `card_path`, and inline
+`agent_card` entries before creating runtime `SubAgentSpec` objects.
 
 ### `tools`
 
 Optional object or list passed through to `AgentFactory(..., tools_config=...)`.
+The YAML loader only rebases path fields it can identify safely. Today that
+means the built-in `run_python` tool's `config.workspace_root` is resolved from
+the YAML file's directory. Other tool config strings are passed through as-is.
+For local `@tool` functions, set `type` to the fully qualified dotted function
+path. The tool registry imports the module from that path before building the
+tool, which also works when A2A servers construct agents in child processes.
 
 Object form:
 
 ```yaml
 tools:
   tools:
+    - type: my_project.tools.search_building_codes
+      config:
+        top_k: 5
     - type: web_search
       config:
         provider: opensource
@@ -399,6 +413,8 @@ tools:
 ### `skills`
 
 Optional object passed through to `AgentFactory(..., skills_config=...)`.
+Relative `allowed_roots` and registry `path` values are resolved from the YAML
+file's directory before they are passed to `SkillManager`.
 
 ```yaml
 skills:
@@ -435,6 +451,8 @@ The exact fields depend on the registered memory manager and store provider.
 ### `blackboard`
 
 Optional object passed through to `AgentFactory(..., blackboard_config=...)`.
+For local JSON blackboards, relative `store.base_dir` values are resolved from
+the YAML file's directory.
 
 ```yaml
 blackboard:

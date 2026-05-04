@@ -8,14 +8,21 @@ from pydantic import BaseModel, Field
 
 
 class ToolSpec(BaseModel):
-    """Declarative tool configuration entry."""
+    """Declarative tool configuration entry.
+
+    ``type`` is the lookup key consumed by the tool registry. Built-in tools use
+    short names such as ``web_search`` or ``run_python``. Custom ``@tool``
+    functions should use their fully qualified dotted function path, for example
+    ``my_package.tools.search_codes``; the registry imports the module from that
+    path before building the tool.
+    """
 
     type: str = Field(min_length=1)
     config: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolsConfig(BaseModel):
-    """Container for declarative tool configuration."""
+    """Container for declarative tool configuration passed to ``AgentFactory``."""
 
     tools: list[ToolSpec] = Field(default_factory=list)
 

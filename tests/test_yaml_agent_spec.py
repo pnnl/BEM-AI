@@ -171,6 +171,32 @@ subagents:
     assert kwargs["subagent_config"][0].description == "Handles arithmetic."
 
 
+def test_yaml_agent_spec_rejects_legacy_subagent_card_path(tmp_path: Path) -> None:
+    card_path = tmp_path / "legacy_card.json"
+    card_path.write_text(
+        """
+{
+  "name": "Legacy Agent",
+  "description": "Uses old top-level url.",
+  "url": "http://localhost:32124"
+}
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+subagents:
+  - card_path: ./legacy_card.json
+""",
+        base_dir=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="supportedInterfaces"):
+        spec.to_factory_kwargs()
+
+
 def test_yaml_agent_spec_allows_subagent_name_override() -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()
@@ -191,6 +217,90 @@ subagents:
 
     assert kwargs["subagent_config"][0].name == "calculator"
     assert kwargs["subagent_config"][0].description == "Handles arithmetic."
+
+
+def test_yaml_agent_spec_rebases_skill_paths_from_spec_directory(
+    tmp_path: Path,
+) -> None:
+    spec_dir = tmp_path / "configs"
+    spec_dir.mkdir()
+    spec_path = spec_dir / "agent.yaml"
+    spec_path.write_text(
+        _base_yaml()
+        + """
+skills:
+  enabled: true
+  allowed_roots:
+    - ./skills
+  registry:
+    direct: ./skills/direct.md
+    mapped:
+      path: ./skills/mapped.md
+      format: markdown
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(spec_path)
+    skills = spec.to_factory_kwargs()["skills_config"]
+
+    assert skills["allowed_roots"] == [str(spec_dir / "skills")]
+    assert skills["registry"]["direct"] == str(spec_dir / "skills" / "direct.md")
+    assert skills["registry"]["mapped"]["path"] == str(
+        spec_dir / "skills" / "mapped.md"
+    )
+
+
+def test_yaml_agent_spec_rebases_blackboard_base_dir_from_spec_directory(
+    tmp_path: Path,
+) -> None:
+    spec_dir = tmp_path / "configs"
+    spec_dir.mkdir()
+    spec_path = spec_dir / "agent.yaml"
+    spec_path.write_text(
+        _base_yaml()
+        + """
+blackboard:
+  enabled: true
+  store:
+    backend: local_json
+    base_dir: ./.blackboards
+  schema_name: task
+  schema_version: v1
+  schema:
+    type: object
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(spec_path)
+    blackboard = spec.to_factory_kwargs()["blackboard_config"]
+
+    assert blackboard["store"]["base_dir"] == str(spec_dir / ".blackboards")
+
+
+def test_yaml_agent_spec_rebases_run_python_workspace_root_from_spec_directory(
+    tmp_path: Path,
+) -> None:
+    spec_dir = tmp_path / "configs"
+    spec_dir.mkdir()
+    spec_path = spec_dir / "agent.yaml"
+    spec_path.write_text(
+        _base_yaml()
+        + """
+tools:
+  tools:
+    - type: run_python
+      config:
+        workspace_root: ./workspace
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(spec_path)
+    tools = spec.to_factory_kwargs()["tools_config"]
+
+    assert tools["tools"][0]["config"]["workspace_root"] == str(spec_dir / "workspace")
 
 
 def test_load_agent_factory_from_yaml(tmp_path: Path) -> None:
@@ -258,6 +368,25 @@ agent_card:
   name: old-card
   description: Missing A2A 1.0 interfaces.
   url: http://localhost:9999
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+"""
+        )
+
+
+def test_yaml_agent_spec_rejects_wrong_supported_interfaces_shape() -> None:
+    with pytest.raises(ValueError, match=r"supportedInterfaces\[0\] must be a mapping"):
+        YamlAgentSpec.from_yaml_text(
+            """
+spec_version: v1
+agent_card:
+  name: bad-card
+  description: Bad interface shape.
+  supportedInterfaces:
+    - http://localhost:9999
 instructions:
   text: be helpful
 model:

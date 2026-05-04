@@ -114,7 +114,9 @@ class SubAgentYamlSpec(BaseModel):
     def resolve_agent_card(self, *, base_dir: Path) -> dict[str, Any]:
         """Resolve the subagent card from an inline card, YAML spec, or JSON card file."""
         if self.agent_card is not None:
-            return deepcopy(self.agent_card)
+            card = deepcopy(self.agent_card)
+            _validate_a2a_card(card, label="subagent.agent_card")
+            return card
 
         if self.spec_path is not None:
             spec_path = _resolve_path(self.spec_path, base_dir=base_dir)
@@ -122,7 +124,9 @@ class SubAgentYamlSpec(BaseModel):
 
         assert self.card_path is not None
         card_path = _resolve_path(self.card_path, base_dir=base_dir)
-        return json.loads(card_path.read_text(encoding="utf-8"))
+        card = json.loads(card_path.read_text(encoding="utf-8"))
+        _validate_a2a_card(card, label=f"subagent.card_path '{card_path}'")
+        return card
 
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
@@ -169,15 +173,7 @@ class YamlAgentSpec(BaseModel):
 
     @model_validator(mode="after")
     def _validate_agent_card(self) -> "YamlAgentSpec":
-        if not self.agent_card.get("name"):
-            raise ValueError("agent_card.name is required.")
-        interfaces = self.agent_card.get("supportedInterfaces")
-        if not interfaces:
-            raise ValueError(
-                "agent_card.supportedInterfaces must contain at least one interface."
-            )
-        if not interfaces[0].get("url"):
-            raise ValueError("agent_card.supportedInterfaces[0].url is required.")
+        _validate_a2a_card(self.agent_card, label="agent_card")
         return self
 
     @classmethod
@@ -256,9 +252,13 @@ class YamlAgentSpec(BaseModel):
             ]
             or None,
             "memory_config": self.memory,
-            "skills_config": self.skills,
-            "tools_config": self.tools,
-            "blackboard_config": self.blackboard,
+            "skills_config": _rebase_skills_config(
+                self.skills, base_dir=self._base_dir
+            ),
+            "tools_config": _rebase_tools_config(self.tools, base_dir=self._base_dir),
+            "blackboard_config": _rebase_blackboard_config(
+                self.blackboard, base_dir=self._base_dir
+            ),
             "checkpointer_config": self.checkpointer,
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
@@ -299,10 +299,132 @@ def _resolve_agent_spec(source: YamlAgentSource) -> YamlAgentSpec:
 
 
 def _resolve_path(path: str, *, base_dir: Path) -> Path:
+    """Resolve a YAML-authored path string relative to the YAML file directory."""
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = base_dir / resolved
     return resolved
+
+
+def _validate_a2a_card(card: Any, *, label: str) -> None:
+    """Validate the minimum A2A 1.0 card shape needed by this loader."""
+    if not isinstance(card, dict):
+        raise ValueError(f"{label} must be a mapping.")
+    if not card.get("name"):
+        raise ValueError(f"{label}.name is required.")
+    interfaces = card.get("supportedInterfaces")
+    if not isinstance(interfaces, list) or not interfaces:
+        raise ValueError(
+            f"{label}.supportedInterfaces must contain at least one interface."
+        )
+    primary = interfaces[0]
+    if not isinstance(primary, dict):
+        raise ValueError(f"{label}.supportedInterfaces[0] must be a mapping.")
+    url = primary.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError(f"{label}.supportedInterfaces[0].url is required.")
+
+
+def _rebase_skills_config(
+    skills: dict[str, Any] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a copy of skills config with known path fields made spec-relative.
+
+    `SkillManager` resolves paths against the process working directory, so the
+    YAML loader rebases `allowed_roots` and registry entry `path` values before
+    passing the config into `AgentFactory`.
+    """
+    if skills is None:
+        return None
+
+    resolved = deepcopy(skills)
+    allowed_roots = resolved.get("allowed_roots")
+    if isinstance(allowed_roots, list):
+        resolved["allowed_roots"] = [
+            _rebase_path_string(root, base_dir=base_dir) for root in allowed_roots
+        ]
+
+    registry = resolved.get("registry")
+    if isinstance(registry, dict):
+        for name, entry in registry.items():
+            if isinstance(entry, str):
+                registry[name] = _rebase_path_string(entry, base_dir=base_dir)
+            elif isinstance(entry, dict):
+                _rebase_mapping_path(entry, "path", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_tools_config(
+    tools: dict[str, Any] | list[dict[str, Any]] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | list[dict[str, Any]] | None:
+    """Return a copy of tools config with known built-in path fields rebased.
+
+    The loader intentionally handles only path fields with known semantics.
+    Currently that is `run_python.config.workspace_root`; arbitrary custom tool
+    strings are left untouched.
+    """
+    if tools is None:
+        return None
+
+    resolved = deepcopy(tools)
+    tool_entries = resolved.get("tools") if isinstance(resolved, dict) else resolved
+    if not isinstance(tool_entries, list):
+        return resolved
+
+    for entry in tool_entries:
+        if not isinstance(entry, dict) or entry.get("type") != "run_python":
+            continue
+        config = entry.get("config")
+        if isinstance(config, dict):
+            _rebase_mapping_path(config, "workspace_root", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_blackboard_config(
+    blackboard: dict[str, Any] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a copy of blackboard config with local store directories rebased.
+
+    Local JSON blackboard `base_dir` values are filesystem paths, so relative
+    values are interpreted from the YAML file directory rather than the process
+    working directory.
+    """
+    if blackboard is None:
+        return None
+
+    resolved = deepcopy(blackboard)
+    store = resolved.get("store")
+    if isinstance(store, dict):
+        _rebase_mapping_path(store, "base_dir", base_dir=base_dir)
+    _rebase_mapping_path(resolved, "base_dir", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_mapping_path(
+    mapping: dict[str, Any],
+    key: str,
+    *,
+    base_dir: Path,
+) -> None:
+    """Rebase one mapping value in place when the value is a path string."""
+    if isinstance(mapping.get(key), str):
+        mapping[key] = _rebase_path_string(mapping[key], base_dir=base_dir)
+
+
+def _rebase_path_string(value: Any, *, base_dir: Path) -> Any:
+    """Return a spec-relative absolute-ish path string, preserving non-strings."""
+    if not isinstance(value, str):
+        return value
+    return str(_resolve_path(value, base_dir=base_dir))
 
 
 def load_agent_factory_from_yaml(source: YamlAgentSource) -> AgentFactory:

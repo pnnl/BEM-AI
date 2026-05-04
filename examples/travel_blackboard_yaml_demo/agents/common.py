@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.tools import tool
 from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
 from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
 
@@ -127,6 +128,110 @@ class BookingInput(BaseModel):
     category: str
     quote_id: str
     session_id: str
+
+
+@tool(name="travel_flight_provider")
+def travel_flight_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock flight quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Departure date.
+        return_date: Return date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_flight_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_hotel_provider")
+def travel_hotel_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock hotel quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Check-in date.
+        return_date: Check-out date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_hotel_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_car_provider")
+def travel_car_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock car rental quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Pickup date.
+        return_date: Dropoff date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_car_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_booking_provider")
+def travel_booking_provider(
+    category: str, quote_id: str, session_id: str
+) -> dict[str, Any]:
+    """Create a deterministic booking confirmation for a selected quote.
+
+    Args:
+        category: Booking category, such as flight, hotel, or car.
+        quote_id: Selected quote identifier.
+        session_id: Active blackboard session ID.
+    """
+    return make_confirmation(category, quote_id, session_id)
 
 
 class TravelFlightTool(BaseDefaultTool):

@@ -35,5 +35,5 @@ runtime:
 
 tools:
   tools:
-    - type: travel_car_provider
-    - type: travel_booking_provider
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_car_provider
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_booking_provider

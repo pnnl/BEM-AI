@@ -32,12 +32,11 @@ The YAML specs define:
 - File-backed instructions under `prompts/`.
 - Model provider and model name.
 - Runtime settings.
-- Tool configuration for specialist agents.
+- Tool configuration for specialist agents, including dotted `@tool` function types.
 - Subagent delegation configuration for the orchestrator.
 
 `multi_agent.py` still performs demo-only runtime setup:
 
-- Registers the local deterministic travel tools.
 - Loads the shared blackboard schema once.
 - Injects the same blackboard config into all four loaded specs.
 - Applies `OLLAMA_HOST` as the model base URL.
