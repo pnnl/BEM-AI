@@ -142,8 +142,38 @@ def _build_checkpointer(
         return MemorySaver(), None
 
     resolved = CheckpointerConfig.from_value(config)
+
     if resolved.type == "default":
         return MemorySaver(), None
+
+    if resolved.type == "agentcore":
+        try:
+            from langgraph_checkpoint_aws import AgentCoreMemorySaver
+        except ImportError as exc:
+            raise ImportError(
+                "AgentCore checkpointer requires 'langgraph-checkpoint-aws'."
+            ) from exc
+        
+        try:
+            import boto3
+        except ImportError as exc:
+            raise ImportError(
+                "AgentCore checkpointer requires 'boto3' to determine AWS region."
+            ) from exc
+
+        region = resolved.region or boto3.Session().region_name
+
+        if not region:
+            raise ValueError(
+                "AWS region must be provided via CheckpointerConfig or environment for agentcore checkpointer."
+            )
+
+        checkpointer = AgentCoreMemorySaver(
+            resolved.memory_id,
+            region_name=region,
+        )
+
+        return checkpointer, None
 
     if resolved.type == "redis_plain":
         checkpointer = PlainRedisSaver(redis_url=resolved.redis_url)

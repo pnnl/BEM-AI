@@ -101,8 +101,15 @@ class GenericLangGraphReactAgent(BaseAgent):
             tools=tools
         )
 
-    async def invoke(self, query, sessionId):
-        config = {"configurable": {"thread_id": sessionId}}
+    async def invoke(
+        self,
+        query,
+        context_id,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
+        config = self._build_runnable_config(context_id, user_id)
         # queue for tool/subagent streaming
         subagent_event_queue: Queue[StreamEvent] = Queue()
 
@@ -120,7 +127,14 @@ class GenericLangGraphReactAgent(BaseAgent):
         response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
         return response
 
-    async def stream(self, query, session_id, task_id) -> AsyncIterable[dict[str, Any]]:
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncIterable[dict[str, Any]]:
         # use to track the tool call steps
         active_tool_calls = 0
         # queue for tool/subagent streaming
@@ -159,9 +173,10 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         # Assemble message
         inputs = {"messages": [{"role": "user", "content": augmented_query}]}
-        config = {"configurable": {"thread_id": session_id}}
+
+        config = self._build_runnable_config(context_id, user_id)
         self.logger.info(
-            f"Running planner agent stream for session {session_id} {task_id} with input {query}"
+            f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
         if not self.graph:
             await self.init_graph(emitter)
@@ -202,7 +217,7 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 if message.response_metadata:
                                     self.metrics.add(extract_metrics_from_chunk(
                                         message,
-                                        session_id=session_id,
+                                        session_id=context_id,
                                         query_id=self.metrics.current_query_id
                                     ))
                         if isinstance(message, AIMessage) and message.content:
@@ -371,3 +386,15 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 "require_user_input": False,
                                 "content": f"Tool call {tool_msg.name} has no content return or failed. check logs.",
                             }
+
+    def _build_runnable_config(
+        self,
+        context_id: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        configurable = {"thread_id": context_id}
+
+        if user_id is not None:
+            configurable["actor_id"] = user_id
+
+        return {"configurable": configurable}

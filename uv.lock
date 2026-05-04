@@ -364,6 +364,7 @@ source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "asyncclick" },
+    { name = "boto3" },
     { name = "bs4" },
     { name = "chromadb" },
     { name = "deepeval" },
@@ -382,6 +383,7 @@ dependencies = [
     { name = "langchain-ollama" },
     { name = "langchain-openai" },
     { name = "langgraph" },
+    { name = "langgraph-checkpoint-aws" },
     { name = "langgraph-checkpoint-redis" },
     { name = "litellm", version = "1.80.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "litellm", version = "1.80.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -434,6 +436,7 @@ dev = [
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.0.2" },
     { name = "asyncclick", specifier = ">=8.3.0.7" },
+    { name = "boto3", specifier = ">=1.41.4" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "chromadb", specifier = ">=1.5.8" },
     { name = "deepeval", specifier = ">=3.9.9" },
@@ -454,6 +457,7 @@ requires-dist = [
     { name = "langchain-ollama", specifier = ">=1.1.0" },
     { name = "langchain-openai", specifier = ">=1.1.7" },
     { name = "langgraph", specifier = ">=1.0.7" },
+    { name = "langgraph-checkpoint-aws", specifier = ">=1.0.7" },
     { name = "langgraph-checkpoint-redis", specifier = ">=0.4.1" },
     { name = "litellm", specifier = ">=1.79.0" },
     { name = "matplotlib", marker = "extra == 'eplus-mcp-demo'", specifier = ">=3.10.7" },
@@ -3319,6 +3323,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/44/a8df45d1e8b4637e29789fa8bae1db022c953cc7ac80093cfc52e923547e/langgraph_checkpoint-4.0.1.tar.gz", hash = "sha256:b433123735df11ade28829e40ce25b9be614930cd50245ff2af60629234befd9", size = 158135, upload-time = "2026-02-27T21:06:16.092Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/65/4c/09a4a0c42f5d2fc38d6c4d67884788eff7fd2cfdf367fdf7033de908b4c0/langgraph_checkpoint-4.0.1-py3-none-any.whl", hash = "sha256:e3adcd7a0e0166f3b48b8cf508ce0ea366e7420b5a73aa81289888727769b034", size = 50453, upload-time = "2026-02-27T21:06:14.293Z" },
+]
+
+[[package]]
+name = "langgraph-checkpoint-aws"
+version = "1.0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/3d/2d5ba436de1884ba18f83dff2a1c34c94dc3aa30584be1c3dce036e5d1f2/langgraph_checkpoint_aws-1.0.7.tar.gz", hash = "sha256:03d33741d06c1ccc79c3a893b1ccd6e0082a037783217b50aae5b22a880b6ee6", size = 291227, upload-time = "2026-04-14T08:11:05.878Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/12/1b26ca0043f1f15a45c7eead33820e3f09b5fbe8f0d4f269c62f1368af81/langgraph_checkpoint_aws-1.0.7-py3-none-any.whl", hash = "sha256:fbfe20fa18bd58be703549ad5d47d259c0867e63fb6c19617d6aa15954ea1261", size = 159451, upload-time = "2026-04-14T08:11:04.392Z" },
 ]
 
 [[package]]
