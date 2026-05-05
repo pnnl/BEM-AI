@@ -2,9 +2,10 @@ import asyncio
 import inspect
 import logging
 import sys
+from copy import deepcopy
 from multiprocessing import Process
 from typing import Any, Optional, List, Dict, Callable
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import uvicorn
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -62,10 +63,10 @@ def _parse_agent_url(url: str):
 def _normalize_card_data(card: AgentCard | Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(card, AgentCard):
         return MessageToDict(card, preserving_proto_field_name=False)
-    return dict(card)
+    return deepcopy(card)
 
 
-def _get_primary_interface_url(card_data: Dict[str, Any]) -> str:
+def _get_primary_interface(card_data: Dict[str, Any]) -> Dict[str, Any]:
     interfaces = card_data.get("supportedInterfaces") or card_data.get(
         "supported_interfaces"
     )
@@ -73,7 +74,23 @@ def _get_primary_interface_url(card_data: Dict[str, Any]) -> str:
         raise ValueError(
             f"Agent card '{card_data.get('name', '<unknown>')}' does not define any supported interfaces."
         )
-    return interfaces[0]["url"]
+    return interfaces[0]
+
+
+def _get_primary_interface_url(card_data: Dict[str, Any]) -> str:
+    return _get_primary_interface(card_data)["url"]
+
+
+def _replace_agent_url_path(url: str, base_url_path: str | None) -> str:
+    parsed = _parse_agent_url(url)
+    return urlunparse(
+        parsed._replace(
+            path=base_url_path or "/",
+            params="",
+            query="",
+            fragment="",
+        )
+    )
 
 
 def _close_agent(agent: BaseAgent) -> None:
@@ -106,6 +123,12 @@ class A2AAgentServer:
         self.base_url_path = _normalize_base_path(
             base_url_path if base_url_path is not None else parsed_url.path
         )
+        if base_url_path is not None:
+            primary_interface = _get_primary_interface(self._card_data)
+            primary_interface["url"] = _replace_agent_url_path(
+                primary_interface["url"],
+                self.base_url_path,
+            )
         self.log_dir = log_dir
         self.server: Optional[uvicorn.Server] = None
         self.shutdown_event = asyncio.Event()

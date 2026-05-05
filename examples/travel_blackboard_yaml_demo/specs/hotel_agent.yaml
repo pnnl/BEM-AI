@@ -1,0 +1,39 @@
+spec_version: v1
+
+agent_card:
+  name: TravelHotelAgent
+  description: Creates deterministic hotel quotes and writes them to the shared blackboard.
+  version: 1.0.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:33002/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: hotel_quotes
+      name: Hotel Quote Builder
+      description: Builds hotel quotes and booking confirmations.
+      tags: [travel, hotel]
+      examples:
+        - Find hotel options for downtown Chicago.
+        - Book selected hotel quote.
+
+instructions:
+  path: ../prompts/hotel.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  enable_metrics: false
+  debug: false
+
+tools:
+  tools:
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_hotel_provider
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_booking_provider
