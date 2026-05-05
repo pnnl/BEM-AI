@@ -89,8 +89,13 @@ class ChromaVectorMemoryStore(BaseMemoryStore):
         **kwargs,
     ) -> List[MemoryEntry]:
         """Read memory entries using semantic search."""
+        filter_kwargs = dict(kwargs)
+        metadata = filter_kwargs.pop("metadata", None)
         filter_dict = build_chroma_filter(
-            session_id=session_id, user_id=user_id, **kwargs
+            session_id=session_id,
+            user_id=user_id,
+            metadata=metadata,
+            **filter_kwargs,
         )
         if query:
             # Semantic search
