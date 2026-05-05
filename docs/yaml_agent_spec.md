@@ -282,7 +282,9 @@ Optional object for the `A2AAgentServer` wrapper.
 
 - `log_dir`: Log directory. Defaults to `./logs`.
 - `base_url_path`: Optional mount path override. If omitted, the path from
-  `agent_card.supportedInterfaces[0].url` is used.
+  `agent_card.supportedInterfaces[0].url` is used. If provided, the server
+  mounts the A2A routes at this path and advertises the same path in the
+  returned agent card.
 - `health_check_path`: Health endpoint path. Defaults to `/health`.
 
 The server host and port are not configured here. They come from the agent card's

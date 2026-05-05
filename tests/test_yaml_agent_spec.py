@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from google.protobuf.json_format import MessageToDict
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.common.agent_registry import A2AAgentServer
@@ -346,6 +347,8 @@ server:
     assert server.port == 32123
     assert server.base_url_path == "/agent"
     assert server.health_check_path == "/ready"
+    card_data = MessageToDict(server.card, preserving_proto_field_name=False)
+    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:32123/agent"
 
 
 def test_load_a2a_server_from_existing_spec(tmp_path: Path) -> None:

@@ -1,4 +1,5 @@
 import pytest
+from google.protobuf.json_format import MessageToDict
 
 from automa_ai.common import agent_registry
 from automa_ai.common.agent_registry import A2AAgentServer
@@ -46,6 +47,14 @@ def test_base_url_path_override_wins():
     card = _make_card("localhost:20000/a2a")
     server = A2AAgentServer(lambda: None, card, base_url_path="/permit")
     assert server.base_url_path == "/permit"
+    card_data = MessageToDict(server.card, preserving_proto_field_name=False)
+    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:20000/permit"
+
+
+def test_base_url_path_override_does_not_mutate_input_card():
+    card = _make_card("http://localhost:20000/a2a")
+    A2AAgentServer(lambda: None, card, base_url_path="/permit")
+    assert card["supportedInterfaces"][0]["url"] == "http://localhost:20000/a2a"
 
 
 def test_server_run_closes_sync_agent(monkeypatch):
