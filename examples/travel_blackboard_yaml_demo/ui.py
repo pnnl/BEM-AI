@@ -88,6 +88,8 @@ def main() -> None:
         st.text_input("Session ID", key="session_id")
         if st.button("New Session", disabled=st.session_state["is_streaming"]):
             st.session_state["session_id"] = str(uuid.uuid4())
+            st.session_state["messages"] = []
+            st.session_state.pop("bb_snapshot", None)
             st.rerun()
         st.write(f"Orchestrator URL: `{ORCHESTRATOR_URL}`")
 
