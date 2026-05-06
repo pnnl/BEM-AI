@@ -6,13 +6,22 @@ This guide only keeps the current, useful rules for updating and migrating BEM-A
 
 Use this pattern for new work and for legacy migrations:
 
-- Build every agent with `AgentFactory`.
+- Prefer defining new AUTOMA-AI agents with a YAML agent spec and booting them
+  with `load_agent_factory_from_yaml(...)` or `load_a2a_server_from_yaml(...)`.
+- Use direct `AgentFactory(...)` construction only when YAML is not a good fit
+  for the task.
 - Prefer `GenericAgentType.LANGGRAPHCHAT`.
 - Coordinate multiple agents with `SubAgentSpec`.
 - Start services with `A2AServerManager` and `MCPServerManager`.
 - Pass **plain dict** agent cards at the example boundary.
 - Use the A2A 1.0 card shape with `supportedInterfaces`.
 - Use `blackboard_config` when subagents need shared state.
+
+When adding or editing YAML specs, carefully review the full spec in
+`docs/yaml_agent_spec.md` and validate the YAML file from its actual location.
+Relative paths for instructions, subagent specs/cards, tools, skills, and
+blackboards are resolved from the YAML file's directory, so moving a spec or
+loading it from the wrong path can cause schema or path validation failures.
 
 Avoid these legacy paths:
 

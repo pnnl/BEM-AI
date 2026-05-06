@@ -304,6 +304,30 @@ tools:
     assert tools["tools"][0]["config"]["workspace_root"] == str(spec_dir / "workspace")
 
 
+def test_yaml_agent_spec_rebases_yaml_agent_base_dir_from_spec_directory(
+    tmp_path: Path,
+) -> None:
+    spec_dir = tmp_path / "configs"
+    spec_dir.mkdir()
+    spec_path = spec_dir / "agent.yaml"
+    spec_path.write_text(
+        _base_yaml()
+        + """
+tools:
+  tools:
+    - type: yaml_agent
+      config:
+        base_dir: ./subagents
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(spec_path)
+    tools = spec.to_factory_kwargs()["tools_config"]
+
+    assert tools["tools"][0]["config"]["base_dir"] == str(spec_dir / "subagents")
+
+
 def test_load_agent_factory_from_yaml(tmp_path: Path) -> None:
     spec_path = tmp_path / "agent.yaml"
     spec_path.write_text(_base_yaml(), encoding="utf-8")

@@ -65,7 +65,7 @@ BEM-AI/
 │   ├── mcp_servers/                    # MCP library
 │   ├── network/                        # Network
 │   ├── common/                         # Common utilities
-│   └── prompt_engineering/             # Under development
+│   └── prompts/                        # Shared prompt templates
 ├── pyproject.toml                      # Project configuration
 ├── uv.lock                             # Dependency lock file
 └── README.md                           # This file

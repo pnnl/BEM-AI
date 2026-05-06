@@ -1,0 +1,13 @@
+month,electricity_kwh,gas_therms,peak_kw
+January,12840,612,45.2
+February,11920,590,42.8
+March,10310,420,39.1
+April,8620,210,34.4
+May,7940,95,33.0
+June,9210,45,41.7
+July,11870,30,52.6
+August,12260,28,54.3
+September,10140,65,43.9
+October,8860,180,36.8
+November,10590,410,40.5
+December,12610,575,44.7
