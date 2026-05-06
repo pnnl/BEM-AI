@@ -83,9 +83,12 @@ def _get_primary_interface_url(card_data: Dict[str, Any]) -> str:
 
 def _replace_agent_url_path(url: str, base_url_path: str | None) -> str:
     parsed = _parse_agent_url(url)
+    path = base_url_path or "/"
+    if path != "/" and not path.endswith("/"):
+        path = f"{path}/"
     return urlunparse(
         parsed._replace(
-            path=base_url_path or "/",
+            path=path,
             params="",
             query="",
             fragment="",
@@ -123,7 +126,7 @@ class A2AAgentServer:
         self.base_url_path = _normalize_base_path(
             base_url_path if base_url_path is not None else parsed_url.path
         )
-        if base_url_path is not None:
+        if self.base_url_path:
             primary_interface = _get_primary_interface(self._card_data)
             primary_interface["url"] = _replace_agent_url_path(
                 primary_interface["url"],
