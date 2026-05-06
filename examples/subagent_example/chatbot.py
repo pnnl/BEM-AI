@@ -1,34 +1,37 @@
 import asyncio
 
-from a2a.types import AgentCard, AgentSkill, AgentCapabilities
-
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.common.agent_registry import A2AServerManager, A2AAgentServer
 
 #### MATH AGENT
-math_skill = AgentSkill(
-    id="basic_math",
-    name="Basic Math",
-    description="Performs simple arithmetic calculations",
-    tags=["math", "calculation"],
-    examples=["What is 3 * 7?", "Calculate 12 x 7"],
-)
+math_skill = {
+    "id": "basic_math",
+    "name": "Basic Math",
+    "description": "Performs simple arithmetic calculations",
+    "tags": ["math", "calculation"],
+    "examples": ["What is 3 * 7?", "Calculate 12 x 7"],
+}
 
 MATH_AGENT_URL = "http://localhost:31000"
 
-math_agent_card = AgentCard(
-    name="Math Subagent",
-    description="A subagent that performs basic arithmetic calculations.",
-    url=MATH_AGENT_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[math_skill],
-    supports_authenticated_extended_card=False,
-)
+math_agent_card = {
+    "name": "Math Subagent",
+    "description": "A subagent that performs basic arithmetic calculations.",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": MATH_AGENT_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [math_skill],
+}
 
 MATH_AGENT_COT = """
 You are a math subagent.
@@ -47,27 +50,32 @@ math_agent = AgentFactory(
 )
 
 ### COORDINATOR
-coordinator_skill = AgentSkill(
-    id="task_coordination",
-    name="Task Coordination",
-    description="Coordinates tasks and delegates calculations to subagents",
-    tags=["coordination"],
-    examples=["What is 12 * 7?"],
-)
+coordinator_skill = {
+    "id": "task_coordination",
+    "name": "Task Coordination",
+    "description": "Coordinates tasks and delegates calculations to subagents",
+    "tags": ["coordination"],
+    "examples": ["What is 12 * 7?"],
+}
 
 COORD_AGENT_URL = "http://localhost:30000"
 
-coordinator_card = AgentCard(
-    name="Coordinator Agent",
-    description="Main agent that delegates calculations to subagents.",
-    url=COORD_AGENT_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[coordinator_skill],
-    supports_authenticated_extended_card=False,
-)
+coordinator_card = {
+    "name": "Coordinator Agent",
+    "description": "Main agent that delegates calculations to subagents.",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": COORD_AGENT_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [coordinator_skill],
+}
 
 COORDINATOR_COT = """
 You are a coordinator agent.
@@ -85,8 +93,8 @@ coordinator_agent = AgentFactory(
     chat_model=GenericLLM.OLLAMA,
     model_name="qwen3:4b",
     subagent_config=[SubAgentSpec(
-        name=math_agent_card.name,
-        description=math_agent_card.description,
+        name=math_agent_card["name"],
+        description=math_agent_card["description"],
         agent_card=math_agent_card,
     )],
     enable_metrics=True,

@@ -1,4 +1,5 @@
 """Memory module for managing conversation history and context retrieval"""
+
 import asyncio
 import logging
 from datetime import datetime
@@ -23,6 +24,7 @@ from typing import Optional
 from langchain_core.messages import BaseMessage
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class MemoryWriteEvent:
@@ -49,12 +51,17 @@ class DefaultMemoryManager:
             },
         }
     """
+
     @classmethod
     def from_config(cls, config: dict) -> "DefaultMemoryManager":
         short_term_limit = config.get("short_term_limit") or DEFAULT_SHORT_TERM_LIMIT
-        long_term_strategy = config.get("long_term_strategy") or DEFAULT_LONG_TERM_STRATEGY
+        long_term_strategy = (
+            config.get("long_term_strategy") or DEFAULT_LONG_TERM_STRATEGY
+        )
         if long_term_strategy not in ["messages", "summarize"]:
-            raise ValueError("long_term_strategy must be one of 'messages', 'summarize'")
+            raise ValueError(
+                "long_term_strategy must be one of 'messages', 'summarize'"
+            )
 
         short_term_max = config.get("short_term_max") or DEFAULT_SHORT_TERM_MAX
         stores = config.get("stores") or []
@@ -79,7 +86,9 @@ class DefaultMemoryManager:
             elif memory_type == MemoryType.LONG_TERM:
                 long_term_store = store_cls.from_config(store["store_config"])
             else:
-                raise ValueError("Manager only supports long-term and short-term memories right now. For future releases, please check back on the repo.")
+                raise ValueError(
+                    "Manager only supports long-term and short-term memories right now. For future releases, please check back on the repo."
+                )
 
         return cls(
             short_term_store=short_term_store,
@@ -88,15 +97,15 @@ class DefaultMemoryManager:
             max_short_term_memories=short_term_max,
         )
 
-
     """Main memory manager that orchestrates different memory stores and strategies."""
+
     def __init__(
-            self,
-            short_term_store: Optional[BaseMemoryStore] = None,
-            long_term_store: Optional[BaseMemoryStore] = None,
-            short_term_limit: int = DEFAULT_SHORT_TERM_LIMIT,
-            max_short_term_memories: int = DEFAULT_SHORT_TERM_MAX,
-            memory_decay_hours: int = 24,
+        self,
+        short_term_store: Optional[BaseMemoryStore] = None,
+        long_term_store: Optional[BaseMemoryStore] = None,
+        short_term_limit: int = DEFAULT_SHORT_TERM_LIMIT,
+        max_short_term_memories: int = DEFAULT_SHORT_TERM_MAX,
+        memory_decay_hours: int = 24,
     ):
         # Data validation
         self.short_term_store = short_term_store
@@ -104,7 +113,7 @@ class DefaultMemoryManager:
         self.short_term_limit = short_term_limit
 
         # buffer number set to 50%.
-        self.max_short_term_memories =max_short_term_memories
+        self.max_short_term_memories = max_short_term_memories
         self.memory_decay_hours = memory_decay_hours
 
     async def add_memory(
@@ -135,41 +144,40 @@ class DefaultMemoryManager:
         """Manage memory size by moving old memories to long-term storage."""
         short_memories = await self.short_term_store.aread_memories(
             memory_type=MemoryType.SHORT_TERM,
-            limit= self.max_short_term_memories * 2 # Get all short-term memories
+            limit=self.max_short_term_memories * 2,  # Get all short-term memories
         )
         if len(short_memories) > self.max_short_term_memories:
             # Sort by importance and age
             short_memories.sort(
-                key=lambda x: (x.importance_score, x.timestamp),
-                reverse=True
+                key=lambda x: (x.importance_score, x.timestamp), reverse=True
             )
 
             # Keep the most important/recent ones in short-term
-            to_move = short_memories[self.short_term_limit:]
-            move_ids = [m.id for m in to_move]
+            to_move = short_memories[self.short_term_limit :]
 
             # Wrap in a background task that deletes only ON SUCCESS
             async def safe_transfer():
                 try:
                     await self.long_term_store.awrite_memory(to_move)
-                    await self.short_term_store.adelete_memory(move_ids)
+                    for memory in to_move:
+                        await self.short_term_store.adelete_memory(memory.record_id)
                 except Exception as e:
                     logger.error(f"FAILED to move memories to LTM: {e}")
 
             asyncio.create_task(safe_transfer())
 
     async def retrieve_memories(
-            self,
-            query: str,
-            *,
-            session_id: str | None = None,
-            task_id: str | None = None,
-            user_id: str | None = None,
-            metadata: dict[str, Any] | None = None, 
-            memory_types: Optional[List[MemoryType]] = None,
-            limit: int = 10,
-            include_short_term: bool = True,
-            include_long_term: bool = True,
+        self,
+        query: str,
+        *,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        memory_types: Optional[List[MemoryType]] = None,
+        limit: int = 10,
+        include_short_term: bool = True,
+        include_long_term: bool = True,
     ):
         """Retrieve relevant memories based on query."""
         all_memories: list[MemoryEntry] = []
@@ -186,7 +194,7 @@ class DefaultMemoryManager:
             task_id=task_id,
             user_id=user_id,
             metadata=metadata,
-            limit=limit
+            limit=limit,
         )
 
         tasks = []
@@ -224,11 +232,11 @@ class DefaultMemoryManager:
             "long_term_memories": long_term_count,
             "total_memories": short_term_count + long_term_count,
         }
-    
+
     def _construct_read_kwargs(
         self,
         query: str,
-        *, 
+        *,
         session_id: str | None,
         task_id: str | None,
         user_id: str | None,
@@ -236,7 +244,7 @@ class DefaultMemoryManager:
         limit: int,
     ) -> dict[str, Any]:
         """Build the kwargs passed to every store's aread_memories call.
-        
+
         Stores receive the same kwargs and decide what to use. Override this
         method to add custom params (e.g., namespace, tenant_id) across all
         stores.
@@ -249,7 +257,7 @@ class DefaultMemoryManager:
             metadata=metadata,
             limit=limit,
         )
-    
+
     def _resolve_memory_types(
         self,
         memory_types: list[MemoryType] | None,
@@ -269,7 +277,7 @@ class DefaultMemoryManager:
         if not include_long_term:
             lt_types = []
         return st_types, lt_types
-    
+
     def _entry_from_message(
         self,
         message: BaseMessage,
@@ -307,11 +315,9 @@ class DefaultMemoryManager:
             importance_score=importance_score,
         )
 
-
     def _rank_memory_relevancy(self, memory: MemoryEntry) -> float:
         return (
-            memory.importance_score * 0.7
-            + self.calculate_recency_score(memory) * 0.3
+            memory.importance_score * 0.7 + self.calculate_recency_score(memory) * 0.3
         )
 
     @staticmethod
@@ -326,5 +332,3 @@ class DefaultMemoryManager:
             return 0.1
         else:
             return 1.0 - (age_hours / 24.0) * 0.9
-
-

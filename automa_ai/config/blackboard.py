@@ -3,21 +3,22 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from automa_ai.blackboard.store import BlackboardStore, BlackboardStoreConfig
 
 class BlackboardConfig(BaseModel):
-    model_config = {
-        "arbitrary_types_allowed": True,
-        "extra": "allow",
-    }
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="allow",
+        populate_by_name=True,
+    )
 
     enabled: bool = False
     store: BlackboardStoreConfig | dict | None = None
     schema_name: str
     schema_version: str
-    schema: dict[str, Any] | None = None
+    json_schema: dict[str, Any] | None = Field(default=None, alias="schema")
     schema_description: str | None = None
     initial_data: dict[str, Any] = Field(default_factory=dict)
 

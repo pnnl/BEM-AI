@@ -1,31 +1,35 @@
 {
-  "name": "Orchestrator Agent",
-  "description": "Orchestrates the task generation and execution.",
-  "url": "http://localhost:10001/",
+  "name": "BEM Coordinator Agent",
+  "description": "Coordinates planning, model generation, model updates, simulation, and output review.",
   "version": "0.0.1",
   "capabilities": {
     "streaming": true,
-    "pushNotification": true,
-    "stateTransitionHistory": false
+    "pushNotifications": true
   },
+  "supportedInterfaces": [
+    {
+      "url": "http://localhost:10001/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "defaultInputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "defaultOutputModes": [
-    "text",
-    "text/plain"
+    "text"
   ],
   "skills": [
     {
-      "id": "executor",
-      "name": "Task Executor",
-      "description": "Orchestrates the task generation and execution, takes help from the planner to generate tasks",
+      "id": "bem_coordination",
+      "name": "BEM coordination",
+      "description": "Coordinates the full building energy modeling workflow.",
       "tags": [
-        "execute plan"
+        "coordination",
+        "bem"
       ],
-      "example": [
-        "Plan my trip to London, submit an expense report."
+      "examples": [
+        "Compare the original model to a 10% reduced window-to-wall ratio case."
       ]
     }
   ]

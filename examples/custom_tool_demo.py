@@ -5,8 +5,6 @@ import os
 import math
 from automa_ai.tools import tool
 
-from a2a.types import AgentCard, AgentCapabilities
-
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.common.agent_registry import A2AAgentServer, A2AServerManager
@@ -36,17 +34,22 @@ tools_config = {
     ]
 }
 
-public_agent_card = AgentCard(
-    name="Arithmetic Agent",
-    description="An agent that performs exact arithmetic via calculator tools.",
-    url=AGENT_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    supports_authenticated_extended_card=False,
-    skills=[],
-    capabilities=AgentCapabilities(streaming=True),
-)
+public_agent_card = {
+    "name": "Arithmetic Agent",
+    "description": "An agent that performs exact arithmetic via calculator tools.",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": AGENT_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [],
+}
 
 
 arithmetic_agent = AgentFactory(

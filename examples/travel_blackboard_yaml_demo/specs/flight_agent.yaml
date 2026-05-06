@@ -1,0 +1,39 @@
+spec_version: v1
+
+agent_card:
+  name: TravelFlightAgent
+  description: Creates deterministic flight quotes and writes them to the shared blackboard.
+  version: 1.0.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:33001/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: flight_quotes
+      name: Flight Quote Builder
+      description: Builds flight quotes and booking confirmations.
+      tags: [travel, flight]
+      examples:
+        - Search flights for BOS to SFO on 2026-06-10.
+        - Book selected flight quote.
+
+instructions:
+  path: ../prompts/flight.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  enable_metrics: false
+  debug: false
+
+tools:
+  tools:
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_flight_provider
+    - type: examples.travel_blackboard_yaml_demo.agents.common.travel_booking_provider

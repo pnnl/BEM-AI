@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 import uuid
 from enum import Enum
-from typing import Dict, Any, Mapping
+from typing import Dict, Any
 
 from pydantic import BaseModel, Field
 

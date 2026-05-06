@@ -1,164 +1,213 @@
 import logging
 
-from typing import Any, AsyncIterable
-from uuid import uuid4
+from collections.abc import AsyncIterable
+from typing import Any
 
 import httpx
 
-from a2a.client import A2ACardResolver, A2AClient
+from google.protobuf.json_format import MessageToDict, MessageToJson
+
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers.proto_helpers import new_text_message
 from a2a.types import (
     AgentCard,
-    MessageSendParams,
+    GetExtendedAgentCardRequest,
+    Role,
     SendMessageRequest,
-    SendStreamingMessageRequest,
+    StreamResponse,
 )
-from a2a.utils.constants import (
-    AGENT_CARD_WELL_KNOWN_PATH,
-    EXTENDED_AGENT_CARD_PATH,
-)
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
 
-logger = logging.getLogger(__name__)  # Get a logger instance
+logger = logging.getLogger(__name__)
+
 
 class SimpleClient:
-    def __init__(self, agent_url: str, timeout: int | None =30) -> None:
+    def __init__(self, agent_url: str, timeout: int | None = 30) -> None:
         # Timeout default to 30 seconds but if user set to None, then
         # Simple Client will force no timeout.
         self.agent_url = agent_url
         self.timeout = timeout
         self.public_card: AgentCard | None = None
 
-    async def initialize_agent_card(self, httpx_client: httpx.AsyncClient) -> None:
-        # Initialize A2A Card Resolver
+    async def initialize_agent_card(
+        self, httpx_client: httpx.AsyncClient
+    ) -> None:
         resolver = A2ACardResolver(
             httpx_client=httpx_client,
-            base_url=self.agent_url
+            base_url=self.agent_url,
         )
 
-        # Fetch Public Agent Card and Initialize Client
         try:
             logger.info(
-                f'Attempting to fetch public agent card from: {self.agent_url}{AGENT_CARD_WELL_KNOWN_PATH}'
+                "Attempting to fetch public agent card from: %s%s",
+                self.agent_url,
+                AGENT_CARD_WELL_KNOWN_PATH,
             )
+            public_card = await resolver.get_agent_card()
+            logger.info("Successfully fetched public agent card:")
+            logger.info(MessageToJson(public_card, indent=2))
+            self.public_card = public_card
 
-            _public_card = (
-                await resolver.get_agent_card()
-            )  # Fetches from default public path
-
-            logger.info('Successfully fetched public agent card:')
-            logger.info(
-                _public_card.model_dump_json(indent=2, exclude_none=True)
-            )
-            self.public_card = _public_card
-
-            if _public_card.supports_authenticated_extended_card:
+            if public_card.capabilities.extended_agent_card:
+                logger.info(
+                    "Public card indicates support for an extended card. "
+                    "Attempting to fetch via the 1.0 client API."
+                )
                 try:
-                    logger.info(
-                        f'\nPublic card supports authenticated extended card. Attempting to fetch from: {self.agent_url}{EXTENDED_AGENT_CARD_PATH}'
+                    client = await create_client(
+                        public_card,
+                        client_config=ClientConfig(httpx_client=httpx_client),
                     )
-                    auth_headers_dict = {
-                        'Authorization': 'Bearer dummy-token-for-extended-card'
-                    }
-                    _extended_card = await resolver.get_agent_card(
-                        relative_card_path=EXTENDED_AGENT_CARD_PATH,
-                        http_kwargs={'headers': auth_headers_dict},
+                    extended_card = await client.get_extended_agent_card(
+                        GetExtendedAgentCardRequest()
                     )
                     logger.info(
-                        'Successfully fetched authenticated extended agent card:'
+                        "Successfully fetched extended agent card:"
                     )
-                    logger.info(
-                        _extended_card.model_dump_json(
-                            indent=2, exclude_none=True
-                        )
-                    )
-                    self.public_card = (
-                        _extended_card  # Update to use the extended card
-                    )
-                    logger.info(
-                        '\nUsing AUTHENTICATED EXTENDED agent card for client initialization.'
-                    )
-                except Exception as e_extended:
+                    logger.info(MessageToJson(extended_card, indent=2))
+                    self.public_card = extended_card
+                except Exception as extended_error:
                     logger.warning(
-                        f'Failed to fetch extended agent card: {e_extended}. Will proceed with public card.',
+                        "Failed to fetch extended agent card: %s. "
+                        "Will proceed with the public card.",
+                        extended_error,
                         exc_info=True,
                     )
-            elif (
-                    _public_card
-            ):  # supports_authenticated_extended_card is False or None
+            else:
                 logger.info(
-                    '\nPublic card does not indicate support for an extended card. Using public card.'
+                    "Public card does not indicate support for an extended "
+                    "card. Using the public card."
                 )
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                f'Critical error fetching public agent card: {e}', exc_info=True
+                "Critical error fetching public agent card: %s",
+                exc,
+                exc_info=True,
             )
             raise RuntimeError(
-                'Failed to fetch the public agent card. Cannot continue.'
-            ) from e
+                "Failed to fetch the public agent card. Cannot continue."
+            ) from exc
 
-    async def send_message(self, message: str) -> None:
-        if self.timeout is None:
-            timeout = httpx.Timeout(None)
-        else:
-            timeout = self.timeout
+    def _build_request(
+        self, message: str, context_id: str | None = None
+    ) -> SendMessageRequest:
+        user_message = new_text_message(
+            text=message,
+            context_id=context_id,
+            role=Role.ROLE_USER,
+        )
+        return SendMessageRequest(message=user_message)
+
+    @staticmethod
+    def _normalize_state(state: str | None) -> str | None:
+        if state is None:
+            return None
+
+        state_map = {
+            "TASK_STATE_SUBMITTED": "submitted",
+            "TASK_STATE_WORKING": "working",
+            "TASK_STATE_INPUT_REQUIRED": "input-required",
+            "TASK_STATE_AUTH_REQUIRED": "auth-required",
+            "TASK_STATE_COMPLETED": "completed",
+            "TASK_STATE_CANCELED": "canceled",
+            "TASK_STATE_FAILED": "failed",
+            "TASK_STATE_REJECTED": "rejected",
+        }
+        return state_map.get(state, state)
+
+    @classmethod
+    def _annotate_parts(cls, payload: Any) -> Any:
+        if isinstance(payload, dict):
+            normalized = {key: cls._annotate_parts(value) for key, value in payload.items()}
+            if "parts" in normalized and isinstance(normalized["parts"], list):
+                normalized["parts"] = [
+                    cls._annotate_parts(part) for part in normalized["parts"]
+                ]
+            if "text" in normalized and "kind" not in normalized:
+                normalized["kind"] = "text"
+            elif "data" in normalized and "kind" not in normalized:
+                normalized["kind"] = "data"
+            elif "raw" in normalized and "kind" not in normalized:
+                normalized["kind"] = "raw"
+            elif "url" in normalized and "kind" not in normalized:
+                normalized["kind"] = "url"
+            if "status" in normalized and isinstance(normalized["status"], dict):
+                normalized["status"] = cls._annotate_parts(normalized["status"])
+                normalized["status"]["state"] = cls._normalize_state(
+                    normalized["status"].get("state")
+                )
+            return normalized
+        if isinstance(payload, list):
+            return [cls._annotate_parts(item) for item in payload]
+        return payload
+
+    @classmethod
+    def _serialize_stream_response(
+        cls, response: StreamResponse
+    ) -> dict[str, Any]:
+        kind = None
+        payload: dict[str, Any] = {}
+        if response.HasField("status_update"):
+            kind = "status-update"
+            payload = MessageToDict(
+                response.status_update, preserving_proto_field_name=False
+            )
+        elif response.HasField("artifact_update"):
+            kind = "artifact-update"
+            payload = MessageToDict(
+                response.artifact_update, preserving_proto_field_name=False
+            )
+        elif response.HasField("task"):
+            kind = "task"
+            payload = MessageToDict(
+                response.task, preserving_proto_field_name=False
+            )
+        elif response.HasField("message"):
+            kind = "message"
+            payload = MessageToDict(
+                response.message, preserving_proto_field_name=False
+            )
+
+        payload = cls._annotate_parts(payload)
+        if kind is not None:
+            payload["kind"] = kind
+            return {"result": payload}
+        return {}
+
+    async def _stream_serialized_responses(
+        self,
+        message: str,
+        context_id: str | None = None,
+    ) -> AsyncIterable[dict[str, Any]]:
+        timeout = httpx.Timeout(None) if self.timeout is None else self.timeout
         async with httpx.AsyncClient(timeout=timeout) as httpx_client:
-            # Initialize the agent card
             await self.initialize_agent_card(httpx_client=httpx_client)
-            # --8<-- [start:send_message]
-            client = A2AClient(
-                httpx_client=httpx_client, agent_card=self.public_card, url=self.agent_url
+            client = await create_client(
+                self.public_card,
+                client_config=ClientConfig(httpx_client=httpx_client),
             )
-            logger.info('A2AClient initialized.')
+            logger.info("A2A client initialized.")
 
-            send_message_payload: dict[str, Any] = {
-                'message': {
-                    'role': 'user',
-                    'parts': [
-                        {'kind': 'text', 'text': message}
-                    ],
-                    'messageId': uuid4().hex,
-                },
-            }
-            request = SendMessageRequest(
-                id=str(uuid4()), params=MessageSendParams(**send_message_payload)
-            )
+            request = self._build_request(message, context_id=context_id)
 
-            response = await client.send_message(request)
-            print(response)
-            return response.model_dump(mode='json', exclude_none=True)
+            async for chunk in client.send_message(request):
+                yield self._serialize_stream_response(chunk)
 
+    async def send_message(
+        self, message: str, context_id: str | None = None
+    ) -> dict[str, Any]:
+        last_response: dict[str, Any] = {}
+        async for chunk in self._stream_serialized_responses(
+            message, context_id=context_id
+        ):
+            last_response = chunk
+        return last_response
 
-    async def send_streaming_message(self, message: str, context_id: str | None = None) -> AsyncIterable[dict[str, Any]]:
-        if self.timeout is None:
-            timeout = httpx.Timeout(None)
-        else:
-            timeout = self.timeout
-        async with httpx.AsyncClient(timeout=timeout) as httpx_client:
-            # Initialize the agent card
-            await self.initialize_agent_card(httpx_client=httpx_client)
-            # start:send_message_streaming
-            client = A2AClient(
-                httpx_client=httpx_client, agent_card=self.public_card, url=self.agent_url
-            )
-            logger.info('A2AClient initialized.')
-
-            send_message_payload: dict[str, Any] = {
-                'message': {
-                    'role': 'user',
-                    'parts': [
-                        {'kind': 'text', 'text': message}
-                    ],
-                    'message_id': uuid4().hex,
-                    "context_id": uuid4().hex if context_id is None else context_id,
-                },
-            }
-
-            streaming_request = SendStreamingMessageRequest(
-                id=str(uuid4()), params=MessageSendParams(**send_message_payload)
-            )
-
-            stream_response = client.send_message_streaming(streaming_request)
-
-            async for chunk in stream_response:
-                yield chunk.model_dump(mode='json', exclude_none=True)
-        # end:send_message_streaming
+    async def send_streaming_message(
+        self, message: str, context_id: str | None = None
+    ) -> AsyncIterable[dict[str, Any]]:
+        async for chunk in self._stream_serialized_responses(
+            message, context_id=context_id
+        ):
+            yield chunk

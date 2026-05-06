@@ -2,7 +2,6 @@ import asyncio
 import os
 from pathlib import Path
 
-from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 from dotenv import load_dotenv
 
 from automa_ai.common.mcp_registry import MCPServerConfig, MCPServerManager
@@ -31,37 +30,40 @@ eplus_mcp_config = MCPServerConfig(
     transport="sse"
 )
 
-config_skill = AgentSkill(
-    id="model_configuration",
-    name="Model Config and Loading",
-    description="Load EnergyPlus IDF models, validate model, get model summary",
-    tags=["model_config"],
-    examples=["Can you help me validate the EnergyPlus model?", "What is the simulation settings?"],
-)
+config_skill = {
+    "id": "model_configuration",
+    "name": "Model Config and Loading",
+    "description": "Load EnergyPlus IDF models, validate model, get model summary",
+    "tags": ["model_config"],
+    "examples": [
+        "Can you help me validate the EnergyPlus model?",
+        "What is the simulation settings?",
+    ],
+}
 
-inspect_skill = AgentSkill(
-    id="model_inspect",
-    name="Model Inspection",
-    description="Inspect energy model components such as zones, surfaces, materials etc. ",
-    tags=["model_inspect"],
-    examples=["Get materials from this IDF file", "Perform analysis on the schedules"],
-)
+inspect_skill = {
+    "id": "model_inspect",
+    "name": "Model Inspection",
+    "description": "Inspect energy model components such as zones, surfaces, materials etc. ",
+    "tags": ["model_inspect"],
+    "examples": ["Get materials from this IDF file", "Perform analysis on the schedules"],
+}
 
-modify_skill = AgentSkill(
-    id="model_modify",
-    name="Model Modification",
-    description="Modify data in the objects such as modify people objects, lights objects, and simulation controls",
-    tags=["model_inspect"],
-    examples=["Get materials from this IDF file", "Perform analysis on the schedules"],
-)
+modify_skill = {
+    "id": "model_modify",
+    "name": "Model Modification",
+    "description": "Modify data in the objects such as modify people objects, lights objects, and simulation controls",
+    "tags": ["model_inspect"],
+    "examples": ["Get materials from this IDF file", "Perform analysis on the schedules"],
+}
 
-simulation_skill = AgentSkill(
-    id="sim_skill",
-    name="Simulation and Results",
-    description="Run simulation, retrieve energy outputs from simulations",
-    tags=["model_simulation"],
-    examples=["Run energyplus simulation", "Create interactive plots"],
-)
+simulation_skill = {
+    "id": "sim_skill",
+    "name": "Simulation and Results",
+    "description": "Run simulation, retrieve energy outputs from simulations",
+    "tags": ["model_simulation"],
+    "examples": ["Run energyplus simulation", "Create interactive plots"],
+}
 
 CHAT_COT = f"""
 You are an EnergyPlus expert and can leverage tools provided to answer user questions about EnergyPlus IDF files.
@@ -93,17 +95,25 @@ Please provide detailed and specific questions about your EnergyPlus model or ID
 
 # --8<-- [start:AgentCard]
 # This will be the public-facing agent card
-public_agent_card = AgentCard(
-    name="EnergyPlus Assistance Agent",
-    description="An EnergyPlus agent provides helps on configuring and summary IDF files, inspect objects in the files, modify objects and analyze simulation outputs.",
-    url=CHATBOT_SERVER_URL,
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[config_skill, inspect_skill, modify_skill, simulation_skill],  # Only the basic skill for the public card
-    supports_authenticated_extended_card=False,
-)
+public_agent_card = {
+    "name": "EnergyPlus Assistance Agent",
+    "description": (
+        "An EnergyPlus agent provides helps on configuring and summary IDF files, "
+        "inspect objects in the files, modify objects and analyze simulation outputs."
+    ),
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": CHATBOT_SERVER_URL,
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [config_skill, inspect_skill, modify_skill, simulation_skill],
+}
 
 # Initialize chatbot agent
 chatbot = AgentFactory(

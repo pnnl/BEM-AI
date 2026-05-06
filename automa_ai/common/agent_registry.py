@@ -2,15 +2,19 @@ import asyncio
 import inspect
 import logging
 import sys
+from copy import deepcopy
 from multiprocessing import Process
-from typing import Optional, List, Dict, Callable
-from urllib.parse import urlparse
+from typing import Any, Optional, List, Dict, Callable
+from urllib.parse import urlparse, urlunparse
 
 import uvicorn
-from a2a.server.apps import A2AStarletteApplication
+from google.protobuf.json_format import MessageToDict, ParseDict
 from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes.agent_card_routes import create_agent_card_routes
+from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
+from a2a.utils.constants import DEFAULT_RPC_URL
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
@@ -56,6 +60,39 @@ def _parse_agent_url(url: str):
     return parsed
 
 
+def _normalize_card_data(card: AgentCard | Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(card, AgentCard):
+        return MessageToDict(card, preserving_proto_field_name=False)
+    return deepcopy(card)
+
+
+def _get_primary_interface(card_data: Dict[str, Any]) -> Dict[str, Any]:
+    interfaces = card_data.get("supportedInterfaces") or card_data.get(
+        "supported_interfaces"
+    )
+    if not interfaces:
+        raise ValueError(
+            f"Agent card '{card_data.get('name', '<unknown>')}' does not define any supported interfaces."
+        )
+    return interfaces[0]
+
+
+def _get_primary_interface_url(card_data: Dict[str, Any]) -> str:
+    return _get_primary_interface(card_data)["url"]
+
+
+def _replace_agent_url_path(url: str, base_url_path: str | None) -> str:
+    parsed = _parse_agent_url(url)
+    return urlunparse(
+        parsed._replace(
+            path=base_url_path or "/",
+            params="",
+            query="",
+            fragment="",
+        )
+    )
+
+
 def _close_agent(agent: BaseAgent) -> None:
     close_fn = getattr(agent, "close", None)
     if not callable(close_fn):
@@ -73,24 +110,34 @@ class A2AAgentServer:
     def __init__(
         self,
         agent_builder: Callable[[], BaseAgent],
-        card: AgentCard,
+        card: AgentCard | Dict[str, Any],
         log_dir: str = "./logs",
         base_url_path: str | None = None,
         health_check_path: str = "/health",
     ):
         self.agent_builder = agent_builder
-        self.card = card
-        self.name = card.name
-        parsed_url = _parse_agent_url(self.card.url)
+        self._card_data = _normalize_card_data(card)
+        self.name = self._card_data["name"]
+        parsed_url = _parse_agent_url(_get_primary_interface_url(self._card_data))
         self.host_name, self.port = parsed_url.hostname, parsed_url.port
         self.base_url_path = _normalize_base_path(
             base_url_path if base_url_path is not None else parsed_url.path
         )
+        if base_url_path is not None:
+            primary_interface = _get_primary_interface(self._card_data)
+            primary_interface["url"] = _replace_agent_url_path(
+                primary_interface["url"],
+                self.base_url_path,
+            )
         self.log_dir = log_dir
         self.server: Optional[uvicorn.Server] = None
         self.shutdown_event = asyncio.Event()
         self.health_check_path = health_check_path
         self._agent: Optional[BaseAgent] = None
+
+    @property
+    def card(self) -> AgentCard:
+        return ParseDict(self._card_data, AgentCard())
 
     def _build_health_response(self) -> dict:
         """Override this to customize the health check response."""
@@ -105,19 +152,13 @@ class A2AAgentServer:
             logger.info("Building the agent....")
             self._agent = self.agent_builder()
             logger.info(f"complete agent bootup for agent {self._agent.agent_name}....")
+            card = self.card
             # Create client and request handler
             request_handler = DefaultRequestHandler(
                 agent_executor=GenericAgentExecutor(agent=self._agent),
                 task_store=InMemoryTaskStore(),
+                agent_card=card,
             )
-
-            # Create server
-            server = A2AStarletteApplication(
-                agent_card=self.card,
-                http_handler=request_handler,
-            )
-
-            app = server.build()
 
             # Always add health check endpoint and handle base path if specified
             from starlette.applications import Starlette
@@ -127,9 +168,18 @@ class A2AAgentServer:
             async def health_check(request):
                 return JSONResponse(self._build_health_response())
 
+            a2a_routes = [
+                *create_agent_card_routes(card),
+                *create_jsonrpc_routes(
+                    request_handler=request_handler,
+                    rpc_url=DEFAULT_RPC_URL,
+                ),
+            ]
+            a2a_app = Starlette(routes=a2a_routes)
+
             routes = [
                 Route(self.health_check_path, health_check),
-                Mount(self.base_url_path or "/", app=app),
+                Mount(self.base_url_path or "/", app=a2a_app),
             ]
             app = Starlette(routes=routes)
 

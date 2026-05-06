@@ -1,8 +1,8 @@
 import asyncio
 import os
 from pathlib import Path
+from typing import Any
 
-from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 from dotenv import load_dotenv
 
 from automa_ai.agents import GenericAgentType, GenericLLM
@@ -36,29 +36,37 @@ def build_openstudio_mcp_config() -> MCPServerConfig:
     )
 
 
-def build_chatbot(mcp_config: MCPServerConfig) -> AgentFactory:
-    sizing_skill = AgentSkill(
-        id="hvac_sizing_assistant",
-        name="OpenStudio HVAC Sizing Assistant",
-        description="Runs a constrained OpenStudio sizing workflow via MCP tools.",
-        tags=["openstudio", "mcp", "hvac_sizing"],
-        examples=[
+def build_agent_card() -> dict[str, Any]:
+    sizing_skill = {
+        "id": "hvac_sizing_assistant",
+        "name": "OpenStudio HVAC Sizing Assistant",
+        "description": "Runs a constrained OpenStudio sizing workflow via MCP tools.",
+        "tags": ["openstudio", "mcp", "hvac_sizing"],
+        "examples": [
             "Run a sizing workflow for model file:///tmp/demo.osm.",
             "Validate and size this model with default weather assumptions.",
         ],
-    )
+    }
 
-    card = AgentCard(
-        name="OpenStudio MCP Sizing Agent",
-        description="AgentFactory-based example agent wired to OpenStudio MCP tools.",
-        url=CHATBOT_SERVER_URL,
-        version="0.1.0",
-        default_input_modes=["text"],
-        default_output_modes=["text"],
-        capabilities=AgentCapabilities(streaming=True),
-        skills=[sizing_skill],
-        supports_authenticated_extended_card=False,
-    )
+    return {
+        "name": "OpenStudio MCP Sizing Agent",
+        "description": "AgentFactory-based example agent wired to OpenStudio MCP tools.",
+        "version": "0.1.0",
+        "defaultInputModes": ["text"],
+        "defaultOutputModes": ["text"],
+        "capabilities": {"streaming": True},
+        "supportedInterfaces": [
+            {
+                "url": CHATBOT_SERVER_URL,
+                "protocolBinding": "JSONRPC",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "skills": [sizing_skill],
+    }
+
+
+def build_chatbot(mcp_config: MCPServerConfig, card: dict[str, Any]) -> AgentFactory:
 
     allowlist = _load_text(base_dir / "policy" / "tool_allowlist.yaml")
     run_gates = _load_text(base_dir / "policy" / "run_gates.yaml")
@@ -98,12 +106,13 @@ Execution rules:
 
 async def main() -> None:
     mcp_config = build_openstudio_mcp_config()
-    chatbot = build_chatbot(mcp_config)
+    card = build_agent_card()
+    chatbot = build_chatbot(mcp_config, card)
 
     mcp_manager = MCPServerManager()
     mcp_manager.add_server(mcp_config)
 
-    chatbot_a2a = A2AAgentServer(chatbot, chatbot.card)
+    chatbot_a2a = A2AAgentServer(chatbot, card)
     server_manager = A2AServerManager()
     server_manager.add_server(chatbot_a2a)
 

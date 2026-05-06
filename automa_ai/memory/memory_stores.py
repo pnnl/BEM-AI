@@ -5,7 +5,8 @@ from automa_ai.memory.memory_types import MemoryEntry, MemoryType
 
 
 class BaseMemoryStore(ABC):
-    """Abstract base class for memory stores. """
+    """Abstract base class for memory stores."""
+
     @classmethod
     @abstractmethod
     def from_config(cls, config: dict) -> "BaseMemoryStore":
@@ -16,18 +17,17 @@ class BaseMemoryStore(ABC):
         """Write a memory entry to storage."""
         pass
 
-    @abstractmethod
     async def awrite_memory(self, entries: List[MemoryEntry]) -> None:
         """Asynchronous Write a memory entry to storage."""
         await asyncio.to_thread(self.write_memory, entries)
 
     @abstractmethod
     def read_memories(
-            self,
-            query: Optional[str] = None,
-            *,
-            limit: int = 10,
-            **kwargs,
+        self,
+        query: Optional[str] = None,
+        *,
+        limit: int = 10,
+        **kwargs,
     ) -> List[MemoryEntry]:
         """Read memory entries from storage.
 
@@ -35,15 +35,16 @@ class BaseMemoryStore(ABC):
         """
         pass
 
-    @abstractmethod
     async def aread_memories(
-            self,
-            query: Optional[str] = None,
-            *,
-            limit: int = 10,
-            **kwargs,
+        self,
+        query: Optional[str] = None,
+        *,
+        limit: int = 10,
+        **kwargs,
     ) -> List[MemoryEntry]:
-        memory_list = await asyncio.to_thread(self.read_memories, query, limit=limit, **kwargs)
+        memory_list = await asyncio.to_thread(
+            self.read_memories, query, limit=limit, **kwargs
+        )
         return memory_list
 
     @abstractmethod
@@ -51,7 +52,6 @@ class BaseMemoryStore(ABC):
         """Delete a specific memory entry."""
         pass
 
-    @abstractmethod
     async def adelete_memory(self, record_id: str) -> bool:
         """Asynchronous Delete a specific memory entry."""
         delete = await asyncio.to_thread(self.delete_memory, record_id)

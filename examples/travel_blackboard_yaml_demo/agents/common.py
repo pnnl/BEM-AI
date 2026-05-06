@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.tools import tool
 from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
 from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
 
@@ -25,13 +26,17 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest[:10]}"
 
 
-def make_flight_quotes(requirements: dict[str, Any], top_k: int = 3) -> list[dict[str, Any]]:
+def make_flight_quotes(
+    requirements: dict[str, Any], top_k: int = 3
+) -> list[dict[str, Any]]:
     origin = requirements.get("origin", "UNKNOWN")
     destination = requirements.get("destination", "UNKNOWN")
     depart_date = requirements.get("depart_date", "TBD")
     return_date = requirements.get("return_date", "TBD")
     budget = float(requirements.get("budget", 1200))
-    rng = _stable_rng("flight", origin, destination, depart_date, return_date, str(budget))
+    rng = _stable_rng(
+        "flight", origin, destination, depart_date, return_date, str(budget)
+    )
 
     quotes: list[dict[str, Any]] = []
     for idx in range(top_k):
@@ -52,7 +57,9 @@ def make_flight_quotes(requirements: dict[str, Any], top_k: int = 3) -> list[dic
     return quotes
 
 
-def make_hotel_quotes(requirements: dict[str, Any], top_k: int = 3) -> list[dict[str, Any]]:
+def make_hotel_quotes(
+    requirements: dict[str, Any], top_k: int = 3
+) -> list[dict[str, Any]]:
     destination = requirements.get("destination", "UNKNOWN")
     checkin = requirements.get("depart_date", "TBD")
     checkout = requirements.get("return_date", "TBD")
@@ -76,7 +83,9 @@ def make_hotel_quotes(requirements: dict[str, Any], top_k: int = 3) -> list[dict
     return quotes
 
 
-def make_car_quotes(requirements: dict[str, Any], top_k: int = 3) -> list[dict[str, Any]]:
+def make_car_quotes(
+    requirements: dict[str, Any], top_k: int = 3
+) -> list[dict[str, Any]]:
     destination = requirements.get("destination", "UNKNOWN")
     pickup = requirements.get("depart_date", "TBD")
     dropoff = requirements.get("return_date", "TBD")
@@ -121,9 +130,115 @@ class BookingInput(BaseModel):
     session_id: str
 
 
+@tool(name="travel_flight_provider")
+def travel_flight_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock flight quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Departure date.
+        return_date: Return date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_flight_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_hotel_provider")
+def travel_hotel_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock hotel quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Check-in date.
+        return_date: Check-out date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_hotel_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_car_provider")
+def travel_car_provider(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: str,
+    budget: float,
+) -> dict[str, Any]:
+    """Generate deterministic mock car rental quotes from user travel requirements.
+
+    Args:
+        origin: Origin airport or city.
+        destination: Destination airport or city.
+        depart_date: Pickup date.
+        return_date: Dropoff date.
+        budget: Trip budget.
+    """
+    return {
+        "items": make_car_quotes(
+            {
+                "origin": origin,
+                "destination": destination,
+                "depart_date": depart_date,
+                "return_date": return_date,
+                "budget": budget,
+            }
+        )
+    }
+
+
+@tool(name="travel_booking_provider")
+def travel_booking_provider(
+    category: str, quote_id: str, session_id: str
+) -> dict[str, Any]:
+    """Create a deterministic booking confirmation for a selected quote.
+
+    Args:
+        category: Booking category, such as flight, hotel, or car.
+        quote_id: Selected quote identifier.
+        session_id: Active blackboard session ID.
+    """
+    return make_confirmation(category, quote_id, session_id)
+
+
 class TravelFlightTool(BaseDefaultTool):
     type = "travel_flight_provider"
-    description = "Generate deterministic mock flight quotes from user travel requirements."
+    description = (
+        "Generate deterministic mock flight quotes from user travel requirements."
+    )
     args_schema = RequirementsInput
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -132,7 +247,9 @@ class TravelFlightTool(BaseDefaultTool):
 
 class TravelHotelTool(BaseDefaultTool):
     type = "travel_hotel_provider"
-    description = "Generate deterministic mock hotel quotes from user travel requirements."
+    description = (
+        "Generate deterministic mock hotel quotes from user travel requirements."
+    )
     args_schema = RequirementsInput
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -141,7 +258,9 @@ class TravelHotelTool(BaseDefaultTool):
 
 class TravelCarTool(BaseDefaultTool):
     type = "travel_car_provider"
-    description = "Generate deterministic mock car rental quotes from user travel requirements."
+    description = (
+        "Generate deterministic mock car rental quotes from user travel requirements."
+    )
     args_schema = RequirementsInput
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -154,22 +273,32 @@ class TravelBookingTool(BaseDefaultTool):
     args_schema = BookingInput
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return make_confirmation(payload["category"], payload["quote_id"], payload["session_id"])
+        return make_confirmation(
+            payload["category"], payload["quote_id"], payload["session_id"]
+        )
 
 
-def build_travel_flight_tool(_config: dict[str, Any], _deps: RuntimeDeps) -> BaseDefaultTool:
+def build_travel_flight_tool(
+    _config: dict[str, Any], _deps: RuntimeDeps
+) -> BaseDefaultTool:
     return TravelFlightTool()
 
 
-def build_travel_hotel_tool(_config: dict[str, Any], _deps: RuntimeDeps) -> BaseDefaultTool:
+def build_travel_hotel_tool(
+    _config: dict[str, Any], _deps: RuntimeDeps
+) -> BaseDefaultTool:
     return TravelHotelTool()
 
 
-def build_travel_car_tool(_config: dict[str, Any], _deps: RuntimeDeps) -> BaseDefaultTool:
+def build_travel_car_tool(
+    _config: dict[str, Any], _deps: RuntimeDeps
+) -> BaseDefaultTool:
     return TravelCarTool()
 
 
-def build_travel_booking_tool(_config: dict[str, Any], _deps: RuntimeDeps) -> BaseDefaultTool:
+def build_travel_booking_tool(
+    _config: dict[str, Any], _deps: RuntimeDeps
+) -> BaseDefaultTool:
     return TravelBookingTool()
 
 
