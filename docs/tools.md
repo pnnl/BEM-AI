@@ -137,7 +137,12 @@ Output format:
 
 Configuration fields:
 - `base_dir` (optional): base directory for resolving relative `yaml_path`
-  values.
+  values. When set, `yaml_agent` only accepts specs that resolve inside this
+  directory.
+
+Before creating the agent, `yaml_agent` validates the target spec against the
+headless-subagent constraints: no MCP, no memory config, no persistent
+checkpointer, no nested subagents, no `yaml_agent` tool, and no custom tools.
 
 Example config:
 

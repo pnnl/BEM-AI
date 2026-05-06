@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import AsyncIterable
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -15,6 +16,8 @@ from automa_ai.agents.remote_agent import (
     get_subagent_emitter,
 )
 from automa_ai.tools.base import BaseDefaultTool
+
+ALLOWED_HEADLESS_TOOL_TYPES = {"web_search", "run_python"}
 
 
 class YamlAgentToolConfig(BaseModel):
@@ -60,11 +63,61 @@ class YamlAgentTool(BaseDefaultTool):
 
     def _resolve_yaml_path(self, yaml_path: str) -> Path:
         path = Path(yaml_path)
-        if path.is_absolute():
-            return path
         if self.config.base_dir:
-            return Path(self.config.base_dir) / path
+            base_dir = Path(self.config.base_dir).resolve()
+            if path.is_absolute():
+                resolved = path.resolve()
+            else:
+                resolved = (base_dir / path).resolve()
+            if resolved != base_dir and base_dir not in resolved.parents:
+                raise ValueError(
+                    "yaml_path must resolve inside yaml_agent.config.base_dir."
+                )
+            return resolved
+        if path.is_absolute():
+            return path.resolve()
         return path
+
+    @staticmethod
+    def _validate_headless_spec(spec: Any, *, yaml_path: Path) -> None:
+        """Enforce the bounded headless-subagent contract before agent creation."""
+        if spec.mcp is not None:
+            raise ValueError(f"Headless YAML subagent cannot define mcp: {yaml_path}")
+        if spec.memory is not None:
+            raise ValueError(f"Headless YAML subagent cannot define memory: {yaml_path}")
+        if spec.checkpointer is not None:
+            raise ValueError(
+                f"Headless YAML subagent cannot define checkpointer: {yaml_path}"
+            )
+        if spec.subagents:
+            raise ValueError(
+                f"Headless YAML subagent cannot define nested subagents: {yaml_path}"
+            )
+
+        tools = spec.tools
+        tool_entries = tools.get("tools") if isinstance(tools, dict) else tools
+        if not tool_entries:
+            return
+        if not isinstance(tool_entries, list):
+            raise ValueError(
+                f"Headless YAML subagent tools must be a list or tools mapping: {yaml_path}"
+            )
+
+        for entry in tool_entries:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"Headless YAML subagent tool entries must be mappings: {yaml_path}"
+                )
+            tool_type = entry.get("type")
+            if tool_type == "yaml_agent":
+                raise ValueError(
+                    f"Headless YAML subagent cannot enable yaml_agent: {yaml_path}"
+                )
+            if tool_type not in ALLOWED_HEADLESS_TOOL_TYPES:
+                raise ValueError(
+                    "Headless YAML subagent can only enable built-in tools "
+                    f"{sorted(ALLOWED_HEADLESS_TOOL_TYPES)}; got {tool_type!r}: {yaml_path}"
+                )
 
     async def _emit_chunk(
         self,
@@ -87,26 +140,41 @@ class YamlAgentTool(BaseDefaultTool):
         )
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        from automa_ai.config.agent_spec import load_agent_factory_from_yaml
+        from automa_ai.config.agent_spec import (
+            YamlAgentSpec,
+            load_agent_factory_from_yaml,
+        )
 
         args = YamlAgentInput.model_validate(payload)
         yaml_path = self._resolve_yaml_path(args.yaml_path)
-        factory = load_agent_factory_from_yaml(yaml_path)
+        spec = YamlAgentSpec.from_yaml_file(yaml_path)
+        self._validate_headless_spec(spec, yaml_path=yaml_path)
+        factory = load_agent_factory_from_yaml(spec)
         agent = factory()
-        context_id = args.context_id or get_subagent_context_id() or f"yaml-agent-{uuid4()}"
+        context_id = (
+            args.context_id or get_subagent_context_id() or f"yaml-agent-{uuid4()}"
+        )
         task_id = args.task_id or f"yaml-agent-task-{uuid4()}"
         chunks: list[str] = []
         final: str = ""
         requires_user_input = False
 
         try:
-            async for item in agent.stream(
+            stream_result = agent.stream(
                 args.query,
                 context_id,
                 task_id,
                 user_id=args.user_id,
                 metadata=args.metadata,
-            ):
+            )
+            if inspect.isawaitable(stream_result):
+                stream_result = await stream_result
+            if not isinstance(stream_result, AsyncIterable):
+                raise TypeError(
+                    "agent.stream(...) must return an async iterable of stream items."
+                )
+
+            async for item in stream_result:
                 content = str(item.get("content", ""))
                 is_final = bool(item.get("is_task_complete"))
                 requires_user_input = bool(item.get("require_user_input"))

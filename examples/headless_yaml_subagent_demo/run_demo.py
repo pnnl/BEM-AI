@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -62,7 +63,7 @@ async def main() -> None:
         close = getattr(agent, "close", None)
         if callable(close):
             result = close()
-            if asyncio.iscoroutine(result):
+            if inspect.isawaitable(result):
                 await result
 
 
