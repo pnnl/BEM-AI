@@ -3,29 +3,30 @@ import uuid
 from typing import Literal
 
 import pytest
-from a2a.types import (
-    Role,
-    TaskState,
-    Message,
-    MessageSendParams,
-    Part,
-    TextPart,
-)
-from a2a.server.events import EventQueue
+
+from google.protobuf.json_format import MessageToDict
+
 from a2a.server.agent_execution import RequestContext
+from a2a.server.context import ServerCallContext
+from a2a.server.events import EventQueue
+from a2a.types import Message, Part, Role, SendMessageRequest, TaskState
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.common import prompts
-from automa_ai.common.types import TaskList
 from automa_ai.common.agent_executor import GenericAgentExecutor
+from automa_ai.common.types import TaskList
 
 
 class ResponseFormat(BaseModel):
     status: Literal["input_required", "completed", "error"] = "input_required"
-    question: str = Field(description="Input needed from the user to generate the plan")
-    content: TaskList = Field(description="List of tasks when the plan is generated")
+    question: str = Field(
+        description="Input needed from the user to generate the plan"
+    )
+    content: TaskList = Field(
+        description="List of tasks when the plan is generated"
+    )
 
 
 async def interactive_loop(agent_executor, context_id, task_id):
@@ -35,18 +36,17 @@ async def interactive_loop(agent_executor, context_id, task_id):
             print("❌ Ending interaction.")
             break
 
-        message_id = str(uuid.uuid4().hex)
         user_message = Message(
-            role=Role.user,
-            parts=[Part(root=TextPart(text=str(user_input)))],
+            role=Role.ROLE_USER,
+            parts=[Part(text=str(user_input))],
             context_id=context_id,
-            message_id=message_id,
+            task_id=task_id,
+            message_id=str(uuid.uuid4().hex),
         )
 
-        message = MessageSendParams(message=user_message)
-
         context = RequestContext(
-            request=message,
+            call_context=ServerCallContext(),
+            request=SendMessageRequest(message=user_message),
             context_id=context_id,
             task_id=task_id,
             task=None,
@@ -55,45 +55,41 @@ async def interactive_loop(agent_executor, context_id, task_id):
         event_queue = EventQueue()
         await agent_executor.execute(context, event_queue)
 
-        # Process events and check for completion
         task_completed = False
         final_result = None
 
         while True:
             try:
-                # set timeout to 8 seconds
-                event = await asyncio.wait_for(event_queue.dequeue_event(), timeout=10)
+                event = await asyncio.wait_for(
+                    event_queue.dequeue_event(), timeout=10
+                )
                 print(f"📤 {event}")
 
-                # Check if this is a completion event
                 if hasattr(event, "status") and event.status:
-                    if event.status.state == TaskState.completed:
+                    if event.status.state == TaskState.TASK_STATE_COMPLETED:
                         print("Task completed!----")
                         task_completed = True
-                        # Extract the final result from the message
                         if event.status.message and event.status.message.parts:
                             for part in event.status.message.parts:
-                                if hasattr(part.root, "text"):
-                                    final_result = part.root.text
+                                if part.HasField("text"):
+                                    final_result = part.text
                                     print(final_result)
-                                elif hasattr(part.root, "data"):
-                                    final_result = part.root.data
+                                elif part.HasField("data"):
+                                    final_result = MessageToDict(part.data)
                                     print(final_result)
                         break
-                    elif event.status.state == TaskState.input_required:
+                    elif (
+                        event.status.state
+                        == TaskState.TASK_STATE_INPUT_REQUIRED
+                    ):
                         print("Task input required !----")
-
-                        # Continue the loop to ask for more input
                         break
-                    elif event.status.state == TaskState.working:
+                    elif event.status.state == TaskState.TASK_STATE_WORKING:
                         print("Task working!!! !----")
-
-                        # Check if the working message contains completion status
                         if event.status.message and event.status.message.parts:
                             for part in event.status.message.parts:
-                                if hasattr(part.root, "text"):
-                                    text = part.root.text
-                                    # Check if this contains a completion status
+                                if part.HasField("text"):
+                                    text = part.text
                                     if '"status": "completed"' in text:
                                         task_completed = True
                                         final_result = text
@@ -105,7 +101,6 @@ async def interactive_loop(agent_executor, context_id, task_id):
                 print(e)
                 break
 
-        # If task is completed, show final result and exit
         if task_completed:
             print("\n🎉 Task completed!")
             if final_result:
@@ -115,58 +110,49 @@ async def interactive_loop(agent_executor, context_id, task_id):
 
 @pytest.mark.asyncio
 async def executor():
-    # Initial user message
-    latest_message_id = "test-message"
+    task_id = str(uuid.uuid4())
+    context_id = "test-context-id"
+
     user_message = Message(
-        role=Role.user,
-        parts=[
-            Part(
-                root=TextPart(text="Create an energy model task list for a new school")
-            )
-        ],
-        context_id="test-context-id",
-        message_id=latest_message_id,
+        role=Role.ROLE_USER,
+        parts=[Part(text="Create an energy model task list for a new school")],
+        context_id=context_id,
+        task_id=task_id,
+        message_id="test-message",
     )
 
-    message = MessageSendParams(message=user_message)
-
-    # Generate initial context/task IDs
-    context_id = "test-context-id"
-    task_id = str(uuid.uuid4())
-
-    # Initial RequestContext
     context = RequestContext(
-        request=message,
+        call_context=ServerCallContext(),
+        request=SendMessageRequest(message=user_message),
         context_id=context_id,
         task_id=task_id,
         task=None,
         related_tasks=None,
-        call_context=None,
     )
 
-    # Create agent and executor
     agent = GenericLangGraphReactAgent(
         agent_name="PlannerAgent",
-        description="Helps breakdown a building energy modeling request into actionable tasks",
+        description=(
+            "Helps breakdown a building energy modeling request into actionable tasks"
+        ),
         instructions=prompts.PLANNER_COT_INSTRUCTIONS,
         response_format=ResponseFormat,
         chat_model=ChatOllama(model="llama3.1:8b", temperature=0),
     )
     executor = GenericAgentExecutor(agent)
 
-    # Initial execution
     event_queue = EventQueue()
     await executor.execute(context, event_queue)
 
-    # Drain queue safely using timeout
     while True:
         try:
-            event = await asyncio.wait_for(event_queue.dequeue_event(), timeout=10)
+            event = await asyncio.wait_for(
+                event_queue.dequeue_event(), timeout=10
+            )
             print(f"📤 {event}")
         except asyncio.TimeoutError:
             break
 
-    # Now enter interactive loop
     await interactive_loop(executor, context_id, task_id)
 
 

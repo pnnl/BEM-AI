@@ -5,9 +5,9 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import httpx
-from a2a.types import AgentCard
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
@@ -27,9 +27,9 @@ MODEL_NAME = "llama3.1:8b"
 
 register_travel_tools()
 
-def load_card(path: Path) -> AgentCard:
+def load_card(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
-        return AgentCard(**json.load(f))
+        return json.load(f)
 
 
 def ollama_health_message() -> str:
@@ -114,7 +114,7 @@ Write quote items to quotes.cars.items and confirmation to booking.confirmations
 
 
 def build_agent_factory(
-    card: AgentCard,
+    card: dict[str, Any],
     instructions: str,
     blackboard_config: dict,
     tools_config: dict | None = None,
@@ -168,9 +168,21 @@ async def main() -> None:
         instructions=ORCHESTRATOR_INSTRUCTIONS,
         blackboard_config=bb_cfg,
         subagents=[
-            SubAgentSpec(name=flight_card.name, description=flight_card.description, agent_card=flight_card),
-            SubAgentSpec(name=hotel_card.name, description=hotel_card.description, agent_card=hotel_card),
-            SubAgentSpec(name=car_card.name, description=car_card.description, agent_card=car_card),
+            SubAgentSpec(
+                name=flight_card["name"],
+                description=flight_card["description"],
+                agent_card=flight_card,
+            ),
+            SubAgentSpec(
+                name=hotel_card["name"],
+                description=hotel_card["description"],
+                agent_card=hotel_card,
+            ),
+            SubAgentSpec(
+                name=car_card["name"],
+                description=car_card["description"],
+                agent_card=car_card,
+            ),
         ],
     )
 

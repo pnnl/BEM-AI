@@ -1,32 +1,38 @@
 import pytest
-
-from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+from google.protobuf.json_format import MessageToDict
 
 from automa_ai.common import agent_registry
 from automa_ai.common.agent_registry import A2AAgentServer
 
 
-def _make_card(url: str) -> AgentCard:
-    skill = AgentSkill(
-        id="executor",
-        name="Task Executor",
-        description="Executes tasks.",
-        tags=["execute"],
-        examples=["Run a task."],
-    )
-    return AgentCard(
-        name="Test Agent",
-        description="Test agent card.",
-        url=url,
-        version="1.0.0",
-        default_input_modes=["text"],
-        default_output_modes=["text"],
-        capabilities=AgentCapabilities(
-            streaming=True, push_notifications=True, state_transition_history=False
-        ),
-        skills=[skill],
-        supports_authenticated_extended_card=False,
-    )
+def _make_card(url: str) -> dict:
+    return {
+        "name": "Test Agent",
+        "description": "Test agent card.",
+        "version": "1.0.0",
+        "defaultInputModes": ["text"],
+        "defaultOutputModes": ["text"],
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": True,
+        },
+        "supportedInterfaces": [
+            {
+                "url": url,
+                "protocolBinding": "JSONRPC",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "skills": [
+            {
+                "id": "executor",
+                "name": "Task Executor",
+                "description": "Executes tasks.",
+                "tags": ["execute"],
+                "examples": ["Run a task."],
+            }
+        ],
+    }
 
 
 def test_base_url_path_parsed_from_no_scheme_url():
@@ -41,6 +47,14 @@ def test_base_url_path_override_wins():
     card = _make_card("localhost:20000/a2a")
     server = A2AAgentServer(lambda: None, card, base_url_path="/permit")
     assert server.base_url_path == "/permit"
+    card_data = MessageToDict(server.card, preserving_proto_field_name=False)
+    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:20000/permit"
+
+
+def test_base_url_path_override_does_not_mutate_input_card():
+    card = _make_card("http://localhost:20000/a2a")
+    A2AAgentServer(lambda: None, card, base_url_path="/permit")
+    assert card["supportedInterfaces"][0]["url"] == "http://localhost:20000/a2a"
 
 
 def test_server_run_closes_sync_agent(monkeypatch):
@@ -57,14 +71,15 @@ def test_server_run_closes_sync_agent(monkeypatch):
         agent_registry, "DefaultRequestHandler", lambda **kwargs: object()
     )
 
-    class DummyApp:
-        def build(self):
-            return object()
-
     monkeypatch.setattr(
         agent_registry,
-        "A2AStarletteApplication",
-        lambda **kwargs: DummyApp(),
+        "create_agent_card_routes",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        agent_registry,
+        "create_jsonrpc_routes",
+        lambda *args, **kwargs: [],
     )
     monkeypatch.setattr(agent_registry.uvicorn, "run", lambda *args, **kwargs: None)
 

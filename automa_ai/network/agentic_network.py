@@ -3,8 +3,6 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-from a2a.types import AgentSkill, AgentCard, AgentCapabilities
-
 from automa_ai.agents import GenericAgentType
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.orchestrator_network_agent import OrchestratorConfig
@@ -39,27 +37,35 @@ class ServiceOrchestrator:
     def _init_orchestrator_agent(self, orchestrator_config: OrchestratorConfig):
         # Develop Agent Card
 
-        skill = AgentSkill(
-            id="executor",
-            name="Task Executor",
-            description="Orchestrates the task generation and execution, takes help from the planner to generate tasks",
-            tags=["execute plan"],
-            examples=["Plan my trip to London, submit an expense report."],
-        )
+        skill = {
+            "id": "executor",
+            "name": "Task Executor",
+            "description": "Orchestrates the task generation and execution, takes help from the planner to generate tasks",
+            "tags": ["execute plan"],
+            "examples": ["Plan my trip to London, submit an expense report."],
+        }
 
         # --8<-- [start:AgentCard]
         # This will be the public-facing agent card
-        orchestrator_agent_card = AgentCard(
-            name="Orchestrator Agent",
-            description="Orchestrates the task generation and execution.",
-            url=f"http://localhost:{self.orchestrator_port}/",
-            version="1.0.0",
-            default_input_modes=["text"],
-            default_output_modes=["text"],
-            capabilities=AgentCapabilities(streaming=True, push_notifications=True, state_transition_history=False),
-            skills=[skill],  # Only the basic skill for the public card
-            supports_authenticated_extended_card=False,
-        )
+        orchestrator_agent_card = {
+            "name": "Orchestrator Agent",
+            "description": "Orchestrates the task generation and execution.",
+            "version": "1.0.0",
+            "defaultInputModes": ["text"],
+            "defaultOutputModes": ["text"],
+            "capabilities": {
+                "streaming": True,
+                "pushNotifications": True,
+            },
+            "supportedInterfaces": [
+                {
+                    "url": f"http://localhost:{self.orchestrator_port}/",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "1.0",
+                }
+            ],
+            "skills": [skill],
+        }
 
         orchestrator = AgentFactory(
             card=orchestrator_agent_card,
