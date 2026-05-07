@@ -1,0 +1,43 @@
+spec_version: v1
+
+agent_card:
+  name: EnergyResultsAnalyst
+  description: Headless specialist that reads monthly energy results and computes focused summary metrics.
+  version: 0.1.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:0/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: energy_results_analysis
+      name: Energy Results Analysis
+      description: Computes annual totals, peak monthly demand, and missing-month checks from simulation CSV files.
+      tags: [energy, simulation, csv, analysis]
+      examples:
+        - Read data/monthly_results.csv and report annual electricity and peak demand.
+
+instructions:
+  path: ../prompts/energy_results_analyst.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  transient_retry_attempts: 0
+  enable_metrics: false
+  debug: false
+
+tools:
+  tools:
+    - type: run_python
+      config:
+        runner: local_subprocess
+        workspace_root: ..
+        timeout_s: 20
+        allow_network: false

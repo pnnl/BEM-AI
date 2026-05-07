@@ -35,7 +35,7 @@ from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
 from automa_ai.memory.memory_types import MemoryEntry, MemoryType
 from automa_ai.metrics.collector import MetricsCollector
 from automa_ai.metrics.extractor import extract_metrics_from_chunk
-from automa_ai.prompt_engineering.prompt_template import RESPONSE_PROMPT
+from automa_ai.prompts.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
 from automa_ai.skills.tools import build_load_skill_tool
 from automa_ai.config.tools import ToolSpec
