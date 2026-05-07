@@ -18,6 +18,7 @@ from automa_ai.agents.remote_agent import (
 from automa_ai.tools.base import BaseDefaultTool
 
 ALLOWED_HEADLESS_TOOL_TYPES = {"web_search", "run_python"}
+YAML_SUFFIXES = {".yaml", ".yml"}
 
 
 class YamlAgentToolConfig(BaseModel):
@@ -73,9 +74,17 @@ class YamlAgentTool(BaseDefaultTool):
                 raise ValueError(
                     "yaml_path must resolve inside yaml_agent.config.base_dir."
                 )
-            return resolved
+            return self._validate_yaml_file_path(resolved)
         if path.is_absolute():
-            return path.resolve()
+            return self._validate_yaml_file_path(path.resolve())
+        return self._validate_yaml_file_path(path)
+
+    @staticmethod
+    def _validate_yaml_file_path(path: Path) -> Path:
+        if path.suffix.lower() not in YAML_SUFFIXES:
+            raise ValueError(f"yaml_path must point to a .yaml or .yml file: {path}")
+        if not path.is_file():
+            raise ValueError(f"yaml_path must point to an existing YAML file: {path}")
         return path
 
     @staticmethod
@@ -95,9 +104,16 @@ class YamlAgentTool(BaseDefaultTool):
             )
 
         tools = spec.tools
-        tool_entries = tools.get("tools") if isinstance(tools, dict) else tools
-        if not tool_entries:
+        if tools is None:
             return
+        if isinstance(tools, dict):
+            if "tools" not in tools:
+                raise ValueError(
+                    f"Headless YAML subagent tools mapping must contain a tools list: {yaml_path}"
+                )
+            tool_entries = tools["tools"]
+        else:
+            tool_entries = tools
         if not isinstance(tool_entries, list):
             raise ValueError(
                 f"Headless YAML subagent tools must be a list or tools mapping: {yaml_path}"

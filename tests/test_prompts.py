@@ -3,6 +3,8 @@ from pathlib import Path
 from automa_ai.prompts import RESPONSE_PROMPT, SUBAGENT_PROMPT
 from automa_ai.config.agent_spec import YamlAgentSpec
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_prompt_templates_are_exported() -> None:
     assert "RESPONSE CONTRACT" in RESPONSE_PROMPT
@@ -17,7 +19,7 @@ def test_prompt_templates_are_exported() -> None:
 
 
 def test_headless_subagent_template_is_constrained_yaml_spec() -> None:
-    template_path = Path("docs/templates/headless_subagent.yaml")
+    template_path = REPO_ROOT / "docs" / "templates" / "headless_subagent.yaml"
     spec = YamlAgentSpec.from_yaml_file(template_path)
 
     assert spec.mcp is None

@@ -182,6 +182,25 @@ async def test_yaml_agent_tool_rejects_paths_outside_base_dir(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_yaml_agent_tool_rejects_non_file_yaml_path(tmp_path):
+    spec_path = tmp_path / "agent.yaml"
+    _write_headless_spec(spec_path)
+    text_path = tmp_path / "agent.txt"
+    text_path.write_text("not yaml", encoding="utf-8")
+
+    tool = YamlAgentTool(YamlAgentToolConfig(base_dir=str(tmp_path)))
+
+    with pytest.raises(ValueError, match=r"\.yaml or \.yml"):
+        await tool.invoke({"yaml_path": "agent.txt", "query": "run"})
+
+    with pytest.raises(ValueError, match=r"\.yaml or \.yml"):
+        await tool.invoke({"yaml_path": ".", "query": "run"})
+
+    with pytest.raises(ValueError, match="existing YAML file"):
+        await tool.invoke({"yaml_path": "missing.yaml", "query": "run"})
+
+
+@pytest.mark.asyncio
 async def test_yaml_agent_tool_rejects_nested_yaml_agent_tool(tmp_path):
     spec_path = tmp_path / "agent.yaml"
     _write_headless_spec(spec_path)
@@ -250,6 +269,23 @@ subagents:
       skills: []
 """,
             "cannot define nested subagents",
+        ),
+        (
+            """
+tools:
+  config:
+    enabled: true
+""",
+            "tools mapping must contain a tools list",
+        ),
+        (
+            """
+tools:
+  tools:
+    type: run_python
+    config: {}
+""",
+            "tools must be a list or tools mapping",
         ),
         (
             """
