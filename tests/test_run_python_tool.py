@@ -118,6 +118,29 @@ async def test_run_python_allows_os_for_local_path_handling(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_python_allows_pathlib_for_local_path_handling(tmp_path) -> None:
+    input_path = tmp_path / "nested" / "input.txt"
+    input_path.parent.mkdir()
+    input_path.write_text("ok", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": (
+                "from pathlib import Path\n"
+                "print((Path('nested') / 'input.txt').read_text(encoding='utf-8'))"
+            ),
+            "input_files": ["nested/input.txt"],
+        }
+    )
+
+    assert result["success"] is True
+    assert result["stdout"].strip() == "ok"
+
+
+@pytest.mark.asyncio
 async def test_run_python_still_rejects_os_system() -> None:
     tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
     result = await tool.invoke({"code": "import os\nos.system('echo unsafe')"})

@@ -240,12 +240,13 @@ import sys
 
 _BLOCKED_IMPORTS = {blocked!r}
 _ALLOW_NETWORK = {allow_network!r}
+_ALLOWED_BLOCKED_IMPORT_MODULES = {{"urllib.parse"}}
 _REAL_IMPORT = builtins.__import__
 
 
 def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
     root = name.split('.', 1)[0]
-    if root in _BLOCKED_IMPORTS:
+    if root in _BLOCKED_IMPORTS and name not in _ALLOWED_BLOCKED_IMPORT_MODULES:
         raise ImportError(f"Blocked import: {{root}}")
     return _REAL_IMPORT(name, globals, locals, fromlist, level)
 

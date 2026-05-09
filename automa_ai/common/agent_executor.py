@@ -53,11 +53,11 @@ class GenericAgentExecutor(AgentExecutor):
         self,
         *,
         updater: TaskUpdater,
-        part: Part,
+        parts: list[Part],
         artifact_name: str,
     ) -> bool:
         try:
-            await updater.add_artifact([part], name=artifact_name)
+            await updater.add_artifact(parts, name=artifact_name)
             await updater.complete()
             return True
         except Exception as exc:
@@ -162,14 +162,18 @@ class GenericAgentExecutor(AgentExecutor):
                 self.logger.info(
                     f"{os.getpid()}: Completing with content: {item['content']}"
                 )
+                parts = [
+                    new_text_part(artifact["content"])
+                    for artifact in item.get("additional_artifacts", [])
+                ]
                 if item["response_type"] == "data":
-                    part = new_data_part(item["content"])
+                    parts.append(new_data_part(item["content"]))
                 else:
-                    part = new_text_part(item["content"])
+                    parts.append(new_text_part(item["content"]))
 
                 await self._safe_publish_completion(
                     updater=updater,
-                    part=part,
+                    parts=parts,
                     artifact_name=f"{self.agent.agent_name}-result",
                 )
                 terminal_state_reached = True

@@ -45,6 +45,14 @@ from automa_ai.blackboard.tools import build_blackboard_tools
 
 logger = logging.getLogger(__name__)
 
+
+def _should_emit_tool_response(tool_name: str | None, content: Any) -> bool:
+    """Return whether a tool response should be streamed to the user."""
+    if tool_name != "load_skill":
+        return True
+    return False
+
+
 try:
     from langgraph_checkpoint_aws import AgentCoreMemorySaver
 except ImportError:
@@ -359,28 +367,21 @@ class GenericLangGraphChatAgent(BaseAgent):
                                                 query_id=self.metrics.current_query_id,
                                             )
                                         )
-                                # accumulate ai messages
-                                message_accumulator.add_chunk(ck)
-
-                                if ck.content:
-                                    content = self._normalize_chunk_content(ck)
-                                    if content is not None:
-                                        stream_text = str(content)
-                                        # Emit incremental chunk text and suppress immediate duplicates.
-                                        if (
-                                            stream_text
-                                            and stream_text != last_stream_text
-                                        ):
-                                            emitted_output = True
-                                            await output_queue.put(
-                                                {
-                                                    "response_type": "text",
-                                                    "is_task_complete": False,
-                                                    "require_user_input": False,
-                                                    "content": stream_text,
-                                                }
-                                            )
-                                            last_stream_text = stream_text
+                                stream_text = message_accumulator.add_chunk(ck)
+                                # Emit only text routed by the accumulator so
+                                # artifact-marker content is withheld from
+                                # status updates as soon as it is detected.
+                                if stream_text and stream_text != last_stream_text:
+                                    emitted_output = True
+                                    await output_queue.put(
+                                        {
+                                            "response_type": "text",
+                                            "is_task_complete": False,
+                                            "require_user_input": False,
+                                            "content": stream_text,
+                                        }
+                                    )
+                                    last_stream_text = stream_text
                                 if ck.tool_calls:
                                     tool_activity_started = True
                                     tool_call_str = ""
@@ -400,6 +401,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                             elif isinstance(ck, ToolMessage):
                                 tool_activity_started = True
                                 if ck.content:
+                                    if not _should_emit_tool_response(
+                                        ck.name, ck.content
+                                    ):
+                                        continue
                                     content = f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
                                     emitted_output = True
                                     await output_queue.put(
@@ -690,26 +695,6 @@ class GenericLangGraphChatAgent(BaseAgent):
 
         return {"configurable": configurable}
 
-    @staticmethod
-    def _normalize_chunk_content(chunk: AIMessageChunk) -> str | None:
-        content = chunk.content
-        if content and isinstance(content, list):
-            # likely this is a gemini responses
-            content = content[0]
-            if chunk.response_metadata and chunk.response_metadata.get(
-                "model_provider"
-            ) in [
-                "google_genai",
-                "bedrock_converse",
-            ]:
-                # in this case, it is likely a json inside a list
-                if content["type"] == "text" and content["text"]:
-                    content = content["text"]
-                elif content["type"] == "tool_use":
-                    # seems unique to claude - temporary block tool call info first.
-                    content = "-"
-        return content
-
     async def _emit_final_output(
         self,
         output_queue: asyncio.Queue,
@@ -737,12 +722,22 @@ class GenericLangGraphChatAgent(BaseAgent):
             try:
                 _, parsed = extract_and_parse_json(artifact_text)
                 if isinstance(parsed, dict):
+                    additional_artifacts = []
+                    if final_text:
+                        additional_artifacts.append(
+                            {
+                                "response_type": "text",
+                                "content": final_text,
+                                "artifact_name": f"{self.agent_name}-summary",
+                            }
+                        )
                     await output_queue.put(
                         {
                             "response_type": "data",
                             "is_task_complete": True,
                             "require_user_input": False,
                             "content": parsed,
+                            "additional_artifacts": additional_artifacts,
                         }
                     )
                     return
