@@ -13,15 +13,34 @@ class PolicyViolationError(ValueError):
 
 _BLOCKED_CALLS = {"__import__", "eval", "exec", "compile"}
 _BLOCKED_ATTRS = {
+    "execl",
+    "execle",
+    "execlp",
+    "execlpe",
+    "execv",
+    "execve",
+    "execvp",
+    "execvpe",
     "system",
     "popen",
     "Popen",
+    "posix_spawn",
+    "posix_spawnp",
     "run",
+    "spawnl",
+    "spawnle",
+    "spawnlp",
+    "spawnlpe",
+    "spawnv",
+    "spawnve",
+    "spawnvp",
+    "spawnvpe",
     "call",
     "check_output",
     "check_call",
     "import_module",
 }
+_ALLOWED_BLOCKED_IMPORT_MODULES = {"urllib.parse"}
 
 
 def validate_code_policy(code: str, config: RunPythonToolConfig) -> None:
@@ -63,6 +82,8 @@ def _validate_call(node: ast.Call) -> None:
 
 def _validate_import(name: str, blocked: set[str], allowed: set[str]) -> None:
     root = name.split(".", 1)[0]
+    if name in _ALLOWED_BLOCKED_IMPORT_MODULES:
+        return
     if root in blocked:
         raise PolicyViolationError(f"Blocked import: {root}")
     if allowed and root not in allowed:
