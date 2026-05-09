@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -176,13 +177,9 @@ class OpenStudioService:
         return success_payload(measures=self.measure_registry.list_public_specs())
 
     def model_apply_measure(self, args: ModelApplyMeasureArgs) -> dict[str, Any]:
-        # Step 1: validate base model and OpenStudio CLI availability.
+        # Step 1: validate base model state. Python measures run in the current
+        # Python SDK environment; non-Python measures use the OpenStudio CLI.
         model_state = self._get_model_state(args.model_id)
-        if not self.openstudio_path:
-            raise ValueError("OPENSTUDIO_PATH is not set in environment.")
-        openstudio_path = Path(self.openstudio_path)
-        if not (openstudio_path.is_file() and os.access(openstudio_path, os.X_OK)):
-            raise ValueError(f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}")
 
         # Step 2: resolve measure policy and normalize user args from schema/defaults.
         measure_spec = self.measure_registry.get(args.measure_id)
@@ -205,7 +202,17 @@ class OpenStudioService:
         env["OSM_INPUT_PATH"] = str(input_osm)
         env["OSM_OUTPUT_PATH"] = str(output_osm)
         env["MEASURE_ARGS_JSON"] = json.dumps(normalized_args)
-        cmd = [self.openstudio_path, "execute_python_script", str(measure_spec.entrypoint)]
+        if measure_spec.entrypoint.suffix == ".py":
+            cmd = [sys.executable, str(measure_spec.entrypoint)]
+        else:
+            if not self.openstudio_path:
+                raise ValueError("OPENSTUDIO_PATH is not set in environment.")
+            openstudio_path = Path(self.openstudio_path)
+            if not (openstudio_path.is_file() and os.access(openstudio_path, os.X_OK)):
+                raise ValueError(
+                    f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}"
+                )
+            cmd = [self.openstudio_path, "execute_python_script", str(measure_spec.entrypoint)]
 
         try:
             completed = subprocess.run(
@@ -406,7 +413,7 @@ class OpenStudioService:
             weather_candidate = self._extract_weather_path_from_osm(model_path)
         if not weather_candidate:
             raise ValueError(
-                "Weather file is required. Use model.set_weather, pass options.epw_path, "
+                "Weather file is required. Use model_set_weather, pass options.epw_path, "
                 "or include OS:WeatherFile path in the model."
             )
         weather_path = self._resolve_path_with_model_context(str(weather_candidate), model_path)

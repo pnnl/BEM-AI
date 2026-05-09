@@ -14,7 +14,7 @@ from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.schemas import (
 
 
 def register_sim_tools(mcp, service) -> None:
-    @mcp.tool(name="sim.run", description="Start an OpenStudio simulation job.")
+    @mcp.tool(name="sim_run", description="Start an OpenStudio simulation job.")
     async def sim_run(
         model_id: str,
         run_mode: str = "sizing",
@@ -38,7 +38,7 @@ def register_sim_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=True)
 
-    @mcp.tool(name="sim.status", description="Get simulation status.")
+    @mcp.tool(name="sim_status", description="Get simulation status.")
     async def sim_status(job_id: str) -> dict[str, Any]:
         try:
             args = SimStatusArgs(job_id=job_id)
@@ -50,7 +50,7 @@ def register_sim_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=True)
 
-    @mcp.tool(name="sim.artifacts", description="Get simulation artifact IDs.")
+    @mcp.tool(name="sim_artifacts", description="Get simulation artifact IDs.")
     async def sim_artifacts(job_id: str) -> dict[str, Any]:
         try:
             args = SimArtifactsArgs(job_id=job_id)

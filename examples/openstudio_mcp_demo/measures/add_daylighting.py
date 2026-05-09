@@ -68,8 +68,8 @@ def main() -> int:
     minimum_light_output_fraction_continuous = float(args.get("minimum_light_output_fraction_continuous", 0.2))
     number_of_stepped_control_steps = int(args.get("number_of_stepped_control_steps", 1))
 
-    translator = openstudio.osversion.VersionTranslator()
-    loaded = translator.loadModel(openstudio.path(str(input_path)))
+    translator = openstudio.openstudioosversion.VersionTranslator()
+    loaded = translator.loadModel(str(input_path))
     if not loaded.is_initialized():
         print(json.dumps({"ok": False, "error": f"Failed to load model: {input_path}"}))
         return 2
@@ -105,7 +105,7 @@ def main() -> int:
         spaces_touched.append(space.nameString())
         sensors_added += 1
 
-    if not model.save(openstudio.path(str(output_path)), True):
+    if not model.save(str(output_path), True):
         print(json.dumps({"ok": False, "error": f"Failed to save output model: {output_path}"}))
         return 2
 

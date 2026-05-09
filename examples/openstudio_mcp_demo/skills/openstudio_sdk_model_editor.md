@@ -1,0 +1,170 @@
+---
+name: openstudio_sdk_model_editor
+description: Inspect and edit OpenStudio models through run_python and the OpenStudio Python SDK.
+version: 0.1.0
+output_format: markdown_with_json_summary
+---
+
+## Scope
+
+Use this skill only for OpenStudio model inspection and model editing. Do not use
+it to run simulations or retrieve simulation results. Simulation execution,
+polling, artifacts, and SQL-backed result retrieval belong to the OpenStudio MCP
+tools.
+
+Use `run_python` only when the task requires a generated Python script against a
+local `.osm` file. Do not call `run_python` for tasks that can be completed with
+MCP `model_*`, `sim_*`, or `results_*` tools.
+
+Allowed uses:
+
+- inspect spaces, thermal zones, surfaces, constructions, schedules, loads, and
+  other model objects;
+- compute model-level summaries from `.osm` content;
+- copy a model and apply scoped edits requested by the user;
+- report object counts, names, before/after values, assumptions, warnings, and
+  the output model path.
+
+Disallowed uses:
+
+- simulation execution;
+- simulation polling;
+- SQL result retrieval;
+- artifact retrieval;
+- network calls;
+- shell commands or subprocesses;
+- overwriting the original model unless explicitly requested.
+
+## Senior Modeler Workflow
+
+1. Classify the request before writing code:
+   - `inspect_only`: read model data and summarize.
+   - `edit_model`: make a safe copy and edit model objects.
+   - `simulate_or_results`: use MCP tools instead of `run_python`.
+   - `ambiguous_or_risky`: ask a clarifying question.
+2. Load SDK wiki context:
+   - load `sdk_index` to choose relevant examples and confirm the routing
+     choice;
+   - load `sdk_core_patterns` before drafting an SDK script;
+   - load every required domain pack from **SDK Context-Pack Selection** below
+     before drafting code;
+   - when a request spans multiple domains, load all matching packs instead of
+     guessing from memory.
+3. Confirm required inputs:
+   - model path or URI;
+   - target object scope, such as all spaces, a named space type, thermal zones,
+     envelope surfaces, schedules, loads, constructions, or HVAC objects;
+   - requested edit values and units;
+   - output path when an edit is requested.
+4. Draft a short workflow before using `run_python`:
+   - input model path;
+   - inspection or edit target;
+   - OpenStudio SDK APIs expected to be used;
+   - loaded SDK wiki packs used as examples;
+   - validation checks;
+   - output model path for edits.
+5. For edits, never overwrite the original model unless the user explicitly asks.
+   Write a new `.osm` under `outputs/` or another user-approved path.
+6. Before executing Python, show the script intent, input path, output path, key
+   operations, and the complete Python script in a fenced `python` code block.
+   Do not summarize, omit, or refer to an unseen script. Ask for the user's
+   explicit approval and do not call `run_python` until approval is received.
+7. Execute one bounded Python script with `run_python`.
+8. Track failed `run_python` calls for the current task. If three attempts fail,
+   stop executing scripts. Report each failure attempt, the likely error causes
+   from stdout/stderr and warnings, and ask the user to verify or revise the
+   script before any further execution.
+9. Summarize like a senior building energy modeler:
+   - what was inspected or changed;
+   - affected object counts and names when practical;
+   - before/after values for edits;
+   - assumptions and unresolved issues;
+   - output model path;
+   - recommended next step, usually validation or simulation via MCP.
+
+## SDK Context-Pack Selection
+
+Always load `sdk_index` and `sdk_core_patterns` first for SDK scripts. Then load
+the domain packs below based on the requested inspection or edit. Do not draft
+the Python script until all matching packs are loaded.
+
+- Load `sdk_geometry` for geometry, building stories, spaces as geometric
+  containers, surfaces, subsurfaces, exterior walls, roofs, floors, WWR,
+  window/skylight/door area, shading surfaces, azimuth, orientation, cardinal
+  direction, north axis, centroid/vertex edits, or envelope area summaries.
+- Load `sdk_spaces_zones_loads` for spaces, thermal zones, plenums,
+  part-of-total-floor-area flags, zone multipliers, internal loads, people,
+  lights, electric/gas equipment, load densities, outdoor air, and
+  space/zone-level summary tables.
+- Load both `sdk_geometry` and `sdk_spaces_zones_loads` when a geometry task
+  also needs space or zone multipliers, thermal-zone grouping, floor area by
+  zone, or load summaries by space.
+- Load `sdk_constructions` for construction assignments, construction layers,
+  opaque materials, massless or standard material R-values, U-factor changes,
+  insulation edits, simple glazing, SHGC, visible transmittance, and
+  construction summaries by surface type.
+- Load both `sdk_geometry` and `sdk_constructions` when summarizing envelope
+  areas by construction, editing fenestration constructions, or changing
+  constructions on selected surfaces/subsurfaces.
+- Load `sdk_schedules` for schedule rulesets, schedule type limits, day
+  schedules, hourly profiles, multipliers, occupancy/lighting/equipment
+  schedules, and schedule value edits.
+- Load both `sdk_schedules` and `sdk_spaces_zones_loads` when inspecting or
+  editing loads that depend on schedules.
+- Load `sdk_daylighting` for daylighting controls, daylight sensors, sensor
+  position, illuminance setpoints, duplicate daylighting controls, and
+  daylighting-related model edits.
+- Load both `sdk_daylighting` and `sdk_geometry` when sensor placement depends
+  on floor vertices, space geometry, exterior fenestration, or centroid points.
+
+Required geometry rule: if a script uses `surface.azimuth()`, it must use the
+`surface_azimuth_degrees(surface)` helper from `sdk_geometry`. Do not treat raw
+`surface.azimuth()` as degrees and do not manually convert with `math.pi`.
+
+Required OpenStudio API naming rule: follow the exact SDK method spelling shown
+in the loaded wiki examples. Some OpenStudio collection getters use historical
+plural spellings that do not match common English pluralization. For building
+stories, use the `sdk_geometry` example spelling exactly:
+`model.getBuildingStorys()`.
+
+## Required Script Result Contract
+
+The Python script should print one final JSON object with these fields:
+
+```json
+{
+  "ok": true,
+  "mode": "inspect_only|edit_model",
+  "input_model_path": "...",
+  "output_model_path": "...",
+  "changes": [],
+  "warnings": [],
+  "counts": {},
+  "summary": "..."
+}
+```
+
+If the task fails, print:
+
+```json
+{
+  "ok": false,
+  "error": "Clear failure reason.",
+  "warnings": []
+}
+```
+
+## Safety Rules
+
+- Use `openstudio.openstudioosversion.VersionTranslator().loadModel(str(input_path))`
+  for loading.
+- Check `is_initialized()` before accessing the model.
+- Save edited models with `model.save(str(output_path), True)`.
+- Preserve the original model file.
+- Keep scripts deterministic and local-file only.
+- Do not import modules blocked by the `run_python` tool policy:
+  `subprocess`, `socket`, `requests`, `urllib`, or `ctypes`.
+- Do not import network libraries.
+- Do not use shell commands or subprocesses.
+- Do not perform simulation or results retrieval with `run_python`.
+- Do not execute generated Python without explicit user approval.

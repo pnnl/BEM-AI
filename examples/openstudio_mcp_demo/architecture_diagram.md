@@ -45,27 +45,27 @@ sequenceDiagram
     participant OS as OpenStudio Engine
 
     User->>Agent: "Run sizing on sample.osm"
-    Agent->>MCP: model.load(model_uri)
+    Agent->>MCP: model_load(model_uri)
     MCP-->>Agent: model_id
 
-    Agent->>MCP: model.apply_measure(model_id, add_daylighting)
-    MCP->>OS: execute_python_script add_daylighting.py
+    Agent->>MCP: model_apply_measure(model_id, add_daylighting)
+    MCP->>OS: python add_daylighting.py
     OS-->>MCP: out.osm + logs
     MCP-->>Agent: new model_id + changes
 
-    Agent->>MCP: sim.run(model_id)
+    Agent->>MCP: sim_run(model_id)
     MCP->>OS: openstudio run -w in.osw
     MCP-->>Agent: job_id (immediate)
 
     loop poll
-      Agent->>MCP: sim.status(job_id)
+      Agent->>MCP: sim_status(job_id)
       MCP-->>Agent: RUNNING / SUCCEEDED / FAILED
     end
 
-    Agent->>MCP: sim.artifacts(job_id)
+    Agent->>MCP: sim_artifacts(job_id)
     MCP-->>Agent: sql_id, logs_id, report_id
 
-    Agent->>MCP: results.query(sql_id, sizing_summary)
+    Agent->>MCP: results_query(sql_id, sizing_summary)
     MCP-->>Agent: real SQL-based metrics
     Agent-->>User: sponsor-friendly summary
 ```
