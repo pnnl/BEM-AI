@@ -42,7 +42,7 @@ class LocalSubprocessRunner:
         workspace_root = Path(self.config.workspace_root or os.getcwd()).resolve()
 
         with tempfile.TemporaryDirectory(prefix="run_python_") as tmp:
-            tmp_root = Path(tmp)
+            tmp_root = Path(tmp).resolve()
             for rel_path in input_files:
                 _validate_input_filename(rel_path)
                 src = _resolve_workspace_file(workspace_root, rel_path)
