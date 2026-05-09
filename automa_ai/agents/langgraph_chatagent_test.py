@@ -3,7 +3,10 @@ import asyncio
 import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage
 
-from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
+from automa_ai.agents.langgraph_chatagent import (
+    GenericLangGraphChatAgent,
+    _should_emit_tool_response,
+)
 from automa_ai.agents.remote_agent import StreamEvent
 from automa_ai.common.message_accumulator import (
     AIMessageAccumulator,
@@ -77,6 +80,18 @@ def test_agent_close_runs_checkpointer_cleanup_once():
     assert calls == ["closed"]
 
 
+def test_load_skill_tool_response_is_never_streamed():
+    assert not _should_emit_tool_response(
+        "load_skill",
+        "SKILL: openstudio_sdk_model_editor\nSOURCE: /tmp/skill.md\n\nScope...",
+    )
+    assert not _should_emit_tool_response("load_skill", "Error: missing skill")
+    assert not _should_emit_tool_response(
+        "load_skill", "SKILL: example\nThis skill explains failure handling."
+    )
+    assert _should_emit_tool_response("run_python", "normal result")
+
+
 @pytest.mark.asyncio
 async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
     captured: dict = {}
@@ -105,14 +120,6 @@ async def test_build_stream_inputs_includes_context_and_memory():
     assert "retrieved context" in system_content
     assert "past conversations" in system_content
     assert "2024-01-01: remember this" in system_content
-
-
-def test_normalize_chunk_content_handles_list_text():
-    chunk = AIMessageChunk(
-        content=[{"type": "text", "text": "hello"}],
-        response_metadata={"model_provider": "google_genai"},
-    )
-    assert GenericLangGraphChatAgent._normalize_chunk_content(chunk) == "hello"
 
 
 @pytest.mark.asyncio
@@ -150,6 +157,103 @@ async def test_emit_final_output_emits_data_for_json_artifact():
 
     assert item["response_type"] == "data"
     assert item["content"] == {"foo": "bar"}
+
+
+@pytest.mark.asyncio
+async def test_emit_final_output_emits_summary_artifact_before_data_artifact():
+    agent = build_agent()
+    output_queue: asyncio.Queue = asyncio.Queue()
+    accumulator = AIMessageAccumulator()
+
+    accumulator.add_chunk(
+        AIMessageChunk(
+            content=f'Summary text. {ARTIFACT_START}{{"foo": "bar"}}{ARTIFACT_END}'
+        )
+    )
+
+    await agent._emit_final_output(output_queue, accumulator, "session-1", "task-1")
+    data_item = await asyncio.wait_for(output_queue.get(), timeout=1)
+
+    assert data_item["response_type"] == "data"
+    assert data_item["is_task_complete"] is True
+    assert data_item["content"] == {"foo": "bar"}
+    assert data_item["additional_artifacts"] == [
+        {
+            "response_type": "text",
+            "content": "Summary text.",
+            "artifact_name": "test-agent-summary",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_emit_artifact_marker_content_as_status_text():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content=f"Summary {ARTIFACT_START}"), {}
+            yield AIMessageChunk(content='{"foo": "bar"}'), {}
+            yield AIMessageChunk(content=ARTIFACT_END), {}
+
+    agent = build_agent()
+    agent.graph = DummyGraph()
+
+    items = [
+        item
+        async for item in agent.stream("hello", "session-1", "task-1")
+    ]
+
+    status_text = "".join(
+        item["content"]
+        for item in items
+        if not item["is_task_complete"] and item["response_type"] == "text"
+    )
+    assert status_text == "Summary "
+    assert ARTIFACT_START not in status_text
+    assert ARTIFACT_END not in status_text
+    assert '{"foo": "bar"}' not in status_text
+    assert items[-1]["response_type"] == "data"
+    assert items[-1]["content"] == {"foo": "bar"}
+    assert items[-1]["additional_artifacts"][0]["content"] == "Summary"
+
+
+@pytest.mark.asyncio
+async def test_stream_filters_bedrock_list_artifact_content():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            meta = {"model_provider": "bedrock_converse"}
+            yield AIMessageChunk(
+                content=[{"type": "text", "text": f"Summary {ARTIFACT_START}"}],
+                response_metadata=meta,
+            ), {}
+            yield AIMessageChunk(
+                content=[{"type": "text", "text": '{"foo": "bar"}'}],
+                response_metadata=meta,
+            ), {}
+            yield AIMessageChunk(
+                content=[{"type": "text", "text": ARTIFACT_END}],
+                response_metadata=meta,
+            ), {}
+
+    agent = build_agent()
+    agent.graph = DummyGraph()
+
+    items = [
+        item
+        async for item in agent.stream("hello", "session-1", "task-1")
+    ]
+
+    status_text = "".join(
+        item["content"]
+        for item in items
+        if not item["is_task_complete"] and item["response_type"] == "text"
+    )
+    assert status_text == "Summary "
+    assert ARTIFACT_START not in status_text
+    assert ARTIFACT_END not in status_text
+    assert '{"foo": "bar"}' not in status_text
+    assert items[-1]["response_type"] == "data"
+    assert items[-1]["content"] == {"foo": "bar"}
+    assert items[-1]["additional_artifacts"][0]["content"] == "Summary"
 
 
 @pytest.mark.asyncio

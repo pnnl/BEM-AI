@@ -20,8 +20,8 @@ class TestBasicFunctionality:
         """Test accumulating simple text without any artifact."""
         acc = AIMessageAccumulator()
 
-        acc.add_chunk(AIMessageChunk(content="Hello "))
-        acc.add_chunk(AIMessageChunk(content="world!"))
+        assert acc.add_chunk(AIMessageChunk(content="Hello ")) == "Hello "
+        assert acc.add_chunk(AIMessageChunk(content="world!")) == "world!"
 
         assert acc.get_assistant_text() == "Hello world!"
         assert acc.get_artifact_text() is None
@@ -33,9 +33,12 @@ class TestBasicFunctionality:
         """Test accumulating a simple artifact."""
         acc = AIMessageAccumulator()
 
-        acc.add_chunk(AIMessageChunk(content=f"Here is your file: {ARTIFACT_START}"))
-        acc.add_chunk(AIMessageChunk(content="def hello():\n    print('Hello')"))
-        acc.add_chunk(AIMessageChunk(content=f"{ARTIFACT_END}"))
+        assert (
+            acc.add_chunk(AIMessageChunk(content=f"Here is your file: {ARTIFACT_START}"))
+            == "Here is your file: "
+        )
+        assert acc.add_chunk(AIMessageChunk(content="def hello():\n    print('Hello')")) == ""
+        assert acc.add_chunk(AIMessageChunk(content=f"{ARTIFACT_END}")) == ""
 
         assert acc.get_assistant_text() == "Here is your file:"
         assert acc.get_artifact_text() == "def hello():\n    print('Hello')"
@@ -47,13 +50,48 @@ class TestBasicFunctionality:
         """Test text both before and after an artifact."""
         acc = AIMessageAccumulator()
 
-        acc.add_chunk(AIMessageChunk(content=f"Before {ARTIFACT_START}artifact{ARTIFACT_END} after"))
+        assert (
+            acc.add_chunk(
+                AIMessageChunk(
+                    content=f"Before {ARTIFACT_START}artifact{ARTIFACT_END} after"
+                )
+            )
+            == "Before  after"
+        )
 
         assert acc.get_assistant_text() == "Before  after"
         assert acc.get_artifact_text() == "artifact"
 
         msg = acc.finalize()
         assert msg.content == "Before  after artifact"
+
+    def test_artifact_marker_content_is_not_returned_as_assistant_delta(self):
+        """Artifact content split across chunks is not returned for status streaming."""
+        acc = AIMessageAccumulator()
+
+        assert acc.add_chunk(AIMessageChunk(content=f"Summary {ARTIFACT_START}")) == "Summary "
+        assert acc.add_chunk(AIMessageChunk(content='{"foo": "bar"}')) == ""
+        assert acc.add_chunk(AIMessageChunk(content=ARTIFACT_END)) == ""
+
+        assert acc.get_assistant_text() == "Summary"
+        assert acc.get_artifact_text() == '{"foo": "bar"}'
+
+    def test_provider_list_text_content_returns_assistant_delta(self):
+        """Provider list content blocks are converted before artifact routing."""
+        acc = AIMessageAccumulator()
+
+        delta = acc.add_chunk(
+            AIMessageChunk(
+                content=[
+                    {"type": "text", "text": "hello"},
+                    {"type": "text", "text": " world"},
+                ],
+                response_metadata={"model_provider": "bedrock_converse"},
+            )
+        )
+
+        assert delta == "hello world"
+        assert acc.get_assistant_text() == "hello world"
 
     def test_multiple_artifacts(self):
         """Test multiple artifacts (they get concatenated)."""

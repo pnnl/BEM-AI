@@ -78,7 +78,8 @@ Sandbox limitations:
 - Runs Python only with a local subprocess runner.
 - Uses best-effort static policy checks; it is not a hardened sandbox for untrusted code.
 - Does not expose shell or bash execution.
-- Rejects blocked imports and known dangerous call patterns before execution.
+- Allows normal local-file helpers such as `os` and `pathlib`, but rejects blocked imports and known dangerous call patterns before execution.
+- Blocks subprocess execution, shell execution, and network imports by default.
 - Rejects reserved startup file names (`sitecustomize.py`, `usercustomize.py`, and `.pth`) in `input_files`.
 - Enforces timeout and output truncation.
 - Executes code in a temporary working directory and only returns files from that directory.
@@ -94,7 +95,6 @@ tools:
       workspace_root: .
       allow_network: false
       blocked_imports:
-        - os
         - subprocess
         - socket
         - requests

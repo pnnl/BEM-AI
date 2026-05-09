@@ -41,8 +41,14 @@ class AIMessageAccumulator:
         self._in_artifact = False
         self._carry = ""  # Handles marker split across chunks
 
-    def add_chunk(self, chunk: AIMessageChunk) -> None:
-        """Add a chunk to the accumulator."""
+    def add_chunk(self, chunk: AIMessageChunk) -> str:
+        """Add a chunk and return the assistant-visible text added by it."""
+        assistant_delta_parts: list[str] = []
+
+        def append_assistant(text: str) -> None:
+            self._assistant_parts.append(text)
+            assistant_delta_parts.append(text)
+
         # ---- Accumulate metadata ----
         if chunk.additional_kwargs:
             self._merge_dict(self._additional_kwargs, chunk.additional_kwargs)
@@ -56,7 +62,7 @@ class AIMessageAccumulator:
         # ---- Route content ----
         content_text = self._content_to_text(getattr(chunk, "content", None))
         if not content_text:
-            return
+            return ""
 
         text = self._carry + content_text
         self._carry = ""
@@ -68,7 +74,7 @@ class AIMessageAccumulator:
             if marker_idx != -1:
                 # Found complete marker
                 if not self._in_artifact:
-                    self._assistant_parts.append(text[:marker_idx])
+                    append_assistant(text[:marker_idx])
                     text = text[marker_idx + len(ARTIFACT_START):]
                     self._in_artifact = True
                 else:
@@ -85,7 +91,7 @@ class AIMessageAccumulator:
                     if target_marker.startswith(text[-length:]):
                         # Found a partial marker at the end
                         if not self._in_artifact:
-                            self._assistant_parts.append(text[:-length])
+                            append_assistant(text[:-length])
                         else:
                             self._artifact_parts.append(text[:-length])
                         self._carry = text[-length:]
@@ -95,10 +101,12 @@ class AIMessageAccumulator:
                 if not partial_found:
                     # No partial marker, add everything
                     if not self._in_artifact:
-                        self._assistant_parts.append(text)
+                        append_assistant(text)
                     else:
                         self._artifact_parts.append(text)
                 break
+
+        return "".join(assistant_delta_parts)
 
     def finalize(self) -> AIMessage:
         """
