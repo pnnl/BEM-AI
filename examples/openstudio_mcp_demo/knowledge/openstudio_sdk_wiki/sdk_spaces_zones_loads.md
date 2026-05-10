@@ -2,10 +2,6 @@
 name: sdk_spaces_zones_loads
 description: OpenStudio Python SDK examples for spaces, thermal zones, and internal loads.
 version: 0.1.0
-source_domains:
-  - openstudio-standards/space/space.rb
-  - openstudio-standards/thermal_zone/thermal_zone.rb
-  - openstudio-standards/qaqc/internal_loads.rb
 ---
 
 # SDK Spaces, Zones, and Loads Context
@@ -13,6 +9,12 @@ source_domains:
 Use this pack for space/zone inspection, plenum classification,
 heated/cooled classification, area summaries, internal load summaries, and
 outdoor air summaries.
+
+For any request that creates spaces, thermal zones, space types, loads, or
+outdoor-air objects, apply the global object creation rule from
+`sdk_core_patterns`: ask for missing object names, required numeric values and
+units, and referenced model objects before execution. If defaults are approved,
+list them with `Object:Name.parameter: assumed to be x`.
 
 ## Space and Zone Summary
 
@@ -33,6 +35,38 @@ for space in model.getSpaces():
 counts["spaces"] = len(rows)
 counts["thermal_zones"] = len(model.getThermalZones())
 ```
+
+## Additional Properties on Spaces
+
+```python
+space.additionalProperties().setFeature("floor_area", floor_area)
+space.additionalProperties().setFeature("space_length", space_length)
+space.additionalProperties().setFeature("space_depth", space_depth)
+space.additionalProperties().setFeature("space_type", "PERIMETER")
+
+floor_area_opt = space.additionalProperties().getFeatureAsDouble("floor_area")
+space_type_opt = space.additionalProperties().getFeatureAsString("space_type")
+```
+
+Reviewed model-generation code stores workflow metadata on spaces through
+`additionalProperties()`. Retrieval returns optional values; check `.empty()`
+before `.get()`.
+
+## Assign SpaceType from Object Lookup
+
+```python
+optional_space_type = model.getObjectByTypeAndName(
+    openstudio.model.SpaceType.iddObjectType(),
+    "Office_Space_Type",
+)
+if optional_space_type.empty():
+    warnings.append("SpaceType Office_Space_Type was not found.")
+else:
+    space.setSpaceType(optional_space_type.get().to_SpaceType().get())
+```
+
+This pattern is useful when a model contains template space types that should be
+assigned to newly created spaces.
 
 ## Plenum Heuristic
 

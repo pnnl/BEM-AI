@@ -55,7 +55,8 @@ The example has four layers:
 - `skills/hvac_sizing_assistant.md`
 - `skills/openstudio_sdk_model_editor.md`
 - `knowledge/openstudio_sdk_recipes.md`
-- `knowledge/openstudio_sdk_wiki/`
+- `knowledge/openstudio_sdk_wiki/`, including routing, domain packs, and review
+  prompts.
 
 ## Capabilities
 
@@ -184,8 +185,9 @@ The spec points to:
 - `examples/openstudio_mcp_demo/specs/openstudio_agent.yaml`: YAML agent spec.
 - `examples/openstudio_mcp_demo/prompts/openstudio_agent.md`: YAML agent instruction.
 - `examples/openstudio_mcp_demo/skills/openstudio_sdk_model_editor.md`: run_python + SDK model-inspection/editing workflow.
-- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_recipes.md`: local SDK scripting recipes for future retrieval/prompt context.
-- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from openstudio-standards domains.
+- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_recipes.md`: lightweight SDK knowledge-base entry point and routing summary.
+- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from OpenStudio standards and source-reviewed Python SDK usage.
+- `examples/openstudio_mcp_demo/OPENSTUDIO_SDK_EXPERIENCE.md`: human-readable source-review note for OpenStudio SDK usage patterns.
 - `examples/openstudio_mcp_demo/architecture_diagram.md`: Sponsor-friendly architecture/workflow diagrams.
 - `examples/openstudio_mcp_demo/ADVANCED_USER_GUIDE.md`: Advanced extension guide for measures, policies, and skills.
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/server.py`: MCP server entrypoint.

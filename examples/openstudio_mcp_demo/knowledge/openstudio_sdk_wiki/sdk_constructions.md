@@ -2,16 +2,61 @@
 name: sdk_constructions
 description: OpenStudio Python SDK examples for construction and material inspection/editing.
 version: 0.1.0
-source_domains:
-  - openstudio-standards/constructions/information.rb
-  - openstudio-standards/constructions/modify.rb
-  - openstudio-standards/constructions/materials/modify.rb
 ---
 
 # SDK Constructions Context
 
 Use this pack for construction layers, insulation layers, thermal resistance,
 opaque material edits, opaque U-value edits, and simple glazing U-factor edits.
+
+For any construction or material creation request, apply the global object
+creation rule from `sdk_core_patterns`: identify the required names, numeric
+values, units, target constructions/surfaces, and referenced material objects;
+ask the user for missing inputs; convert IP values to SI before SDK setters; and
+list approved default assumptions with `Object:Name.parameter: assumed to be x`.
+
+## Inspect Layers and Material Properties
+
+```python
+def material_row(material):
+    row = {
+        "name": material.nameString(),
+        "type": type(material).__name__,
+        "thermal_resistance_m2k_w": None,
+        "thickness_m": None,
+        "conductivity_w_mk": None,
+        "density_kg_m3": None,
+        "specific_heat_j_kgk": None,
+    }
+    if hasattr(material, "thermalResistance"):
+        row["thermal_resistance_m2k_w"] = material.thermalResistance()
+    if hasattr(material, "thickness"):
+        row["thickness_m"] = material.thickness()
+    if hasattr(material, "conductivity"):
+        row["conductivity_w_mk"] = material.conductivity()
+    if hasattr(material, "density"):
+        row["density_kg_m3"] = material.density()
+    if hasattr(material, "specificHeat"):
+        row["specific_heat_j_kgk"] = material.specificHeat()
+    return row
+
+construction_rows = []
+for construction in model.getConstructions():
+    layer_rows = []
+    for layer in construction.layers():
+        layer_rows.append(material_row(layer))
+    construction_rows.append({
+        "construction": construction.nameString(),
+        "num_layers": construction.numLayers(),
+        "layers": layer_rows,
+    })
+```
+
+`material.thermalResistance()` is used by massless materials and retrieves the
+material resistance value in SI units when available; source examples treat
+missing or falsey resistance as possible. Standard opaque materials typically
+expose `thickness()`, `conductivity()`, `density()`, and `specificHeat()`
+instead.
 
 ## Inspect Exterior Surface Constructions
 
@@ -67,6 +112,12 @@ def find_likely_insulation_layer(construction):
 
 ## Add Opaque Material Layer
 
+Before using this creation pattern, ask for the material name, roughness,
+thickness, conductivity, density, specific heat, thermal absorptance, solar
+absorptance, visible absorptance, target construction, and insertion layer
+index if any are missing. `setThickness`, `setConductivity`, `setDensity`, and
+`setSpecificHeat` expect SI values.
+
 ```python
 construction = target_construction
 new_material = openstudio.model.StandardOpaqueMaterial(model)
@@ -86,6 +137,93 @@ changes.append({
     "after": f"Inserted {new_material.nameString()} at layer 0",
 })
 ```
+
+## Create Massless Insulation Material
+
+Before using this creation pattern, ask for material name, roughness, thermal
+resistance value and unit system, thermal absorptance, solar absorptance, and
+visible absorptance if any are missing. `setThermalResistance` expects SI
+`m^2*K/W`; convert IP `ft^2*h*R/Btu` first.
+
+```python
+material = openstudio.model.MasslessOpaqueMaterial(model)
+material.setName("Added Massless Insulation")
+material.setRoughness("MediumSmooth")
+material.setThermalResistance(r_si)
+material.setThermalAbsorptance(0.9)
+material.setSolarAbsorptance(0.7)
+material.setVisibleAbsorptance(0.7)
+```
+
+Use massless opaque material when the target is an R-value layer rather than a
+physical thickness/conductivity material.
+
+## Create F-Factor Slab Construction
+
+Before using this creation pattern, ask for the construction name, F-factor
+value and unit system, area value and unit system, and exposed perimeter value
+and unit system. OpenStudio setters expect SI values: F-factor in `W/m*K`, area
+in `m^2`, and exposed perimeter in `m`. If the user provides IP values, convert
+them before calling the setters.
+
+```python
+construction = openstudio.model.FFactorGroundFloorConstruction(model)
+construction.setName("Unheated Slab F-Factor")
+construction.setFFactor(f_factor_si)
+construction.setArea(area_m2)
+construction.setPerimeterExposed(perimeter_m)
+```
+
+This pattern creates a slab-on-grade construction using F-factor, area, and
+exposed perimeter in SI units.
+
+## Create C-Factor Underground Wall Construction
+
+Before using this creation pattern, ask for the construction name, C-factor
+value and unit system, and wall depth value and unit system. OpenStudio expects
+SI values for the constructor. If the user provides IP values, convert them
+before creating the construction.
+
+```python
+construction = openstudio.model.CFactorUndergroundWallConstruction(
+    model,
+    c_factor_si,
+    depth_m,
+)
+construction.setName("Below Grade Wall C-Factor")
+```
+
+This pattern creates a below-grade wall construction using C-factor and wall
+depth in SI units.
+
+## Apply Default Construction Set
+
+Before using this creation pattern, ask for the construction set name and which
+existing construction objects should be assigned to each default slot. Retrieve
+candidate constructions from the model and ask the user to choose when the
+target wall, roof, floor, window, door, or skylight construction is ambiguous.
+
+```python
+construction_set = openstudio.model.DefaultConstructionSet(model)
+construction_set.setName("ASHRAE Default Construction Set")
+
+exterior = openstudio.model.DefaultSurfaceConstructions(model)
+construction_set.setDefaultExteriorSurfaceConstructions(exterior)
+exterior.setWallConstruction(wall_construction)
+exterior.setRoofCeilingConstruction(roof_construction)
+exterior.setFloorConstruction(floor_construction)
+
+subsurface = openstudio.model.DefaultSubSurfaceConstructions(model)
+construction_set.setDefaultExteriorSubSurfaceConstructions(subsurface)
+subsurface.setFixedWindowConstruction(window_construction)
+subsurface.setDoorConstruction(door_construction)
+subsurface.setSkylightConstruction(skylight_construction)
+
+model.getBuilding().setDefaultConstructionSet(construction_set)
+```
+
+Use construction-set objects when assigning default envelope constructions at
+the building level instead of editing each surface one by one.
 
 ## Set Opaque Insulation R-Value
 

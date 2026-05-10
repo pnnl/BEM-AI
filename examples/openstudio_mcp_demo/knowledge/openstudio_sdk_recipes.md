@@ -1,163 +1,81 @@
-# OpenStudio SDK Recipes for `run_python`
+# OpenStudio SDK Knowledge Base
 
-These recipes are intentionally small and local-file focused. They are context
-for drafting Python scripts that inspect or edit `.osm` files through the
-OpenStudio Python SDK.
+This file is the lightweight entry point for OpenStudio Python SDK context. It
+should stay small. Detailed examples live in `knowledge/openstudio_sdk_wiki/` and
+are loaded only when relevant to the user request.
 
-## Dynamic SDK Wiki Packs
+The larger source-review note is
+`examples/openstudio_mcp_demo/OPENSTUDIO_SDK_EXPERIENCE.md`. Treat it as a human
+reference, not default agent context.
 
-For task-specific examples, load the OpenStudio SDK wiki packs through the
-agent's `load_skill` tool. These packs are kept separate so the agent can load
-only the examples needed for the current request.
+## Load Order
 
-- `sdk_index`: routing index for the SDK wiki.
+For any `run_python` task that inspects or edits an `.osm` model:
+
+1. Load `openstudio_sdk_model_editor`.
+2. Load `sdk_index`.
+3. Load `sdk_core_patterns`.
+4. Load only the domain packs needed for the task.
+5. Show the complete Python script and ask for explicit approval before running
+   it.
+
+## Context Packs
+
+- `sdk_index`: routing index and source coverage.
 - `sdk_core_patterns`: load/save, optional-object handling, casts, unit
-  conversion, object lookup, and JSON result patterns.
-- `sdk_geometry`: WWR, orientation, surface/subsurface renaming, north axis,
+  conversion, object lookup, historical Python SDK names, safe-copy edits, and
+  JSON result contract.
+- `sdk_geometry`: spaces as geometry containers, surfaces, subsurfaces, WWR,
+  azimuth/orientation, building stories, north axis, bounding boxes, transforms,
   and window area edits.
-- `sdk_schedules`: schedule type limits, constant schedules, ruleset schedules,
-  hourly values, and schedule multipliers.
-- `sdk_constructions`: construction layers, insulation layer edits, opaque
-  material edits, and simple glazing U-factor edits.
-- `sdk_spaces_zones_loads`: space/zone summaries, plenums, internal load
-  summaries, and outdoor air summaries.
-- `sdk_daylighting`: daylighting control creation and duplicate-sensor checks.
+- `sdk_constructions`: construction assignments, construction layers, material
+  properties, massless/standard opaque materials, simple glazing,
+  F-factor slabs, C-factor underground walls, and default construction sets.
+- `sdk_schedules`: schedule type limits, ruleset schedules, day schedules,
+  hourly values, date ranges, default schedule sets, and space-type standards
+  tags.
+- `sdk_spaces_zones_loads`: spaces, thermal zones, additional properties,
+  plenums, floor area, internal loads, outdoor air, and zone/space grouping.
+- `sdk_daylighting`: daylighting controls, sensor placement, primary/secondary
+  controls, and daylighting fraction safeguards.
+- `sdk_hvac`: air-loop topology, zone equipment, coils, fans, thermostats,
+  setpoint managers, outdoor air controllers, and sizing objects.
+- `sdk_simulation_results`: OpenStudio simulation-file and SQL idioms for
+  explanation/review only. Actual simulation and result retrieval should use MCP
+  `sim_*` and `results_*` tools.
+- `sdk_review_prompts`: 12 representative prompts and pass criteria for
+  reviewing routing and context-load behavior.
 
-Start with `sdk_index`, then load `sdk_core_patterns` and one domain pack.
+## Routing Summary
 
-## Import Safety
+- Model summary: `sdk_geometry`, `sdk_spaces_zones_loads`.
+- WWR, facade orientation, azimuth, window area edits: `sdk_geometry`.
+- Construction and material inspection/editing: `sdk_constructions`, often with
+  `sdk_geometry`.
+- Schedule inspection/editing: `sdk_schedules`, often with
+  `sdk_spaces_zones_loads`.
+- Internal load inspection/editing: `sdk_spaces_zones_loads`, often with
+  `sdk_schedules`.
+- HVAC topology: `sdk_hvac`, often with `sdk_spaces_zones_loads`.
+- Daylighting edits: `sdk_daylighting`, often with `sdk_geometry`.
+- Simulation runs, polling, artifacts, and result summaries: MCP tools, not
+  `run_python`.
 
-Generated `run_python` scripts must stay local-file only. Do not import modules
-blocked by the tool policy: `subprocess`, `socket`, `requests`, `urllib`, or
-`ctypes`.
+## Non-Negotiable SDK Rules
 
-## Load and Save
-
-```python
-import json
-from pathlib import Path
-import openstudio
-
-input_path = Path("resource/sample.osm").resolve()
-output_path = Path("outputs/sample_edited.osm").resolve()
-output_path.parent.mkdir(parents=True, exist_ok=True)
-
-translator = openstudio.openstudioosversion.VersionTranslator()
-model_optional = translator.loadModel(str(input_path))
-if not model_optional.is_initialized():
-    print(json.dumps({"ok": False, "error": f"Failed to load model: {input_path}"}))
-    raise SystemExit(2)
-
-model = model_optional.get()
-
-# inspect or edit model here
-
-if not model.save(str(output_path), True):
-    print(json.dumps({"ok": False, "error": f"Failed to save model: {output_path}"}))
-    raise SystemExit(2)
-```
-
-## Inspect Model Counts
-
-```python
-def safe_count(model, getter_name):
-    getter = getattr(model, getter_name, None)
-    return len(getter()) if callable(getter) else None
-
-counts = {
-    "spaces": len(model.getSpaces()),
-    "thermal_zones": len(model.getThermalZones()),
-    "building_stories": len(model.getBuildingStorys()),
-    "space_types": len(model.getSpaceTypes()),
-    "surfaces": len(model.getSurfaces()),
-    "sub_surfaces": len(model.getSubSurfaces()),
-    "constructions": len(model.getConstructions()),
-    "lights": safe_count(model, "getLights"),
-    "electric_equipment": safe_count(model, "getElectricEquipments"),
-    "people": safe_count(model, "getPeople"),
-}
-```
-
-## List Spaces and Thermal Zones
-
-```python
-rows = []
-for space in model.getSpaces():
-    zone = space.thermalZone()
-    rows.append({
-        "space": space.nameString(),
-        "thermal_zone": zone.get().nameString() if zone.is_initialized() else None,
-        "floor_area_m2": space.floorArea(),
-        "volume_m3": space.volume(),
-    })
-```
-
-## Reduce Lighting Power Definitions
-
-```python
-factor = 0.8
-changes = []
-lights_getter = getattr(model, "getLights", None)
-lights_objects = list(lights_getter()) if callable(lights_getter) else []
-
-for lights in lights_objects:
-    definition = lights.lightsDefinition()
-    name = lights.nameString()
-    before = {
-        "watts_per_space_floor_area": None,
-        "lighting_level": None,
-    }
-
-    lpd = definition.wattsperSpaceFloorArea()
-    if lpd.is_initialized():
-        old = lpd.get()
-        definition.setWattsperSpaceFloorArea(old * factor)
-        before["watts_per_space_floor_area"] = old
-        changes.append({
-            "object": name,
-            "field": "wattsperSpaceFloorArea",
-            "before": old,
-            "after": old * factor,
-        })
-        continue
-
-    level = definition.lightingLevel()
-    if level.is_initialized():
-        old = level.get()
-        definition.setLightingLevel(old * factor)
-        before["lighting_level"] = old
-        changes.append({
-            "object": name,
-            "field": "lightingLevel",
-            "before": old,
-            "after": old * factor,
-        })
-```
-
-## Inspect Constructions Used by Exterior Surfaces
-
-```python
-constructions = {}
-for surface in model.getSurfaces():
-    if surface.outsideBoundaryCondition().lower() != "outdoors":
-        continue
-    construction = surface.construction()
-    constructions[surface.nameString()] = (
-        construction.get().nameString() if construction.is_initialized() else None
-    )
-```
-
-## Final JSON Print
-
-```python
-print(json.dumps({
-    "ok": True,
-    "mode": "edit_model",
-    "input_model_path": str(input_path),
-    "output_model_path": str(output_path),
-    "changes": changes,
-    "warnings": warnings,
-    "counts": counts,
-    "summary": "Reduced lighting power definitions by 20 percent.",
-}, indent=2))
-```
+- Use `openstudio.openstudioosversion.VersionTranslator()` for default model
+  loading examples.
+- Check optionals before `.get()` unless a project-specific precondition is
+  explicit.
+- Keep OpenStudio's historical Python method names exactly as source-backed
+  examples show them, including `getBuildingStorys()`.
+- Convert `surface.azimuth()` from radians to degrees with
+  `openstudio.convert(surface.azimuth(), "rad", "deg")`.
+- Do not import blocked modules: `subprocess`, `socket`, `requests`, `urllib`,
+  or `ctypes`.
+- For edits, write to a copied output model path and preserve the original.
+- Before creating a new OpenStudio object, identify required names, numeric
+  values, unit systems, referenced model objects, and assignment targets. Ask the
+  user for anything missing. Convert IP inputs to SI before SDK setters. If the
+  user approves defaults, list assumptions as
+  `Object:Name.parameter: assumed to be x`.

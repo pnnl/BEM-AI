@@ -2,9 +2,6 @@
 name: sdk_geometry
 description: OpenStudio Python SDK examples for geometry inspection and scoped geometry edits.
 version: 0.1.0
-source_domains:
-  - openstudio-standards/geometry/information.rb
-  - openstudio-standards/geometry/modify.rb
 ---
 
 # SDK Geometry Context
@@ -82,6 +79,75 @@ for direction, rows in orientation_bins.items():
     window_area = sum(row["window_area_m2"] for row in rows)
     wwr_by_orientation[direction] = window_area / wall_area if wall_area else 0.0
 ```
+
+## Create Space and Thermal Zone
+
+```python
+space = openstudio.model.Space(model)
+thermal_zone = openstudio.model.ThermalZone(model)
+thermal_zone.setName("Office Perimeter Zone")
+space.setName("Office Perimeter Space")
+space.setThermalZone(thermal_zone)
+```
+
+This creates a space and thermal zone and links them. Reviewed project code uses
+one thermal zone per generated space.
+
+## Create Rectangular Surface
+
+```python
+points = [openstudio.Point3d(x, y, z) for x, y, z in vertices]
+surface = openstudio.model.Surface(points, model)
+surface.setSpace(space)
+surface.setName("Office South Wall")
+surface.setSurfaceType("Wall")
+surface.setOutsideBoundaryCondition("Outdoors")
+surface.setSunExposure("SunExposed")
+surface.setWindExposure("WindExposure")
+```
+
+Use four 3D points for simple rectangular surfaces. Attach the surface to its
+space, then set surface type, boundary condition, sun exposure, and wind
+exposure.
+
+## Create Subsurface and Attach to Parent
+
+```python
+points = [openstudio.Point3d(x, y, z) for x, y, z in vertices]
+sub = openstudio.model.SubSurface(points, model)
+sub.setName("Office South Window")
+sub.setSubSurfaceType("FixedWindow")
+sub.setSurface(parent_surface)
+```
+
+Observed subsurface types include `FixedWindow`, `OperableWindow`, `Door`, and
+`GlassDoor`. After creating a subsurface, attach it to a parent surface with
+`setSurface(...)`.
+
+## Move Surface and Subsurfaces Together
+
+```python
+translation = openstudio.Transformation.translation(openstudio.Vector3d(dx, 0.0, 0.0))
+surface.setVertices(translation * surface.vertices())
+for sub_surface in surface.subSurfaces():
+    sub_surface.setVertices(translation * sub_surface.vertices())
+```
+
+Use this pattern when translating a surface that already has subsurfaces so the
+child geometry remains aligned with the parent.
+
+## Bounding Box Extents
+
+```python
+box = space.boundingBox()
+max_x = box.maxX().get()
+max_y = box.maxY().get()
+max_z = box.maxZ().get()
+min_z = box.minZ().get()
+```
+
+`boundingBox()` coordinate accessors are optional values in the reviewed code.
+Only use `.get()` after the space has valid geometry.
 
 ## Reduce Window Area by Shrinking Toward Centroid
 

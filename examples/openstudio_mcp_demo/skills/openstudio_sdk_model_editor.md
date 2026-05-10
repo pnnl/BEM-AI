@@ -56,25 +56,41 @@ Disallowed uses:
      envelope surfaces, schedules, loads, constructions, or HVAC objects;
    - requested edit values and units;
    - output path when an edit is requested.
-4. Draft a short workflow before using `run_python`:
+4. For any script that creates a new OpenStudio object in the model, review the
+   relevant SDK code pattern before drafting the script and identify all
+   required inputs:
+   - object name;
+   - numeric parameters and unit system;
+   - referenced model objects, such as schedules, constructions, thermal zones,
+     nodes, surfaces, or materials;
+   - target assignment location, such as a construction layer index, air loop,
+     space, zone, or building default set.
+   If any required value, unit system, or referenced object is missing, ask the
+   user for clarification before execution. OpenStudio setters generally expect
+   SI values; if the user provides IP values, convert them before calling the
+   SDK. If a setter requires another OpenStudio object, retrieve candidate
+   objects from the model and ask the user to select one. If the user explicitly
+   says to keep defaults, list assumptions with this exact format:
+   `Object:Name.parameter: assumed to be x`.
+5. Draft a short workflow before using `run_python`:
    - input model path;
    - inspection or edit target;
    - OpenStudio SDK APIs expected to be used;
    - loaded SDK wiki packs used as examples;
    - validation checks;
    - output model path for edits.
-5. For edits, never overwrite the original model unless the user explicitly asks.
+6. For edits, never overwrite the original model unless the user explicitly asks.
    Write a new `.osm` under `outputs/` or another user-approved path.
-6. Before executing Python, show the script intent, input path, output path, key
+7. Before executing Python, show the script intent, input path, output path, key
    operations, and the complete Python script in a fenced `python` code block.
    Do not summarize, omit, or refer to an unseen script. Ask for the user's
    explicit approval and do not call `run_python` until approval is received.
-7. Execute one bounded Python script with `run_python`.
-8. Track failed `run_python` calls for the current task. If three attempts fail,
+8. Execute one bounded Python script with `run_python`.
+9. Track failed `run_python` calls for the current task. If three attempts fail,
    stop executing scripts. Report each failure attempt, the likely error causes
    from stdout/stderr and warnings, and ask the user to verify or revise the
    script before any further execution.
-9. Summarize like a senior building energy modeler:
+10. Summarize like a senior building energy modeler:
    - what was inspected or changed;
    - affected object counts and names when practical;
    - before/after values for edits;
@@ -116,6 +132,18 @@ the Python script until all matching packs are loaded.
   daylighting-related model edits.
 - Load both `sdk_daylighting` and `sdk_geometry` when sensor placement depends
   on floor vertices, space geometry, exterior fenestration, or centroid points.
+- Load `sdk_hvac` for air-loop topology, plant-loop topology, zone equipment,
+  thermostats, setpoint managers, coils, fans, outdoor air controllers, sizing
+  objects, HVAC availability schedules, and served-zone summaries.
+- Load both `sdk_hvac` and `sdk_spaces_zones_loads` when HVAC information needs
+  to be summarized by space, thermal zone, or served zone.
+- Load `sdk_simulation_results` only to explain or review OpenStudio simulation
+  files, OSW setup, SQL attachment, or result-extraction idioms. Do not use this
+  pack as permission to run simulations or retrieve results through
+  `run_python`; route actual simulation and result workflows to MCP `sim_*` and
+  `results_*`.
+- Load `sdk_review_prompts` only when testing or reviewing the knowledge-base
+  routing behavior.
 
 Required geometry rule: if a script uses `surface.azimuth()`, it must use the
 `surface_azimuth_degrees(surface)` helper from `sdk_geometry`. Do not treat raw
@@ -126,6 +154,12 @@ in the loaded wiki examples. Some OpenStudio collection getters use historical
 plural spellings that do not match common English pluralization. For building
 stories, use the `sdk_geometry` example spelling exactly:
 `model.getBuildingStorys()`.
+
+Required object-creation rule: when creating a new OpenStudio object, do not
+draft or execute the script until required names, numeric values, units,
+referenced model objects, and assignment targets are known. If missing, ask the
+user. If defaults are approved, list each assumption as
+`Object:Name.parameter: assumed to be x`.
 
 ## Required Script Result Contract
 

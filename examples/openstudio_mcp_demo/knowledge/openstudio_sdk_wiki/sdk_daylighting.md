@@ -2,9 +2,6 @@
 name: sdk_daylighting
 description: OpenStudio Python SDK examples for adding daylighting controls to spaces.
 version: 0.1.0
-source_domains:
-  - openstudio-standards/daylighting/space.rb
-  - openstudio-standards/geometry/create.rb
 ---
 
 # SDK Daylighting Context
@@ -12,6 +9,11 @@ source_domains:
 Use this pack for daylighting sensor creation and space-level daylighting
 control edits. This is a good candidate for `run_python` because it is a scoped
 model edit that does not require simulation.
+
+For daylighting-control creation, apply the global object creation rule from
+`sdk_core_patterns`: ask for target spaces, sensor names, illuminance setpoints,
+position rules, controlled-zone fractions, and default assumptions before
+execution.
 
 ## Sensor Point at Center of Floor
 
@@ -55,6 +57,9 @@ for space in model.getSpaces():
     sensor.setMinimumInputPowerFractionforContinuousDimmingControl(0.3)
     sensor.setMinimumLightOutputFractionforContinuousDimmingControl(0.2)
     sensor.setNumberofSteppedControlSteps(1)
+    sensor.setProbabilityLightingwillbeResetWhenNeededinManualSteppedControl(0)
+    sensor.setNumberofDaylightingViews(1)
+    sensor.setMaximumAllowableDiscomfortGlareIndex(1)
     changes.append({
         "object": sensor.nameString(),
         "field": "daylighting_control",
@@ -62,6 +67,44 @@ for space in model.getSpaces():
         "illuminance_setpoint_lux": 430.0,
     })
 ```
+
+## Assign Daylighting Control to Thermal Zone
+
+```python
+zone_opt = space.thermalZone()
+if not zone_opt.is_initialized():
+    warnings.append(f"{space.nameString()} has no thermal zone; skipped daylighting control.")
+else:
+    zone = zone_opt.get()
+    if (
+        not zone.primaryDaylightingControl().empty()
+        and zone.secondaryDaylightingControl().empty()
+    ):
+        existing_primary = zone.primaryDaylightingControl().get()
+        zone.setSecondaryDaylightingControl(existing_primary)
+        zone.setFractionofZoneControlledbySecondaryDaylightingControl(
+            zone.fractionofZoneControlledbyPrimaryDaylightingControl()
+        )
+    zone.setPrimaryDaylightingControl(sensor)
+    zone.setFractionofZoneControlledbyPrimaryDaylightingControl(0.5)
+```
+
+When replacing an existing primary daylighting control, preserve it as secondary
+when the secondary slot is available.
+
+## Keep Primary and Secondary Fractions Within 1.0
+
+```python
+primary = zone.fractionofZoneControlledbyPrimaryDaylightingControl()
+secondary = zone.fractionofZoneControlledbySecondaryDaylightingControl()
+if primary + secondary > 1.0:
+    primary = round(primary, 6)
+    zone.setFractionofZoneControlledbyPrimaryDaylightingControl(primary)
+    zone.setFractionofZoneControlledbySecondaryDaylightingControl(1.0 - primary)
+```
+
+Reviewed source code rounds daylighting fractions to avoid EnergyPlus errors
+from OpenStudio string-conversion precision differences.
 
 ## Avoid Duplicate Sensors
 
