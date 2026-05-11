@@ -97,6 +97,12 @@ factory = load_agent_factory_from_yaml("agent.yaml")
 agent = factory.get_agent()
 ```
 
+For ephemeral headless subagents created by the `yaml_agent` tool, start from
+`docs/templates/headless_subagent.yaml`. These subagent specs should stay small:
+use default runtime settings, enable only built-in default tools such as
+`web_search` or `run_python` when needed, omit MCP and persistent memory
+configuration, and do not define nested subagents.
+
 For validation, inspection, or programmatic edits before building, load the
 intermediate spec explicitly:
 

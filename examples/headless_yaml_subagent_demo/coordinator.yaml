@@ -1,0 +1,40 @@
+spec_version: v1
+
+agent_card:
+  name: HeadlessResultsCoordinator
+  description: Coordinates user requests and delegates focused energy-results analysis to a headless YAML subagent.
+  version: 0.1.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:34000/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: headless_results_coordination
+      name: Headless Results Coordination
+      description: Detects focused results-analysis tasks and delegates them to a YAML-defined headless analyst.
+      tags: [energy, results, headless-delegation]
+      examples:
+        - Analyze monthly simulation results and summarize annual totals.
+
+instructions:
+  path: ./prompts/coordinator.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  transient_retry_attempts: 0
+  enable_metrics: false
+  debug: false
+
+tools:
+  tools:
+    - type: yaml_agent
+      config:
+        base_dir: ./subagents

@@ -78,7 +78,8 @@ Sandbox limitations:
 - Runs Python only with a local subprocess runner.
 - Uses best-effort static policy checks; it is not a hardened sandbox for untrusted code.
 - Does not expose shell or bash execution.
-- Rejects blocked imports and known dangerous call patterns before execution.
+- Allows normal local-file helpers such as `os` and `pathlib`, but rejects blocked imports and known dangerous call patterns before execution.
+- Blocks subprocess execution, shell execution, and network imports by default.
 - Rejects reserved startup file names (`sitecustomize.py`, `usercustomize.py`, and `.pth`) in `input_files`.
 - Enforces timeout and output truncation.
 - Executes code in a temporary working directory and only returns files from that directory.
@@ -94,12 +95,62 @@ tools:
       workspace_root: .
       allow_network: false
       blocked_imports:
-        - os
         - subprocess
         - socket
         - requests
         - urllib
         - ctypes
+```
+
+## Built-in tool: `yaml_agent`
+
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
+
+The `yaml_agent` tool creates an AUTOMA-AI agent from a YAML spec using
+`load_agent_factory_from_yaml(...)`, executes a query through the created agent,
+and returns the streamed chunks plus the final response. When called from a
+streaming AUTOMA-AI parent agent, intermediate chunks are emitted through the
+parent stream so users can see progress while the YAML-defined agent runs.
+
+For delegated headless subagents, start from
+`docs/templates/headless_subagent.yaml`. Keep those YAML specs constrained:
+enable only built-in default tools such as `web_search` or `run_python` when
+needed, do not enable `yaml_agent` inside the subagent, and do not add MCP,
+persistent memory, or nested subagent configuration.
+
+Parent agents should be instructed to spawn these headless subagents when a
+focused task appears, for example: "Computing annual totals from the monthly
+results..." followed by a `yaml_agent` call whose `query` tells the subagent
+which file to read, which metrics to compute, and what output format to return.
+
+Input fields:
+- `yaml_path` (required): path to the YAML agent spec.
+- `query` (required): task or question for the YAML-defined agent.
+- `context_id`, `task_id`, `user_id`, `metadata` (optional): runtime context
+  passed to the created agent.
+
+Output format:
+- `final`: final response text.
+- `chunks`: streamed text chunks collected while the agent ran.
+- `context_id`, `task_id`
+- `requires_user_input`: whether the run ended by asking the user for input.
+
+Configuration fields:
+- `base_dir` (optional): base directory for resolving relative `yaml_path`
+  values. When set, `yaml_agent` only accepts specs that resolve inside this
+  directory.
+
+Before creating the agent, `yaml_agent` validates the target spec against the
+headless-subagent constraints: no MCP, no memory config, no persistent
+checkpointer, no nested subagents, no `yaml_agent` tool, and no custom tools.
+
+Example config:
+
+```yaml
+tools:
+  - type: yaml_agent
+    config:
+      base_dir: ./agents
 ```
 
 ## Provider behavior

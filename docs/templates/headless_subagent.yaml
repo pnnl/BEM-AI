@@ -1,0 +1,71 @@
+# Headless YAML subagent template.
+#
+# Intended use:
+# - Loaded by the built-in `yaml_agent` tool with load_agent_factory_from_yaml(...).
+# - Runs in-process as an ephemeral headless agent, then closes.
+# - Uses no A2A server bootstrap.
+#
+# Constraints:
+# - Do not add MCP configuration.
+# - Do not add memory configuration or persistent checkpointers.
+# - Do not add subagents.
+# - Do not enable the `yaml_agent` tool inside this subagent.
+# - Only built-in default tools such as `web_search` and `run_python` should be
+#   enabled when needed.
+
+spec_version: v1
+
+agent_card:
+  name: HeadlessSubagentTemplate
+  description: Executes one scoped delegated task as an ephemeral headless agent.
+  version: 0.1.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:0/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: scoped_task_execution
+      name: Scoped Task Execution
+      description: Completes one narrowly scoped delegated task.
+      tags: [headless, delegation]
+      examples:
+        - Analyze the provided context and return a concise result.
+
+instructions:
+  text: |
+    You are a headless AUTOMA-AI subagent created for one delegated task.
+
+    Follow the scope, constraints, and expected output format provided in the
+    user query. Do not create or call additional subagents. Do not assume access
+    to MCP servers, persistent memory, or tools that are not explicitly enabled
+    in this YAML spec.
+
+    Return the result directly. Include uncertainty, missing inputs, or blocked
+    steps when they affect the answer.
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  transient_retry_attempts: 0
+  enable_metrics: false
+  debug: false
+
+# Optional built-in default tools. Enable only when the subagent needs them.
+# Do not add `yaml_agent` here.
+#
+# tools:
+#   - type: web_search
+#     config:
+#       provider: opensource
+#   - type: run_python
+#     config:
+#       runner: local_subprocess
+#       timeout_s: 20
+#       allow_network: false

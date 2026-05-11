@@ -98,6 +98,67 @@ async def test_run_python_policy_rejects_disallowed_import() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_python_allows_os_for_local_path_handling(tmp_path) -> None:
+    input_path = tmp_path / "nested" / "input.txt"
+    input_path.parent.mkdir()
+    input_path.write_text("ok", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": "import os\nprint(os.path.exists(os.path.join('nested', 'input.txt')))",
+            "input_files": ["nested/input.txt"],
+        }
+    )
+
+    assert result["success"] is True
+    assert result["stdout"].strip() == "True"
+
+
+@pytest.mark.asyncio
+async def test_run_python_allows_pathlib_for_local_path_handling(tmp_path) -> None:
+    input_path = tmp_path / "nested" / "input.txt"
+    input_path.parent.mkdir()
+    input_path.write_text("ok", encoding="utf-8")
+
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate({"workspace_root": str(tmp_path)})
+    )
+    result = await tool.invoke(
+        {
+            "code": (
+                "from pathlib import Path\n"
+                "print((Path('nested') / 'input.txt').read_text(encoding='utf-8'))"
+            ),
+            "input_files": ["nested/input.txt"],
+        }
+    )
+
+    assert result["success"] is True
+    assert result["stdout"].strip() == "ok"
+
+
+@pytest.mark.asyncio
+async def test_run_python_still_rejects_os_system() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke({"code": "import os\nos.system('echo unsafe')"})
+
+    assert result["success"] is False
+    assert "Blocked call pattern" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_still_rejects_network_imports() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke({"code": "import socket\nprint('x')"})
+
+    assert result["success"] is False
+    assert "Blocked import: socket" in result["stderr"]
+
+
+@pytest.mark.asyncio
 async def test_run_python_does_not_return_copied_inputs_as_artifacts(tmp_path) -> None:
     input_path = tmp_path / "input.txt"
     input_path.write_text("seed", encoding="utf-8")

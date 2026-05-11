@@ -19,7 +19,6 @@ class RunPythonToolConfig(BaseModel):
     allowed_imports: list[str] = Field(default_factory=list)
     blocked_imports: list[str] = Field(
         default_factory=lambda: [
-            "os",
             "subprocess",
             "socket",
             "requests",
