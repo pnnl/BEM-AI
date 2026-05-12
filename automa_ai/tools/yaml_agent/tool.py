@@ -191,6 +191,10 @@ class YamlAgentTool(BaseDefaultTool):
                 )
 
             async for item in stream_result:
+                # The current yaml_agent tool stream contract emits text chunks only.
+                # Keep structured data stringified for now, even though this is lossy
+                # for response_type="data" payloads and should be revisited when the
+                # surrounding automa-ai infrastructure supports typed chunk values.
                 content = str(item.get("content", ""))
                 is_final = bool(item.get("is_task_complete"))
                 requires_user_input = bool(item.get("require_user_input"))

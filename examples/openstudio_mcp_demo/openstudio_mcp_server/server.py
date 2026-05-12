@@ -177,8 +177,10 @@ class OpenStudioService:
         return success_payload(measures=self.measure_registry.list_public_specs())
 
     def model_apply_measure(self, args: ModelApplyMeasureArgs) -> dict[str, Any]:
-        # Step 1: validate base model state. Python measures run in the current
-        # Python SDK environment; non-Python measures use the OpenStudio CLI.
+        # Step 1: validate base model state. Python measures prefer the
+        # OpenStudio CLI's execute_python_script environment when OPENSTUDIO_PATH
+        # is configured; otherwise they fall back to the current Python only
+        # after verifying that it can import the OpenStudio SDK.
         model_state = self._get_model_state(args.model_id)
 
         # Step 2: resolve measure policy and normalize user args from schema/defaults.
@@ -202,17 +204,23 @@ class OpenStudioService:
         env["OSM_INPUT_PATH"] = str(input_osm)
         env["OSM_OUTPUT_PATH"] = str(output_osm)
         env["MEASURE_ARGS_JSON"] = json.dumps(normalized_args)
+        openstudio_cmd = self._openstudio_executable_or_none()
         if measure_spec.entrypoint.suffix == ".py":
-            cmd = [sys.executable, str(measure_spec.entrypoint)]
+            if openstudio_cmd is not None:
+                cmd = [
+                    openstudio_cmd,
+                    "execute_python_script",
+                    str(measure_spec.entrypoint),
+                ]
+            else:
+                self._validate_python_openstudio_sdk(workspace=workspace, env=env)
+                cmd = [sys.executable, str(measure_spec.entrypoint)]
         else:
-            if not self.openstudio_path:
-                raise ValueError("OPENSTUDIO_PATH is not set in environment.")
-            openstudio_path = Path(self.openstudio_path)
-            if not (openstudio_path.is_file() and os.access(openstudio_path, os.X_OK)):
+            if openstudio_cmd is None:
                 raise ValueError(
-                    f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}"
+                    "OPENSTUDIO_PATH is not set to an executable OpenStudio path."
                 )
-            cmd = [self.openstudio_path, "execute_python_script", str(measure_spec.entrypoint)]
+            cmd = [openstudio_cmd, "execute_python_script", str(measure_spec.entrypoint)]
 
         try:
             completed = subprocess.run(
@@ -271,6 +279,36 @@ class OpenStudioService:
             changes=changes,
             warnings=summary_warnings,
         )
+
+    def _openstudio_executable_or_none(self) -> str | None:
+        if not self.openstudio_path:
+            return None
+        openstudio_path = Path(self.openstudio_path)
+        if openstudio_path.is_file() and os.access(openstudio_path, os.X_OK):
+            return str(openstudio_path)
+        return None
+
+    def _validate_python_openstudio_sdk(
+        self,
+        *,
+        workspace: Path,
+        env: dict[str, str],
+    ) -> None:
+        import_check = subprocess.run(
+            [sys.executable, "-c", "import openstudio"],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        if import_check.returncode != 0:
+            raise ValueError(
+                "Python measure execution requires the OpenStudio Python SDK. "
+                "Configure OPENSTUDIO_PATH to the OpenStudio executable so measures "
+                "run via execute_python_script, or install the openstudio module "
+                "into the server's Python environment."
+            )
 
     def model_validate(self, args: ModelCloneArgs) -> dict[str, Any]:
         model_state = self._get_model_state(args.model_id)
