@@ -162,14 +162,18 @@ class GenericAgentExecutor(AgentExecutor):
                 self.logger.info(
                     f"{os.getpid()}: Completing with content: {item['content']}"
                 )
-                parts = [
+                if item["response_type"] == "data":
+                    parts = [new_data_part(item["content"])]
+                else:
+                    parts = [new_text_part(item["content"])]
+
+                # Additional artifacts are folded into the same result artifact
+                # as trailing text parts; per-artifact names/types are not
+                # preserved in this completion path.
+                parts.extend(
                     new_text_part(artifact["content"])
                     for artifact in item.get("additional_artifacts", [])
-                ]
-                if item["response_type"] == "data":
-                    parts.append(new_data_part(item["content"]))
-                else:
-                    parts.append(new_text_part(item["content"]))
+                )
 
                 await self._safe_publish_completion(
                     updater=updater,

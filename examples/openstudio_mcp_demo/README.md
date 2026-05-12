@@ -1,6 +1,11 @@
 # OpenStudio MCP Demo
 
-This example shows an `AgentFactory`-based AUTOMA-AI agent connected to a real MCP server that exposes a minimal OpenStudio modeling/simulation lifecycle.
+This example shows a YAML-defined AUTOMA-AI agent connected to a real MCP server
+that exposes a minimal OpenStudio modeling/simulation lifecycle. It also gives
+the agent a bounded `run_python` workspace for OpenStudio Python SDK model
+inspection and model editing. The Python bootstrap still starts the MCP and A2A
+servers, but the agent card, model, runtime settings, tools, MCP client
+connection, skills, and instructions live in YAML.
 
 ## What is `openstudio_mcp`?
 
@@ -8,9 +13,17 @@ This example shows an `AgentFactory`-based AUTOMA-AI agent connected to a real M
 
 It provides:
 
-- `model.*` tools for model lifecycle operations.
-- `sim.*` tools for asynchronous OpenStudio simulation execution.
-- `results.*` tools for SQL-backed post-processing and summarization.
+- `model_*` tools for model lifecycle operations.
+- `sim_*` tools for asynchronous OpenStudio simulation execution.
+- `results_*` tools for SQL-backed post-processing and summarization.
+
+The intended split is:
+
+- MCP = curated, production workflow tools for simulations, artifacts, and
+  results retrieval.
+- `run_python` + OpenStudio Python SDK = flexible local model-inspection and
+  model-editing workspace.
+- Skills = reusable deterministic modeling workflows and guardrails.
 
 ## Architecture
 
@@ -18,8 +31,9 @@ The example has four layers:
 
 1. Agent layer
 - `examples/openstudio_mcp_demo/agent.py`
-- Built with `AgentFactory`.
-- Connects to MCP and orchestrates workflow/tool calls.
+- Loads `specs/openstudio_agent.yaml` with `load_a2a_server_from_yaml(...)`.
+- Connects to MCP and orchestrates MCP tool calls plus bounded `run_python`
+  model-inspection/model-editing scripts.
 
 2. MCP server layer
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/server.py`
@@ -33,45 +47,87 @@ The example has four layers:
 - `runtime/measure_registry.py`: policy-based measure lookup and arg validation.
 
 4. Governance/extension layer
+- `specs/openstudio_agent.yaml`
+- `prompts/openstudio_agent.md`
 - `policy/tool_allowlist.yaml`
 - `policy/run_gates.yaml`
 - `policy/measure_registry.yaml`
 - `skills/hvac_sizing_assistant.md`
+- `skills/openstudio_sdk_model_editor.md`
+- `knowledge/openstudio_sdk_recipes.md`
+- `knowledge/openstudio_sdk_wiki/`, including routing, domain packs, and review
+  prompts.
 
 ## Capabilities
 
+### Model inspection and editing workspace
+
+- Use `run_python` only for local OpenStudio Python SDK scripts that inspect or
+  edit `.osm` files.
+- Edited models should be saved as copies under `outputs/` or another
+  user-approved path.
+- Do not use `run_python` for simulations, polling, SQL result retrieval,
+  subprocesses, shell commands, or network calls.
+
 ### Model tools
 
-- `model.load(model_uri)`
-- `model.clone(model_id)`
-- `model.list_measures()`
-- `model.set_weather(model_id, epw_path)`
-- `model.set_design_days(model_id, ddy_id | derive_from_epw=true)` (compatibility step)
-- `model.apply_measure(model_id, measure_id, args)`
-- `model.validate(model_id)`
+- `model_load(model_uri)`
+- `model_clone(model_id)`
+- `model_list_measures()`
+- `model_set_weather(model_id, epw_path)`
+- `model_set_design_days(model_id, ddy_id | derive_from_epw=true)` (compatibility step)
+- `model_apply_measure(model_id, measure_id, args)`
+- `model_validate(model_id)`
 
 ### Simulation tools
 
-- `sim.run(model_id, run_mode, options)` returns `job_id` immediately.
-- `sim.status(job_id)` supports polling asynchronous simulation.
-- `sim.artifacts(job_id)` returns result artifact IDs.
+- `sim_run(model_id, run_mode, options)` returns `job_id` immediately.
+- `sim_status(job_id)` supports polling asynchronous simulation.
+- `sim_artifacts(job_id)` returns result artifact IDs.
 
 ### Results tools
 
-`results.query(sql_id, query_type, params)` supports:
+`results_query(sql_id, query_type, params)` supports:
 
 - `annual_end_use_fuel`
 - `design_day_end_use_fuel`
 - `annual_eui`
 - `sizing_summary`
 
-`results.summarize(data, format)` returns readable summary text/tables.
+`results_summarize(data, format)` returns readable summary text/tables.
 
 ## Setup
 
 1. Copy `sample.env` to `.env`.
 2. Update model and server settings as needed.
 3. Set `OPENSTUDIO_PATH` to the local OpenStudio CLI executable path.
+4. Ensure the Python executable configured in `specs/openstudio_agent.yaml` can
+   import the OpenStudio Python SDK when using SDK inspection/editing. If needed,
+   update `tools.tools[0].config.python_executable`.
+
+## YAML Agent Spec
+
+The agent is defined in:
+
+- `examples/openstudio_mcp_demo/specs/openstudio_agent.yaml`
+
+The spec points to:
+
+- `prompts/openstudio_agent.md` for the system instruction.
+- `skills/hvac_sizing_assistant.md` for the deterministic MCP sizing workflow.
+- `skills/openstudio_sdk_model_editor.md` for bounded SDK inspection/editing.
+- `knowledge/openstudio_sdk_wiki/` as dynamically loadable SDK example packs.
+- The `openstudio_mcp` MCP client connection.
+- A built-in `run_python` tool rooted at the example directory.
+- The A2A 1.0 card shape with `supportedInterfaces`.
+
+`agent.py` applies environment-specific overrides from `.env` at startup:
+
+- `CHATBOT_SERVER_URL`
+- `CHAT_BOT_MODEL_NAME`
+- `CHAT_BOT_MODEL_BASE_URL`
+- `OPENSTUDIO_MCP_HOST`
+- `OPENSTUDIO_MCP_PORT`
 
 ## Run
 
@@ -86,13 +142,13 @@ The example has four layers:
 
 - If MCP tools are unavailable, confirm MCP server startup log in `examples/openstudio_mcp_demo/logs/server.log`.
 - If chat responses stall, confirm the configured LLM endpoint/model is available.
-- If `sim.run` fails, verify `OPENSTUDIO_PATH` points to a valid OpenStudio executable and ensure the model contains a valid `OS:WeatherFile` path (or pass one via `model.set_weather` / `sim.run` options with `epw_path`).
+- If `sim_run` fails, verify `OPENSTUDIO_PATH` points to a valid OpenStudio executable and ensure the model contains a valid `OS:WeatherFile` path (or pass one via `model_set_weather` / `sim_run` options with `epw_path`).
 - Simulation runtime files are generated under `.openstudio_mcp_workspace/<job_id>/` (including `run/eplusout.sql`).
-- If `model.apply_measure` fails, verify `policy/measure_registry.yaml` contains an allowed entry and the script exists under `measures/`.
+- If `model_apply_measure` fails, verify `policy/measure_registry.yaml` contains an allowed entry and the script exists under `measures/`.
 
 ## Results Query Types
 
-`results.query` now reads real data from `eplusout.sql` and supports:
+`results_query` now reads real data from `eplusout.sql` and supports:
 
 - `annual_end_use_fuel`: Annual end-use by fuel matrix from `AnnualBuildingUtilityPerformanceSummary -> End Uses`.
 - `design_day_end_use_fuel`: Design-day energy by end-use/fuel from `ReportMeterDataDictionary` + `ReportMeterData`.
@@ -103,15 +159,15 @@ The example has four layers:
 
 - Measure registry policy: `examples/openstudio_mcp_demo/policy/measure_registry.yaml`
 - Built-in measure: `add_daylighting` (`examples/openstudio_mcp_demo/measures/add_daylighting.py`)
-- Discover measures at runtime with `model.list_measures`.
-- `model.apply_measure` resolves `measure_id` via policy, validates args/defaults, executes with:
+- Discover measures at runtime with `model_list_measures`.
+- `model_apply_measure` resolves `measure_id` via policy, validates args/defaults, executes with:
   - `openstudio execute_python_script <entrypoint>`
   - environment variables `OSM_INPUT_PATH`, `OSM_OUTPUT_PATH`, `MEASURE_ARGS_JSON`
 - On success, a new model artifact/state is created and returned as `model_id`.
 
 ### Measure interface contract
 
-`model.apply_measure` is policy-driven:
+`model_apply_measure` is policy-driven:
 
 1. Resolve `measure_id` from `measure_registry.yaml`.
 2. Validate/default `args` using registered schema.
@@ -125,7 +181,13 @@ The example has four layers:
 
 ## File map
 
-- `examples/openstudio_mcp_demo/agent.py`: AgentFactory-based bootstrap.
+- `examples/openstudio_mcp_demo/agent.py`: YAML-backed MCP and A2A bootstrap.
+- `examples/openstudio_mcp_demo/specs/openstudio_agent.yaml`: YAML agent spec.
+- `examples/openstudio_mcp_demo/prompts/openstudio_agent.md`: YAML agent instruction.
+- `examples/openstudio_mcp_demo/skills/openstudio_sdk_model_editor.md`: run_python + SDK model-inspection/editing workflow.
+- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_recipes.md`: lightweight SDK knowledge-base entry point and routing summary.
+- `examples/openstudio_mcp_demo/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from OpenStudio standards and source-reviewed Python SDK usage.
+- `examples/openstudio_mcp_demo/OPENSTUDIO_SDK_EXPERIENCE.md`: human-readable source-review note for OpenStudio SDK usage patterns.
 - `examples/openstudio_mcp_demo/architecture_diagram.md`: Sponsor-friendly architecture/workflow diagrams.
 - `examples/openstudio_mcp_demo/ADVANCED_USER_GUIDE.md`: Advanced extension guide for measures, policies, and skills.
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/server.py`: MCP server entrypoint.

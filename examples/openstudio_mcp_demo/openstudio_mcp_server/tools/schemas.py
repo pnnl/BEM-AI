@@ -38,11 +38,11 @@ class ModelApplyMeasureArgs(BaseModel):
     model_id: str = Field(min_length=1)
     measure_id: str = Field(
         min_length=1,
-        description="Registered measure id from model.list_measures.",
+        description="Registered measure id from model_list_measures.",
     )
     args: dict[str, Any] = Field(
         default_factory=dict,
-        description="Measure arguments; see args_schema from model.list_measures.",
+        description="Measure arguments; see args_schema from model_list_measures.",
     )
 
 

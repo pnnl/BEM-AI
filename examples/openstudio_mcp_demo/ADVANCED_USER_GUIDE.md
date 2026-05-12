@@ -12,7 +12,7 @@ This guide is for advanced users who want to extend the OpenStudio MCP server wi
 
 You will typically work in three areas:
 
-1. Measures: Add new OpenStudio transformations through `model.apply_measure`.
+1. Measures: Add new OpenStudio transformations through `model_apply_measure`.
 2. Policies: Control what is allowed and how it is validated.
 3. Skills: Improve agent orchestration and tool usage quality.
 
@@ -61,12 +61,12 @@ Add an entry:
 
 At runtime:
 
-1. Call `model.list_measures`.
+1. Call `model_list_measures`.
 2. Pick `measure_id` and inspect `args_schema`.
-3. Call `model.apply_measure(model_id, measure_id, args)`.
+3. Call `model_apply_measure(model_id, measure_id, args)`.
 4. Use returned `model_id` for downstream steps.
 
-Note: `model.apply_measure` returns a new model id (immutable artifact style), not in-place mutation.
+Note: `model_apply_measure` returns a new model id (immutable artifact style), not in-place mutation.
 
 ---
 
@@ -115,9 +115,9 @@ File:
 
 Use skills to enforce robust behavior:
 
-- Always call `model.list_measures` before `model.apply_measure`.
+- Always call `model_list_measures` before `model_apply_measure`.
 - Prefer explicit assumptions in output.
-- Require `sim.status` polling before querying artifacts/results.
+- Require `sim_status` polling before querying artifacts/results.
 - Include artifact IDs in final answer.
 
 Skill quality checklist:
@@ -195,8 +195,8 @@ def main() -> int:
     output_path = os.getenv("OSM_OUTPUT_PATH", "")
     args = json.loads(os.getenv("MEASURE_ARGS_JSON", "{}"))
 
-    vt = openstudio.osversion.VersionTranslator()
-    m = vt.loadModel(openstudio.path(input_path))
+    translator = openstudio.openstudioosversion.VersionTranslator()
+    m = translator.loadModel(str(input_path))
     if not m.is_initialized():
         print(json.dumps({"ok": False, "error": "Failed to load model."}))
         return 2
@@ -204,7 +204,7 @@ def main() -> int:
 
     # apply model changes here...
 
-    if not model.save(openstudio.path(output_path), True):
+    if not model.save(str(output_path), True):
         print(json.dumps({"ok": False, "error": "Failed to save model."}))
         return 2
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -11,16 +12,26 @@ from dotenv import dotenv_values
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-from automa_ai.agents.agent_factory import AgentFactory
+from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.config.agent_spec import load_a2a_server_from_yaml
+from automa_ai.skills.manager import SkillManager
 from examples.openstudio_mcp_demo.agent import (
-    build_chatbot,
     build_openstudio_mcp_config,
+    load_openstudio_agent_spec,
 )
 from examples.openstudio_mcp_demo.openstudio_mcp_server.server import serve
 
 
 MCP_HOST = "localhost"
-MCP_PORT = 10210
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+MCP_PORT = _find_free_port()
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/sse"
 
 
@@ -55,13 +66,13 @@ async def test_openstudio_mcp_smoke_list_and_call_model_load() -> None:
             await session.initialize()
             tools = await session.list_tools()
             names = {tool.name for tool in tools.tools}
-            assert "model.load" in names
-            assert "model.clone" in names
-            assert "model.list_measures" in names
-            assert "sim.run" in names
+            assert "model_load" in names
+            assert "model_clone" in names
+            assert "model_list_measures" in names
+            assert "sim_run" in names
 
             result = await session.call_tool(
-                name="model.load",
+                name="model_load",
                 arguments={"model_uri": "file:///tmp/dummy.osm"},
             )
             payload = result.structuredContent
@@ -70,12 +81,58 @@ async def test_openstudio_mcp_smoke_list_and_call_model_load() -> None:
             assert isinstance(payload["model_id"], str)
 
 
-def test_openstudio_example_uses_agent_factory_with_mcp_config() -> None:
+def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     mcp_config = build_openstudio_mcp_config()
-    factory = build_chatbot(mcp_config)
-    assert isinstance(factory, AgentFactory)
-    assert factory.mcp_configs is not None
-    assert "openstudio_mcp" in factory.mcp_configs
+    spec = load_openstudio_agent_spec(mcp_config)
+    server = load_a2a_server_from_yaml(spec)
+    factory_kwargs = spec.to_factory_kwargs()
+
+    assert spec.agent_card["name"] == "OpenStudio MCP Model Workspace Agent"
+    assert spec.instructions.path == "../prompts/openstudio_agent.md"
+    assert spec.mcp is not None
+    assert "openstudio_mcp" in spec.mcp.servers
+    assert spec.mcp.servers["openstudio_mcp"].host == mcp_config.host
+    assert spec.mcp.servers["openstudio_mcp"].port == mcp_config.port
+    assert factory_kwargs["tools_config"]["tools"][0]["type"] == "run_python"
+    workspace_root = factory_kwargs["tools_config"]["tools"][0]["config"][
+        "workspace_root"
+    ]
+    assert Path(workspace_root).resolve() == Path(
+        "examples/openstudio_mcp_demo"
+    ).resolve()
+    assert factory_kwargs["skills_config"]["enabled"] is True
+    assert "hvac_sizing_assistant" in factory_kwargs["skills_config"]["registry"]
+    assert (
+        "openstudio_sdk_model_editor"
+        in factory_kwargs["skills_config"]["registry"]
+    )
+    assert "openstudio_sdk_wiki" in factory_kwargs["skills_config"]["registry"]
+    skill_manager = SkillManager.from_config(factory_kwargs["skills_config"])
+    available_context = set(skill_manager.available_skills())
+    assert "sdk_index" in available_context
+    assert "sdk_core_patterns" in available_context
+    assert "sdk_geometry" in available_context
+    assert "Purpose Routing" in skill_manager.load("sdk_index")
+    model_editor_skill = skill_manager.load("openstudio_sdk_model_editor")
+    assert "load `sdk_index`" in model_editor_skill
+    assert "SDK Context-Pack Selection" in model_editor_skill
+    assert "surface_azimuth_degrees(surface)" in model_editor_skill
+    assert "Load `sdk_geometry` for geometry" in model_editor_skill
+    instructions = spec.resolve_instructions()
+    assert "### MCP `model_*`" in instructions
+    assert "### MCP `sim_*`" in instructions
+    assert "### MCP `results_*`" in instructions
+    assert "load `openstudio_sdk_model_editor`" in instructions
+    assert "use this loop" in instructions
+    assert "hvac_sizing_assistant" in instructions
+    assert "openstudio_sdk_model_editor" in instructions
+    assert "sdk_index" not in instructions
+    assert "surface_azimuth_degrees" not in instructions
+    assert "fails three times" not in instructions
+    assert "## Python Script Safeguard" not in instructions
+    assert "Follow the skill instructions exactly" not in instructions
+    assert isinstance(server, A2AAgentServer)
+    assert server.name == "OpenStudio MCP Model Workspace Agent"
 
 
 @pytest.mark.asyncio
@@ -99,7 +156,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
             await session.initialize()
 
             load_result = await session.call_tool(
-                name="model.load",
+                name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
             load_payload = load_result.structuredContent
@@ -108,7 +165,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
             original_model_id = load_payload["model_id"]
 
             measures_result = await session.call_tool(
-                name="model.list_measures",
+                name="model_list_measures",
                 arguments={},
             )
             measures_payload = measures_result.structuredContent
@@ -118,7 +175,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
             assert any(item.get("measure_id") == "add_daylighting" for item in measures)
 
             apply_result = await session.call_tool(
-                name="model.apply_measure",
+                name="model_apply_measure",
                 arguments={
                     "model_id": original_model_id,
                     "measure_id": "add_daylighting",
@@ -134,7 +191,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
             assert any("daylight" in str(item).lower() for item in apply_payload.get("changes", []))
 
             validate_result = await session.call_tool(
-                name="model.validate",
+                name="model_validate",
                 arguments={"model_id": apply_payload["model_id"]},
             )
             validate_payload = validate_result.structuredContent
@@ -154,7 +211,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
             await session.initialize()
 
             load_result = await session.call_tool(
-                name="model.load",
+                name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
             load_payload = load_result.structuredContent
@@ -163,7 +220,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
             model_id = load_payload["model_id"]
 
             run_result = await session.call_tool(
-                name="sim.run",
+                name="sim_run",
                 arguments={"model_id": model_id, "run_mode": "sizing", "options": {}},
             )
             run_payload = run_result.structuredContent
@@ -181,7 +238,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
             final_state = None
             for _ in range(120):
                 status_result = await session.call_tool(
-                    name="sim.status",
+                    name="sim_status",
                     arguments={"job_id": job_id},
                 )
                 status_payload = status_result.structuredContent
@@ -223,7 +280,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             await session.initialize()
 
             load_result = await session.call_tool(
-                name="model.load",
+                name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
             load_payload = load_result.structuredContent
@@ -232,7 +289,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             model_id = load_payload["model_id"]
 
             set_weather_result = await session.call_tool(
-                name="model.set_weather",
+                name="model_set_weather",
                 arguments={"model_id": model_id, "epw_path": str(epw_path)},
             )
             set_weather_payload = set_weather_result.structuredContent
@@ -240,7 +297,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             assert set_weather_payload["ok"] is True
 
             run_result = await session.call_tool(
-                name="sim.run",
+                name="sim_run",
                 arguments={"model_id": model_id, "run_mode": "sizing", "options": {}},
             )
             run_payload = run_result.structuredContent
@@ -251,7 +308,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             final_state = None
             for _ in range(360):
                 status_result = await session.call_tool(
-                    name="sim.status",
+                    name="sim_status",
                     arguments={"job_id": job_id},
                 )
                 status_payload = status_result.structuredContent
@@ -265,7 +322,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             assert final_state == "SUCCEEDED", status_payload
 
             artifacts_result = await session.call_tool(
-                name="sim.artifacts",
+                name="sim_artifacts",
                 arguments={"job_id": job_id},
             )
             artifacts_payload = artifacts_result.structuredContent
@@ -275,7 +332,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
             assert isinstance(artifacts_payload["logs_id"], str)
 
             query_result = await session.call_tool(
-                name="results.query",
+                name="results_query",
                 arguments={
                     "sql_id": artifacts_payload["sql_id"],
                     "query_type": "sizing_summary",

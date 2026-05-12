@@ -17,7 +17,7 @@ from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.schemas import (
 
 
 def register_model_tools(mcp, service) -> None:
-    @mcp.tool(name="model.load", description="Load an OpenStudio model artifact from URI.")
+    @mcp.tool(name="model_load", description="Load an OpenStudio model artifact from URI.")
     async def model_load(model_uri: str) -> dict[str, Any]:
         try:
             args = ModelLoadArgs(model_uri=model_uri)
@@ -27,7 +27,7 @@ def register_model_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="model.clone", description="Clone an existing model artifact and return new model_id.")
+    @mcp.tool(name="model_clone", description="Clone an existing model artifact and return new model_id.")
     async def model_clone(model_id: str) -> dict[str, Any]:
         try:
             args = ModelCloneArgs(model_id=model_id)
@@ -39,7 +39,7 @@ def register_model_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="model.set_weather", description="Attach local weather file path to model.")
+    @mcp.tool(name="model_set_weather", description="Attach local weather file path to model.")
     async def model_set_weather(model_id: str, epw_path: str) -> dict[str, Any]:
         try:
             args = ModelSetWeatherArgs(model_id=model_id, epw_path=epw_path)
@@ -51,7 +51,7 @@ def register_model_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="model.set_design_days", description="Configure design days for model.")
+    @mcp.tool(name="model_set_design_days", description="Configure design days for model.")
     async def model_set_design_days(
         model_id: str,
         ddy_id: str | None = None,
@@ -74,7 +74,7 @@ def register_model_tools(mcp, service) -> None:
             return error_payload("internal_error", str(exc), retryable=False)
 
     @mcp.tool(
-        name="model.list_measures",
+        name="model_list_measures",
         description="List registered/allowed measures and their argument schemas.",
     )
     async def model_list_measures() -> dict[str, Any]:
@@ -84,8 +84,8 @@ def register_model_tools(mcp, service) -> None:
             return error_payload("internal_error", str(exc), retryable=False)
 
     @mcp.tool(
-        name="model.apply_measure",
-        description="Apply a registered measure to a model. Call model.list_measures first to discover measure_id and args schema.",
+        name="model_apply_measure",
+        description="Apply a registered measure to a model. Call model_list_measures first to discover measure_id and args schema.",
     )
     async def model_apply_measure(
         model_id: str,
@@ -112,7 +112,7 @@ def register_model_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="model.validate", description="Validate model for simulation readiness.")
+    @mcp.tool(name="model_validate", description="Validate model for simulation readiness.")
     async def model_validate(model_id: str) -> dict[str, Any]:
         try:
             args = ModelCloneArgs(model_id=model_id)

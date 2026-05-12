@@ -150,6 +150,51 @@ async def test_run_python_still_rejects_os_system() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_python_rejects_os_spawn_process_launch() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke(
+        {"code": "import os\nos.spawnv(os.P_NOWAIT, '/bin/echo', ['echo', 'unsafe'])"}
+    )
+
+    assert result["success"] is False
+    assert "Blocked call pattern" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_rejects_os_exec_process_launch() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke({"code": "import os\nos.execv('/bin/echo', ['echo'])"})
+
+    assert result["success"] is False
+    assert "Blocked call pattern" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_allows_urllib_parse_only() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke(
+        {
+            "code": (
+                "from urllib.parse import urlparse\n"
+                "print(urlparse('https://example.com/a').path)"
+            )
+        }
+    )
+
+    assert result["success"] is True
+    assert result["stdout"].strip() == "/a"
+
+
+@pytest.mark.asyncio
+async def test_run_python_still_rejects_urllib_request() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    result = await tool.invoke({"code": "import urllib.request\nprint('x')"})
+
+    assert result["success"] is False
+    assert "Blocked import: urllib" in result["stderr"]
+
+
+@pytest.mark.asyncio
 async def test_run_python_still_rejects_network_imports() -> None:
     tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
     result = await tool.invoke({"code": "import socket\nprint('x')"})
