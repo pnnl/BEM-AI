@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -14,7 +14,7 @@ from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.schemas import (
 
 def register_results_tools(mcp, service) -> None:
     @mcp.tool(
-        name="results.query",
+        name="results_query",
         description=(
             "Query simulation result data by SQL artifact. "
             "query_type must be one of: annual_end_use_fuel, design_day_end_use_fuel, "
@@ -23,7 +23,12 @@ def register_results_tools(mcp, service) -> None:
     )
     async def results_query(
         sql_id: str,
-        query_type: str,
+        query_type: Literal[
+            "annual_end_use_fuel",
+            "design_day_end_use_fuel",
+            "annual_eui",
+            "sizing_summary",
+        ],
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
@@ -36,7 +41,7 @@ def register_results_tools(mcp, service) -> None:
         except Exception as exc:
             return error_payload("internal_error", str(exc), retryable=False)
 
-    @mcp.tool(name="results.summarize", description="Summarize queried results into text/tables.")
+    @mcp.tool(name="results_summarize", description="Summarize queried results into text/tables.")
     async def results_summarize(data: Any, format: str = "json") -> dict[str, Any]:
         try:
             args = ResultsSummarizeArgs(data=data, format=format)

@@ -254,6 +254,8 @@ def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
 def _audit(event, args):
     if event in {{'os.system', 'subprocess.Popen'}}:
         raise RuntimeError(f"Blocked runtime operation: {{event}}")
+    if event.startswith(('os.exec', 'os.spawn', 'os.posix_spawn')):
+        raise RuntimeError(f"Blocked runtime operation: {{event}}")
     if not _ALLOW_NETWORK and event.startswith('socket.'):
         raise RuntimeError(f"Blocked runtime network operation: {{event}}")
 
