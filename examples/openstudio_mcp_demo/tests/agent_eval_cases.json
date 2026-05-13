@@ -1,0 +1,379 @@
+{
+  "suite": "openstudio_mcp_demo_agent_eval_cases",
+  "version": "0.1.0",
+  "description": "Conversation-style evaluation cases for the OpenStudio MCP Model Workspace Agent.",
+  "default_model_path": "examples/openstudio_mcp_demo/resource/sample.osm",
+  "evaluation_dimensions": [
+    "agent_professionalism",
+    "clarification_behavior",
+    "plan_quality",
+    "tool_correctness",
+    "task_completion",
+    "step_efficiency"
+  ],
+  "cases": [
+    {
+      "id": "bem_model_summary_001",
+      "query": "Can you inspect examples/openstudio_mcp_demo/resource/sample.osm and give me a concise senior-modeler summary of the building geometry, spaces, thermal zones, surfaces, and subsurfaces?",
+      "expected_output": {
+        "summary_should_include": [
+          "building-level counts",
+          "space and thermal-zone counts",
+          "surface and subsurface counts",
+          "floor area with units",
+          "assumptions or warnings"
+        ],
+        "style": "concise professional building energy modeler summary"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_geometry",
+          "sdk_spaces_zones_loads"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "forbidden_tools": [
+          "sim_run",
+          "results_query"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Does not run simulation.",
+        "Uses OpenStudio SDK inspection.",
+        "Uses model.getBuildingStorys() if building stories are inspected.",
+        "Returns a readable summary plus structured counts or JSON artifact."
+      ]
+    },
+    {
+      "id": "bem_wwr_orientation_002",
+      "query": "For the sample model, calculate overall WWR and WWR by north/east/south/west orientation. Please explain how you handled azimuth.",
+      "expected_output": {
+        "summary_should_include": [
+          "overall WWR",
+          "WWR by cardinal orientation",
+          "exterior wall area and window area",
+          "azimuth conversion explanation"
+        ],
+        "style": "technical but readable"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_geometry"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "forbidden_tools": [
+          "sim_run"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Converts surface.azimuth() from radians to degrees using openstudio.convert.",
+        "Does not manually assume azimuth is already degrees.",
+        "Reports units and orientation-bin assumptions."
+      ]
+    },
+    {
+      "id": "bem_construction_layers_003",
+      "query": "Inspect the envelope constructions in sample.osm. I want exterior walls, roofs, floors, windows, doors, and skylights with their construction names and material layers.",
+      "expected_output": {
+        "summary_should_include": [
+          "surface type",
+          "construction name",
+          "material layer names",
+          "missing construction warnings"
+        ],
+        "style": "organized table or grouped bullets"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_geometry",
+          "sdk_constructions"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Does not edit the model.",
+        "Uses construction optional checks before unwrapping.",
+        "Separates opaque and fenestration constructions when practical."
+      ]
+    },
+    {
+      "id": "bem_material_properties_004",
+      "query": "For the exterior opaque constructions in the sample model, extract material thickness, conductivity, density, specific heat, and thermal resistance where available.",
+      "expected_output": {
+        "summary_should_include": [
+          "opaque construction names",
+          "material names",
+          "thermal resistance when available",
+          "thickness and conductivity when available",
+          "notes on unavailable fields"
+        ],
+        "style": "engineering-oriented inspection report"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_constructions"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Handles missing material methods without crashing.",
+        "Does not claim every material has every property.",
+        "Reports units for material properties."
+      ]
+    },
+    {
+      "id": "bem_schedule_review_005",
+      "query": "Review the schedules in the sample model. Focus on occupancy, lighting, electric equipment, thermostat setpoints, and HVAC availability schedules by space type or thermal zone.",
+      "expected_output": {
+        "summary_should_include": [
+          "schedule names",
+          "schedule usage by space type or zone",
+          "default day values or profile summary",
+          "missing schedule warnings"
+        ],
+        "style": "clear model audit summary"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_schedules",
+          "sdk_spaces_zones_loads",
+          "sdk_hvac"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Does not run simulation.",
+        "Uses schedule optional checks.",
+        "Explains whether findings are model inputs, not simulated results."
+      ]
+    },
+    {
+      "id": "bem_internal_loads_006",
+      "query": "Summarize people, lights, electric equipment, gas equipment, and outdoor air loads in sample.osm by space and space type. I want this as a practical load QA report.",
+      "expected_output": {
+        "summary_should_include": [
+          "loads by space",
+          "loads by space type where available",
+          "load density or total design load",
+          "outdoor air summary",
+          "warnings for missing assignments"
+        ],
+        "style": "practical QA report"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_spaces_zones_loads",
+          "sdk_schedules"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Separates design/input load inspection from simulation results.",
+        "Handles absent gas equipment or outdoor air objects gracefully.",
+        "Reports units."
+      ]
+    },
+    {
+      "id": "bem_hvac_topology_007",
+      "query": "Inspect the HVAC topology in the sample model. Tell me what air loops, plant loops, zone equipment, thermostats, coils, fans, and served zones exist.",
+      "expected_output": {
+        "summary_should_include": [
+          "air loops",
+          "plant loops",
+          "zone equipment",
+          "thermostats and schedules",
+          "coils and fans",
+          "served zones",
+          "warnings for missing HVAC systems"
+        ],
+        "style": "senior modeler systems walkthrough"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_hvac",
+          "sdk_spaces_zones_loads"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "forbidden_tools": [
+          "sim_run"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Does not invent HVAC systems when none exist.",
+        "Reports missing getters or absent objects as warnings.",
+        "Does not run simulation."
+      ]
+    },
+    {
+      "id": "bem_lighting_power_edit_008",
+      "query": "Create a copy of the sample model and reduce all lighting power by 20 percent. Show me exactly what script you will run before executing.",
+      "expected_output": {
+        "summary_should_include": [
+          "output model path",
+          "changed lighting objects",
+          "before and after values",
+          "warnings",
+          "recommended validation or simulation next step"
+        ],
+        "style": "change report with clear assumptions"
+      },
+      "expected_behavior": {
+        "clarification_required": false,
+        "expected_route": "run_python_openstudio_sdk",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_spaces_zones_loads",
+          "sdk_schedules"
+        ],
+        "expected_tools": [
+          "load_skill",
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true,
+        "requires_user_confirmation_before_execution": true
+      },
+      "pass_criteria": [
+        "Preserves the original input model.",
+        "Writes to a copied output model.",
+        "Reports before and after values for every changed lighting definition.",
+        "Does not execute until explicit approval is obtained."
+      ]
+    },
+    {
+      "id": "bem_south_wwr_edit_009",
+      "query": "Make a copied model where south-facing WWR is reduced to 20 percent. If you need any assumptions, state them before running.",
+      "expected_output": {
+        "summary_should_include": [
+          "clarified or assumed south-facing definition",
+          "output model path",
+          "affected surfaces or windows",
+          "before and after WWR",
+          "recommended validation or simulation workflow"
+        ],
+        "style": "careful edit plan and change report"
+      },
+      "expected_behavior": {
+        "clarification_required": true,
+        "expected_route": "run_python_openstudio_sdk_then_mcp_optional",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_geometry",
+          "sdk_constructions"
+        ],
+        "expected_tools": [
+          "load_skill"
+        ],
+        "must_show_full_python_before_execution": true,
+        "requires_user_confirmation_before_execution": true
+      },
+      "pass_criteria": [
+        "Clarifies how to handle windows on surfaces near south orientation if ambiguous.",
+        "Uses azimuth conversion through openstudio.convert.",
+        "Does not overwrite the original model.",
+        "Recommends MCP model validation and simulation after edit."
+      ]
+    },
+    {
+      "id": "bem_create_slab_object_010",
+      "query": "Add an F-factor slab construction to the sample model. Use default values if needed.",
+      "expected_output": {
+        "summary_should_include": [
+          "required inputs for F-factor slab",
+          "clarifying question or explicit default assumptions",
+          "SI unit expectations",
+          "candidate assignment targets if assigning to model objects"
+        ],
+        "style": "cautious object-creation workflow"
+      },
+      "expected_behavior": {
+        "clarification_required": true,
+        "expected_route": "clarify_before_run_python",
+        "expected_skill": "openstudio_sdk_model_editor",
+        "expected_knowledge_packs": [
+          "sdk_index",
+          "sdk_core_patterns",
+          "sdk_constructions"
+        ],
+        "expected_tools": [
+          "load_skill"
+        ],
+        "forbidden_tools_until_clarified": [
+          "run_python"
+        ],
+        "must_show_full_python_before_execution": true
+      },
+      "pass_criteria": [
+        "Asks for name, F-factor value and units, area value and units, and exposed perimeter value and units.",
+        "Explains OpenStudio setters expect SI values.",
+        "If user permits defaults, lists assumptions as Object:Name.parameter: assumed to be x.",
+        "Does not create the object before clarification or explicit default approval."
+      ]
+    }
+  ]
+}
