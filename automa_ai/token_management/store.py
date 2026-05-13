@@ -90,8 +90,9 @@ class SQLiteTokenUsageStore(TokenUsageStore):
         return cls(db_path=config.db_path)
 
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        db_parent = Path(db_path).expanduser().resolve().parent
+        resolved_db_path = Path(db_path).expanduser().resolve()
+        self.db_path = str(resolved_db_path)
+        db_parent = resolved_db_path.parent
         db_parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 

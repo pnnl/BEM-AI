@@ -39,3 +39,11 @@ def test_sqlite_token_usage_store_records_and_summarizes(tmp_path):
     assert session_summary.input_tokens == 10
     assert session_summary.output_tokens == 5
     assert session_summary.total_tokens == 15
+
+
+def test_sqlite_token_usage_store_normalizes_db_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    store = SQLiteTokenUsageStore(db_path="usage.db")
+
+    assert store.db_path == str(tmp_path / "usage.db")

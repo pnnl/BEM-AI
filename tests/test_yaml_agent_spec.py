@@ -118,6 +118,25 @@ budget:
     assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
 
 
+def test_yaml_agent_spec_rebases_budget_sqlite_db_path(tmp_path: Path) -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+budget:
+  store:
+    backend: sqlite
+    db_path: ./ledger/token_usage.db
+""",
+        base_dir=tmp_path,
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["budget_config"]["store"]["db_path"] == str(
+        tmp_path / "ledger" / "token_usage.db"
+    )
+
+
 def test_yaml_agent_spec_loads_subagent_from_spec_path(tmp_path: Path) -> None:
     subagent_path = tmp_path / "math_agent.yaml"
     subagent_path.write_text(

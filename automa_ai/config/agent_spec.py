@@ -261,7 +261,9 @@ class YamlAgentSpec(BaseModel):
                 self.blackboard, base_dir=self._base_dir
             ),
             "checkpointer_config": self.checkpointer,
-            "budget_config": self.budget,
+            "budget_config": _rebase_budget_config(
+                self.budget, base_dir=self._base_dir
+            ),
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
             "api_version": self.model.api_version,
@@ -412,6 +414,23 @@ def _rebase_blackboard_config(
     if isinstance(store, dict):
         _rebase_mapping_path(store, "base_dir", base_dir=base_dir)
     _rebase_mapping_path(resolved, "base_dir", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_budget_config(
+    budget: dict[str, Any] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a copy of budget config with local SQLite paths rebased."""
+    if budget is None:
+        return None
+
+    resolved = deepcopy(budget)
+    store = resolved.get("store")
+    if isinstance(store, dict) and store.get("backend", "sqlite") == "sqlite":
+        _rebase_mapping_path(store, "db_path", base_dir=base_dir)
 
     return resolved
 

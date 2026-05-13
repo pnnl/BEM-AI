@@ -437,14 +437,15 @@ class AgentFactory:
                 if isinstance(self.budget_config, TokenBudgetConfig)
                 else TokenBudgetConfig.from_dict(self.budget_config)
             )
-            token_usage_store = create_token_usage_store(budget_config.store)
-            if (
-                budget_config.max_session_tokens is not None
-                or budget_config.max_user_tokens is not None
-            ) and token_usage_store is None:
-                raise ValueError(
-                    "Token session and user budgets require budget.store to be configured."
-                )
+            if budget_config.enabled:
+                token_usage_store = create_token_usage_store(budget_config.store)
+                if (
+                    budget_config.max_session_tokens is not None
+                    or budget_config.max_user_tokens is not None
+                ) and token_usage_store is None:
+                    raise ValueError(
+                        "Token session and user budgets require budget.store to be configured."
+                    )
 
         if self.agent_type == GenericAgentType.ADK:
             return GenericADKAgent(
