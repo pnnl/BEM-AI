@@ -94,6 +94,11 @@ tools:
   tools: []
 checkpointer:
   type: default
+budget:
+  max_input_tokens: 1000
+  store:
+    backend: sqlite
+    db_path: ./token_usage.db
 """
     )
 
@@ -109,6 +114,8 @@ checkpointer:
     assert kwargs["subagent_config"][0].name == "Math Agent"
     assert kwargs["tools_config"] == {"tools": []}
     assert kwargs["checkpointer_config"] == {"type": "default"}
+    assert kwargs["budget_config"]["max_input_tokens"] == 1000
+    assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
 
 
 def test_yaml_agent_spec_loads_subagent_from_spec_path(tmp_path: Path) -> None:

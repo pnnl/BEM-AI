@@ -13,6 +13,7 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_START,
     ARTIFACT_END,
 )
+from automa_ai.token_management import TokenBudgetExceededError
 
 
 class DummyRetriever:
@@ -108,7 +109,12 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
     result = await agent.invoke("hello", "session-1")
 
     assert result == {"ok": True}
-    assert captured["config"] == {"configurable": {"thread_id": "test-agent:session-1"}}
+    assert captured["config"] == {
+        "configurable": {
+            "thread_id": "test-agent:session-1",
+            "automa_context_id": "session-1",
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -197,10 +203,7 @@ async def test_stream_does_not_emit_artifact_marker_content_as_status_text():
     agent = build_agent()
     agent.graph = DummyGraph()
 
-    items = [
-        item
-        async for item in agent.stream("hello", "session-1", "task-1")
-    ]
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
 
     status_text = "".join(
         item["content"]
@@ -237,10 +240,7 @@ async def test_stream_filters_bedrock_list_artifact_content():
     agent = build_agent()
     agent.graph = DummyGraph()
 
-    items = [
-        item
-        async for item in agent.stream("hello", "session-1", "task-1")
-    ]
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
 
     status_text = "".join(
         item["content"]
@@ -254,6 +254,28 @@ async def test_stream_filters_bedrock_list_artifact_content():
     assert items[-1]["response_type"] == "data"
     assert items[-1]["content"] == {"foo": "bar"}
     assert items[-1]["additional_artifacts"][0]["content"] == "Summary"
+
+
+@pytest.mark.asyncio
+async def test_stream_returns_budget_message_for_token_budget_errors():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            raise TokenBudgetExceededError("Session token budget exceeded.")
+            yield
+
+    agent = build_agent()
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items == [
+        {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": "Session token budget exceeded.",
+        }
+    ]
 
 
 @pytest.mark.asyncio

@@ -42,6 +42,12 @@ from automa_ai.config.tools import ToolSpec
 from automa_ai.tools import build_langchain_tools
 from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
+from automa_ai.config.token_budget import TokenBudgetConfig
+from automa_ai.token_management import (
+    TokenBudgetExceededError,
+    TokenUsageStore,
+    build_token_budget_middlewares,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +89,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         blackboard_initial_data: dict | None = None,
         blackboard_contract: str | None = None,
         transient_retry_attempts: int = 0,
+        budget_config: TokenBudgetConfig | None = None,
+        token_usage_store: TokenUsageStore | None = None,
         enable_metrics: bool = False,
         debug: bool = False,
     ):
@@ -113,6 +121,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.blackboard_initial_data = blackboard_initial_data or {}
         self.blackboard_contract = blackboard_contract
         self.transient_retry_attempts = max(0, transient_retry_attempts)
+        self.budget_config = budget_config
+        self.token_usage_store = token_usage_store
         self.debug = debug
         if enable_metrics:
             self.metrics = MetricsCollector()
@@ -225,6 +235,12 @@ class GenericLangGraphChatAgent(BaseAgent):
             system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
+            middleware=build_token_budget_middlewares(
+                budget=self.budget_config,
+                usage_store=self.token_usage_store,
+                model=self.model,
+                agent_name=self.agent_name,
+            ),
         )
 
     def _ensure_blackboard(self, session_id: str) -> None:
@@ -249,7 +265,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Any:
-        config = self._build_runnable_config(context_id, user_id)
+        config = self._build_runnable_config(context_id, user_id, task_id)
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
 
@@ -305,7 +321,7 @@ class GenericLangGraphChatAgent(BaseAgent):
             query, context_id, task_id, user_id, metadata
         )
 
-        config = self._build_runnable_config(context_id, user_id)
+        config = self._build_runnable_config(context_id, user_id, task_id)
         logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
@@ -435,6 +451,17 @@ class GenericLangGraphChatAgent(BaseAgent):
                             metadata=metadata,
                         )
                         break
+                    except TokenBudgetExceededError as exc:
+                        logger.info(
+                            "Token budget stopped agent stream for %s "
+                            "(session_id=%s, task_id=%s): %s",
+                            self.agent_name,
+                            context_id,
+                            task_id,
+                            exc,
+                        )
+                        await output_queue.put(self._token_budget_exceeded_output(exc))
+                        break
                     except Exception as exc:
                         logger.exception(
                             "Agent stream failed for %s (session_id=%s, task_id=%s)",
@@ -481,6 +508,13 @@ class GenericLangGraphChatAgent(BaseAgent):
                     finally:
                         reset_subagent_emitter(emitter_token)
                         reset_subagent_context_id(context_token)
+            except TokenBudgetExceededError as exc:
+                logger.info(
+                    "Token budget stopped agent stream forwarder for %s: %s",
+                    self.agent_name,
+                    exc,
+                )
+                await output_queue.put(self._token_budget_exceeded_output(exc))
             except Exception as exc:
                 logger.exception(
                     "Agent stream forwarder failed for %s", self.agent_name
@@ -638,6 +672,16 @@ class GenericLangGraphChatAgent(BaseAgent):
             return False
         return is_retryable_network_error(exc)
 
+    @staticmethod
+    def _token_budget_exceeded_output(exc: TokenBudgetExceededError) -> dict[str, Any]:
+        """Convert budget exceptions into a user-facing stream event."""
+        return {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": str(exc),
+        }
+
     async def _build_memory_context(
         self,
         query: str,
@@ -677,6 +721,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self,
         context_id: str,
         user_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         if (
             AgentCoreMemorySaver is not None
@@ -688,10 +733,15 @@ class GenericLangGraphChatAgent(BaseAgent):
                 "Please provide a user_id when invoking the agent."
             )
 
-        configurable = {"thread_id": self._checkpoint_thread_id(context_id)}
+        configurable = {
+            "thread_id": self._checkpoint_thread_id(context_id),
+            "automa_context_id": context_id,
+        }
 
         if user_id is not None:
             configurable["actor_id"] = user_id
+        if task_id is not None:
+            configurable["task_id"] = task_id
 
         return {"configurable": configurable}
 

@@ -22,6 +22,22 @@ from automa_ai.metrics.extractor import extract_metrics_from_chunk
 
 
 memory = MemorySaver()
+_TOOL_RESPONSE_ERROR_MARKERS = (
+    "error",
+    "exception",
+    "traceback",
+    "failed",
+    "failure",
+)
+
+
+def _should_emit_tool_response(tool_name: str | None, content: Any) -> bool:
+    """Return whether a tool response should be streamed to the user."""
+    if tool_name != "load_skill":
+        return True
+    normalized = str(content).lower()
+    return any(marker in normalized for marker in _TOOL_RESPONSE_ERROR_MARKERS)
+
 
 class GenericLangGraphReactAgent(BaseAgent):
     """A generic LangGraph react agent"""
@@ -371,6 +387,10 @@ class GenericLangGraphReactAgent(BaseAgent):
                         # Take out the last Tool Message
                         tool_msg = data["messages"][-1]
                         if tool_msg.content:
+                            if not _should_emit_tool_response(
+                                tool_msg.name, tool_msg.content
+                            ):
+                                continue
                             content = f"**Tool {tool_msg.name} responded**: {tool_msg.content}\n"
                             yield{
                                 "response_type": "text",

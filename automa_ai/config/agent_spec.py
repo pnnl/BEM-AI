@@ -166,6 +166,7 @@ class YamlAgentSpec(BaseModel):
     tools: dict[str, Any] | list[dict[str, Any]] | None = None
     blackboard: dict[str, Any] | None = None
     checkpointer: dict[str, Any] | str | None = None
+    budget: dict[str, Any] | None = None
 
     _base_dir: Path = Path.cwd()
 
@@ -260,6 +261,7 @@ class YamlAgentSpec(BaseModel):
                 self.blackboard, base_dir=self._base_dir
             ),
             "checkpointer_config": self.checkpointer,
+            "budget_config": self.budget,
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
             "api_version": self.model.api_version,
