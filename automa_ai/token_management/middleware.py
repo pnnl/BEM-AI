@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain.agents.middleware import (
@@ -18,6 +19,8 @@ from langgraph.config import get_config
 
 from automa_ai.config.token_budget import TokenBudgetConfig
 from automa_ai.token_management.store import TokenUsageRecord, TokenUsageStore
+
+logger = logging.getLogger(__name__)
 
 
 class TokenBudgetExceededError(RuntimeError):
@@ -152,22 +155,34 @@ class TokenBudgetMiddleware(AgentMiddleware):
                 )
 
     def _record_response_usage(self, request: ModelRequest, response: Any) -> None:
-        """Persist usage metadata from a sync model response when available."""
+        """Persist sync usage metadata on a best-effort basis."""
         if self.usage_store is None:
             return
         record = self._record_from_response(request, response)
         if record is not None:
-            self.usage_store.write_usage(record)
+            try:
+                self.usage_store.write_usage(record)
+            except Exception:
+                logger.exception(
+                    "Failed to persist token usage for agent %s.",
+                    self.agent_name,
+                )
 
     async def _arecord_response_usage(
         self, request: ModelRequest, response: Any
     ) -> None:
-        """Persist usage metadata from an async model response when available."""
+        """Persist async usage metadata on a best-effort basis."""
         if self.usage_store is None:
             return
         record = self._record_from_response(request, response)
         if record is not None:
-            await self.usage_store.awrite_usage(record)
+            try:
+                await self.usage_store.awrite_usage(record)
+            except Exception:
+                logger.exception(
+                    "Failed to persist token usage for agent %s.",
+                    self.agent_name,
+                )
 
     def _record_from_response(
         self,

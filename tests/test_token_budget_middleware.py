@@ -24,6 +24,20 @@ class DummyRuntime:
         }
 
 
+class FailingUsageStore:
+    def write_usage(self, record):
+        raise RuntimeError("write failed")
+
+    async def awrite_usage(self, record):
+        raise RuntimeError("async write failed")
+
+    def summarize_usage(self, **kwargs):
+        raise AssertionError("summarize_usage should not be called")
+
+    async def asummarize_usage(self, **kwargs):
+        raise AssertionError("asummarize_usage should not be called")
+
+
 def test_token_budget_middleware_trims_messages_and_sets_output_limit():
     middleware = TokenBudgetMiddleware(
         budget=TokenBudgetConfig(
@@ -163,3 +177,34 @@ def test_token_budget_middleware_reads_langgraph_config(monkeypatch, tmp_path):
 
     assert store.summarize_usage(context_id="session-from-config").total_tokens == 5
     assert store.summarize_usage(user_id="user-from-config").total_tokens == 5
+
+
+def test_token_budget_middleware_does_not_fail_model_call_when_usage_write_fails():
+    middleware = TokenBudgetMiddleware(
+        budget=TokenBudgetConfig(),
+        usage_store=FailingUsageStore(),
+        agent_name="planner",
+    )
+    request = ModelRequest(
+        model=None,
+        messages=[HumanMessage(content="hello")],
+        runtime=DummyRuntime(),
+    )
+
+    response = middleware.wrap_model_call(
+        request,
+        lambda scoped_request: ModelResponse(
+            result=[
+                AIMessage(
+                    content="ok",
+                    usage_metadata={
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "total_tokens": 2,
+                    },
+                )
+            ]
+        ),
+    )
+
+    assert response.result[0].content == "ok"

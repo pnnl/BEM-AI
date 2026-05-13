@@ -162,7 +162,7 @@ class SQLiteTokenUsageStore(TokenUsageStore):
                     record.output_tokens,
                     record.total_tokens,
                     record.created_at.isoformat(),
-                    json.dumps(record.metadata),
+                    json.dumps(record.metadata, default=str),
                 ),
             )
             conn.commit()
