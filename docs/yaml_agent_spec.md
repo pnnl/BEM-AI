@@ -39,7 +39,6 @@ model:
 
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: false
   debug: false
 ```
 
@@ -178,7 +177,6 @@ model:
 runtime:
   agent_type: langgraph-chat
   transient_retry_attempts: 1
-  enable_metrics: true
   debug: true
 
 server:
@@ -289,8 +287,6 @@ Optional object.
   specs should normally use `langgraph-chat`.
 - `transient_retry_attempts`: Number of transient agent retry attempts. Defaults
   to `0`.
-- `enable_metrics`: Enables metrics collection when supported. Defaults to
-  `false`.
 - `debug`: Enables debug behavior in the underlying agent. Defaults to `false`.
 
 ### `server`

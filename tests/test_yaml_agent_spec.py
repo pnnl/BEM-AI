@@ -36,7 +36,6 @@ model:
   name: llama3.1:8b
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: true
   debug: true
 """
 

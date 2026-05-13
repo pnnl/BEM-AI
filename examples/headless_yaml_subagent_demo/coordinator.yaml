@@ -30,7 +30,6 @@ model:
 runtime:
   agent_type: langgraph-chat
   transient_retry_attempts: 0
-  enable_metrics: false
   debug: false
 
 tools:

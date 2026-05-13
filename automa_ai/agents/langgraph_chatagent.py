@@ -33,8 +33,6 @@ from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
 from automa_ai.memory.memory_types import MemoryEntry, MemoryType
-from automa_ai.metrics.collector import MetricsCollector
-from automa_ai.metrics.extractor import extract_metrics_from_chunk
 from automa_ai.prompts.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
 from automa_ai.skills.tools import build_load_skill_tool
@@ -91,7 +89,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         transient_retry_attempts: int = 0,
         budget_config: TokenBudgetConfig | None = None,
         token_usage_store: TokenUsageStore | None = None,
-        enable_metrics: bool = False,
         debug: bool = False,
     ):
 
@@ -110,7 +107,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.retriever = retriever
         self.memory_manager = memory_manager
         self.skill_manager = skills_manager
-        self.metrics = None
         self.default_tool_specs = default_tools
         self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
         self._checkpointer_cleanup = checkpointer_cleanup
@@ -124,8 +120,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
         self.debug = debug
-        if enable_metrics:
-            self.metrics = MetricsCollector()
         self.subagents = subagents
 
         # register close mechanism when shutdown if checkpointer has a cleanup function.
@@ -311,12 +305,6 @@ class GenericLangGraphChatAgent(BaseAgent):
             """
             await subagent_event_queue.put(e)
 
-        # If selected to track metrics
-        if self.metrics:
-            if self.metrics.current_query_id and self.metrics.current_query_id != query:
-                # If a new task, write out the previous task.
-                print(self.metrics.summary_for_query(self.metrics.current_query_id))
-            self.metrics.start_query(task_id)
         inputs = await self._build_stream_inputs(
             query, context_id, task_id, user_id, metadata
         )
@@ -373,16 +361,6 @@ class GenericLangGraphChatAgent(BaseAgent):
 
                             # Process agent chunk
                             if isinstance(ck, AIMessageChunk):
-                                if self.metrics:
-                                    # Record tracking
-                                    if ck.response_metadata:
-                                        self.metrics.add(
-                                            extract_metrics_from_chunk(
-                                                ck,
-                                                session_id=context_id,
-                                                query_id=self.metrics.current_query_id,
-                                            )
-                                        )
                                 stream_text = message_accumulator.add_chunk(ck)
                                 # Emit only text routed by the accumulator so
                                 # artifact-marker content is withheld from

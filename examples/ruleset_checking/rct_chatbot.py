@@ -12,7 +12,7 @@ from automa_ai.retrieval.registry import register_retriever_provider
 from examples.ruleset_checking.ruleset_retriever import RulesetRetrieverProvider
 
 base_dir = Path(__file__).resolve().parent
-env_path = base_dir / '.env'
+env_path = base_dir / ".env"
 load_dotenv(dotenv_path=env_path)
 
 RCT_CHAT_BOT = """
@@ -120,8 +120,7 @@ chatbot = AgentFactory(
     # model_base_url=chat_bot_base_url,
     # mcp_configs={"retriever":retriever_mcp_config},
     retriever_spec=retriever_spec,
-    enable_metrics=True,
-    debug=True
+    debug=True,
 )
 
 # mcp_manager = MCPServerManager()

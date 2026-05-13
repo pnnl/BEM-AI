@@ -63,7 +63,6 @@ class RuntimeSpec(BaseModel):
 
     agent_type: GenericAgentType = GenericAgentType.LANGGRAPHCHAT
     transient_retry_attempts: int = 0
-    enable_metrics: bool = False
     debug: bool = False
 
 
@@ -269,7 +268,6 @@ class YamlAgentSpec(BaseModel):
             "api_version": self.model.api_version,
             "model_max_retries": self.model.max_retries,
             "transient_retry_attempts": self.runtime.transient_retry_attempts,
-            "enable_metrics": self.runtime.enable_metrics,
             "debug": self.runtime.debug,
         }
 

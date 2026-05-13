@@ -260,7 +260,6 @@ class AgentFactory:
                             "sample_mcp_1": MCPServerConfig(name="sample_mcp", host="localhost", port=10000, transport="sse"),
                             }
         retriever: BaseRetriever | dict | None = None Default None, knowledge base retrieval function.
-        enable_metrics: bool determine whether metrics tracking per task / query should be enabled or not.
         debug: bool determine whether debug mode should be enabled or not.
     """
 
@@ -286,7 +285,6 @@ class AgentFactory:
         api_version: str | None = None,
         model_max_retries: int | None = None,
         transient_retry_attempts: int = 0,
-        enable_metrics: bool = False,
         debug: bool = False,
     ):
         if isinstance(card, AgentCard):
@@ -316,7 +314,6 @@ class AgentFactory:
         self.api_version = api_version
         self.model_max_retries = model_max_retries
         self.transient_retry_attempts = transient_retry_attempts
-        self.enable_metrics = enable_metrics
         self.debug = debug
 
     def get_agent(self):
@@ -485,7 +482,6 @@ class AgentFactory:
                 transient_retry_attempts=self.transient_retry_attempts,
                 budget_config=budget_config,
                 token_usage_store=token_usage_store,
-                enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )
 
@@ -497,7 +493,6 @@ class AgentFactory:
                 response_format=self.response_format,
                 chat_model=chat_model,
                 mcp_servers=mcp_servers,
-                enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )
 

@@ -10,15 +10,17 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
 from pydantic import BaseModel
 
-from automa_ai.agents.remote_agent import SubAgentSpec, make_subagent_tool, StreamEvent, \
-    build_subagent_delegation_instruction
+from automa_ai.agents.remote_agent import (
+    SubAgentSpec,
+    make_subagent_tool,
+    StreamEvent,
+    build_subagent_delegation_instruction,
+)
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.response_parser import extract_and_parse_json
 from automa_ai.common.setup_logging import setup_file_logger
 from automa_ai.common.types import ServerConfig
 from automa_ai.common.utils import map_server_config_to_mcp_connection
-from automa_ai.metrics.collector import MetricsCollector
-from automa_ai.metrics.extractor import extract_metrics_from_chunk
 
 
 memory = MemorySaver()
@@ -52,7 +54,6 @@ class GenericLangGraphReactAgent(BaseAgent):
         mcp_servers: Dict[str, ServerConfig] | None = None,
         retriever: Callable | None = None,
         subagents: List[SubAgentSpec] | None = None,
-        enable_metrics: bool = False,
         debug: bool = False,
     ):
 
@@ -71,9 +72,6 @@ class GenericLangGraphReactAgent(BaseAgent):
         self.mcp_servers = mcp_servers
         self.retriever = retriever
         self.debug = debug
-        self.metrics = None
-        if enable_metrics:
-            self.metrics = MetricsCollector()
         self.subagents = subagents
 
     async def init_graph(self, emitter: Callable[[StreamEvent], None]):
@@ -114,7 +112,7 @@ class GenericLangGraphReactAgent(BaseAgent):
             checkpointer=memory,
             system_prompt=self.instructions,
             # response_format=self.response_format,
-            tools=tools
+            tools=tools,
         )
 
     async def invoke(
@@ -165,12 +163,6 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         emitter = emit_subagent_event
 
-        # If selected to track metrics
-        if self.metrics:
-            if self.metrics.current_query_id and self.metrics.current_query_id != query:
-                # If a new task, write out the previous task.
-                print(self.metrics.summary_for_query(self.metrics.current_query_id))
-            self.metrics.start_query(task_id)
         # Optional RAG retrieval
         context = ""
         if self.retriever:
@@ -227,31 +219,33 @@ class GenericLangGraphReactAgent(BaseAgent):
                         self.logger.info(
                             f"Message type is: {type(message)}, and message is: {isinstance(message, AIMessage)} item type is: {type(data)}"
                         )
-                        if isinstance(message, AIMessage):
-                            if self.metrics:
-                                # Record tracking
-                                if message.response_metadata:
-                                    self.metrics.add(extract_metrics_from_chunk(
-                                        message,
-                                        session_id=context_id,
-                                        query_id=self.metrics.current_query_id
-                                    ))
                         if isinstance(message, AIMessage) and message.content:
                             content = message.content
                             response_metadata = message.response_metadata
                             if content and isinstance(content, list):
                                 # likely this is a gemini responses
                                 content = content[0]
-                                if response_metadata and response_metadata['model_provider'] == "google_genai":
+                                if (
+                                    response_metadata
+                                    and response_metadata["model_provider"]
+                                    == "google_genai"
+                                ):
                                     # in this case, it is likely a json inside a list
                                     if content["type"] == "text" and content["text"]:
                                         content = content["text"]
                             content = content.strip()
                             if self.debug:
                                 print(f"Streaming content: {content}")
-                            if content.startswith("<think>") or content.endswith("</think>"):
+                            if content.startswith("<think>") or content.endswith(
+                                "</think>"
+                            ):
                                 # Remove <think>...</think> (including newlines and spaces around it)
-                                content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
+                                content = re.sub(
+                                    r"<think>.*?</think>\s*",
+                                    "",
+                                    content,
+                                    flags=re.DOTALL,
+                                )
                             # Skip ToolMessage and HumanMessage and make sure there is content in the AI message (not a tool calling AI message, which typically has no content.)
                             try:
                                 _, parsed = extract_and_parse_json(content)
@@ -313,8 +307,12 @@ class GenericLangGraphReactAgent(BaseAgent):
                                     }
                             except JSONDecodeError as jde:
                                 if self.debug:
-                                    print(f"Failed parsing JSON data, error message: {jde}")
-                                self.logger.info(f"Failed parsing JSON data, error message: {jde}")
+                                    print(
+                                        f"Failed parsing JSON data, error message: {jde}"
+                                    )
+                                self.logger.info(
+                                    f"Failed parsing JSON data, error message: {jde}"
+                                )
                                 if content.startswith("<think>"):
                                     # There should be a better way to handle this through network but
                                     # Let's just settle with a simple print for now.
@@ -333,9 +331,13 @@ class GenericLangGraphReactAgent(BaseAgent):
                                     }
                             except AssertionError as ae:
                                 if self.debug:
-                                    print(f"Failed matching the ai message, error message: {ae}")
+                                    print(
+                                        f"Failed matching the ai message, error message: {ae}"
+                                    )
                                 # cannot parse the message to JSON. return raw msg and ask for user input
-                                self.logger.info(f"Failed matching the ai message, error message: {ae}")
+                                self.logger.info(
+                                    f"Failed matching the ai message, error message: {ae}"
+                                )
                                 yield {
                                     "response_type": "text",
                                     "is_task_complete": False,
@@ -344,8 +346,12 @@ class GenericLangGraphReactAgent(BaseAgent):
                                 }
                             except Exception as e:
                                 if self.debug:
-                                    print(f"Failed matching the ai message, error message: {e}")
-                                self.logger.info(f"Failed matching the ai message, error message: {e}")
+                                    print(
+                                        f"Failed matching the ai message, error message: {e}"
+                                    )
+                                self.logger.info(
+                                    f"Failed matching the ai message, error message: {e}"
+                                )
                                 if content.startswith("<think>"):
                                     # There should be a better way to handle this through network but
                                     # Let's just settle with a simple print for now.
@@ -372,9 +378,11 @@ class GenericLangGraphReactAgent(BaseAgent):
                             tool_call_str = ""
                             for tool_call in message.tool_calls:
                                 tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
-                                tool_call_str += f"**Arguments**: {tool_call.get('args')}\n\n"
+                                tool_call_str += (
+                                    f"**Arguments**: {tool_call.get('args')}\n\n"
+                                )
 
-                            yield{
+                            yield {
                                 "response_type": "text",
                                 "is_task_complete": False,
                                 "require_user_input": False,
@@ -392,7 +400,7 @@ class GenericLangGraphReactAgent(BaseAgent):
                             ):
                                 continue
                             content = f"**Tool {tool_msg.name} responded**: {tool_msg.content}\n"
-                            yield{
+                            yield {
                                 "response_type": "text",
                                 "is_task_complete": False,
                                 "require_user_input": False,

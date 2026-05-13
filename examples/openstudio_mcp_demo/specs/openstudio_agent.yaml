@@ -37,7 +37,6 @@ model:
 
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: true
   debug: true
 
 tools:

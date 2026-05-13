@@ -54,7 +54,6 @@ model:
 runtime:
   agent_type: langgraph-chat
   transient_retry_attempts: 0
-  enable_metrics: false
   debug: false
 
 # Optional built-in default tools. Enable only when the subagent needs them.

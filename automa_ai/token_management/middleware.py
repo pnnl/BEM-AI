@@ -178,8 +178,7 @@ class TokenBudgetMiddleware(AgentMiddleware):
 
         Providers differ in when they attach usage metadata during streaming.
         This method only writes records when LangChain has a final message with
-        non-zero usage metadata; otherwise it returns `None` and leaves the
-        existing metrics collector behavior unchanged.
+        non-zero usage metadata; otherwise it returns `None`.
         """
         messages = self._response_messages(response)
         totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
