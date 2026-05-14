@@ -63,7 +63,6 @@ class RuntimeSpec(BaseModel):
 
     agent_type: GenericAgentType = GenericAgentType.LANGGRAPHCHAT
     transient_retry_attempts: int = 0
-    enable_metrics: bool = False
     debug: bool = False
 
 
@@ -166,6 +165,7 @@ class YamlAgentSpec(BaseModel):
     tools: dict[str, Any] | list[dict[str, Any]] | None = None
     blackboard: dict[str, Any] | None = None
     checkpointer: dict[str, Any] | str | None = None
+    budget: dict[str, Any] | None = None
 
     _base_dir: Path = Path.cwd()
 
@@ -260,12 +260,14 @@ class YamlAgentSpec(BaseModel):
                 self.blackboard, base_dir=self._base_dir
             ),
             "checkpointer_config": self.checkpointer,
+            "budget_config": _rebase_budget_config(
+                self.budget, base_dir=self._base_dir
+            ),
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
             "api_version": self.model.api_version,
             "model_max_retries": self.model.max_retries,
             "transient_retry_attempts": self.runtime.transient_retry_attempts,
-            "enable_metrics": self.runtime.enable_metrics,
             "debug": self.runtime.debug,
         }
 
@@ -410,6 +412,23 @@ def _rebase_blackboard_config(
     if isinstance(store, dict):
         _rebase_mapping_path(store, "base_dir", base_dir=base_dir)
     _rebase_mapping_path(resolved, "base_dir", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_budget_config(
+    budget: dict[str, Any] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a copy of budget config with local SQLite paths rebased."""
+    if budget is None:
+        return None
+
+    resolved = deepcopy(budget)
+    store = resolved.get("store")
+    if isinstance(store, dict) and store.get("backend", "sqlite") == "sqlite":
+        _rebase_mapping_path(store, "db_path", base_dir=base_dir)
 
     return resolved
 

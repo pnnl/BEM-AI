@@ -13,7 +13,10 @@ from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.common.agent_registry import A2AAgentServer, A2AServerManager
-from examples.travel_blackboard_demo.agents.common import load_blackboard_config, register_travel_tools
+from examples.travel_blackboard_demo.agents.common import (
+    load_blackboard_config,
+    register_travel_tools,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 MODEL_NAME = "llama3.1:8b"
 
 register_travel_tools()
+
 
 def load_card(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
@@ -130,7 +134,6 @@ def build_agent_factory(
         tools_config=tools_config,
         subagent_config=subagents,
         blackboard_config=blackboard_config,
-        enable_metrics=False,
         debug=False,
     )
 
@@ -148,19 +151,34 @@ async def main() -> None:
         card=flight_card,
         instructions=FLIGHT_INSTRUCTIONS,
         blackboard_config=bb_cfg,
-        tools_config={"tools": [{"type": "travel_flight_provider"}, {"type": "travel_booking_provider"}]},
+        tools_config={
+            "tools": [
+                {"type": "travel_flight_provider"},
+                {"type": "travel_booking_provider"},
+            ]
+        },
     )
     hotel_factory = build_agent_factory(
         card=hotel_card,
         instructions=HOTEL_INSTRUCTIONS,
         blackboard_config=bb_cfg,
-        tools_config={"tools": [{"type": "travel_hotel_provider"}, {"type": "travel_booking_provider"}]},
+        tools_config={
+            "tools": [
+                {"type": "travel_hotel_provider"},
+                {"type": "travel_booking_provider"},
+            ]
+        },
     )
     car_factory = build_agent_factory(
         card=car_card,
         instructions=CAR_INSTRUCTIONS,
         blackboard_config=bb_cfg,
-        tools_config={"tools": [{"type": "travel_car_provider"}, {"type": "travel_booking_provider"}]},
+        tools_config={
+            "tools": [
+                {"type": "travel_car_provider"},
+                {"type": "travel_booking_provider"},
+            ]
+        },
     )
 
     orchestrator_factory = build_agent_factory(

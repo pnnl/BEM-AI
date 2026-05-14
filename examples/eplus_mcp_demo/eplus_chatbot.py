@@ -13,7 +13,7 @@ from automa_ai.common.agent_registry import A2AServerManager, A2AAgentServer
 from energyplus_mcp_server.server import serve
 
 base_dir = Path(__file__).resolve().parent
-env_path = base_dir / '.env'
+env_path = base_dir / ".env"
 load_dotenv(dotenv_path=env_path)
 
 CHATBOT_SERVER_URL = os.environ.get("CHATBOT_SERVER_URL")
@@ -27,7 +27,7 @@ eplus_mcp_config = MCPServerConfig(
     host=eplus_mcp_host,
     port=eplus_mcp_port,
     serve=serve,
-    transport="sse"
+    transport="sse",
 )
 
 config_skill = {
@@ -46,7 +46,10 @@ inspect_skill = {
     "name": "Model Inspection",
     "description": "Inspect energy model components such as zones, surfaces, materials etc. ",
     "tags": ["model_inspect"],
-    "examples": ["Get materials from this IDF file", "Perform analysis on the schedules"],
+    "examples": [
+        "Get materials from this IDF file",
+        "Perform analysis on the schedules",
+    ],
 }
 
 modify_skill = {
@@ -54,7 +57,10 @@ modify_skill = {
     "name": "Model Modification",
     "description": "Modify data in the objects such as modify people objects, lights objects, and simulation controls",
     "tags": ["model_inspect"],
-    "examples": ["Get materials from this IDF file", "Perform analysis on the schedules"],
+    "examples": [
+        "Get materials from this IDF file",
+        "Perform analysis on the schedules",
+    ],
 }
 
 simulation_skill = {
@@ -124,8 +130,7 @@ chatbot = AgentFactory(
     chat_model=GenericLLM.OLLAMA,
     model_base_url=chat_bot_base_url,
     mcp_configs={"eplus_mcp": eplus_mcp_config},
-    enable_metrics=True,
-    debug=True
+    debug=True,
 )
 
 # Wrap chatbot agent in A2A agent server
@@ -144,7 +149,9 @@ mcp_manager.add_server(eplus_mcp_config)
 # Start network
 async def main():
     await mcp_manager.start_all()
-    print(f"✅ MCP Server started at http://{eplus_mcp_config.host}:{eplus_mcp_config.port}/")
+    print(
+        f"✅ MCP Server started at http://{eplus_mcp_config.host}:{eplus_mcp_config.port}/"
+    )
 
     await server_manager.start_all()
     print(f"✅ A2A Server started at {CHATBOT_SERVER_URL}")

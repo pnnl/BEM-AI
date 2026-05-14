@@ -36,7 +36,6 @@ model:
   name: llama3.1:8b
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: true
   debug: true
 """
 
@@ -94,6 +93,11 @@ tools:
   tools: []
 checkpointer:
   type: default
+budget:
+  max_input_tokens: 1000
+  store:
+    backend: sqlite
+    db_path: ./token_usage.db
 """
     )
 
@@ -109,6 +113,27 @@ checkpointer:
     assert kwargs["subagent_config"][0].name == "Math Agent"
     assert kwargs["tools_config"] == {"tools": []}
     assert kwargs["checkpointer_config"] == {"type": "default"}
+    assert kwargs["budget_config"]["max_input_tokens"] == 1000
+    assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
+
+
+def test_yaml_agent_spec_rebases_budget_sqlite_db_path(tmp_path: Path) -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+budget:
+  store:
+    backend: sqlite
+    db_path: ./ledger/token_usage.db
+""",
+        base_dir=tmp_path,
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["budget_config"]["store"]["db_path"] == str(
+        tmp_path / "ledger" / "token_usage.db"
+    )
 
 
 def test_yaml_agent_spec_loads_subagent_from_spec_path(tmp_path: Path) -> None:

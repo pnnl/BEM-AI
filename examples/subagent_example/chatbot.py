@@ -45,7 +45,6 @@ math_agent = AgentFactory(
     agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=GenericLLM.OLLAMA,
     model_name="qwen3:4b",
-    enable_metrics=True,
     debug=True,
 )
 
@@ -92,12 +91,13 @@ coordinator_agent = AgentFactory(
     agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=GenericLLM.OLLAMA,
     model_name="qwen3:4b",
-    subagent_config=[SubAgentSpec(
-        name=math_agent_card["name"],
-        description=math_agent_card["description"],
-        agent_card=math_agent_card,
-    )],
-    enable_metrics=True,
+    subagent_config=[
+        SubAgentSpec(
+            name=math_agent_card["name"],
+            description=math_agent_card["description"],
+            agent_card=math_agent_card,
+        )
+    ],
     debug=True,
 )
 

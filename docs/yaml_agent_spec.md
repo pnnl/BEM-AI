@@ -39,7 +39,6 @@ model:
 
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: false
   debug: false
 ```
 
@@ -178,7 +177,6 @@ model:
 runtime:
   agent_type: langgraph-chat
   transient_retry_attempts: 1
-  enable_metrics: true
   debug: true
 
 server:
@@ -215,6 +213,17 @@ skills:
 
 checkpointer:
   type: default
+
+budget:
+  max_input_tokens: 12000
+  reserve_output_tokens: 1200
+  max_output_tokens: 1000
+  max_model_calls_per_turn: 6
+  max_tool_calls_per_turn: 10
+  max_session_tokens: 100000
+  store:
+    backend: sqlite
+    db_path: ./token_usage.db
 ```
 
 ## Parameter Reference
@@ -278,8 +287,6 @@ Optional object.
   specs should normally use `langgraph-chat`.
 - `transient_retry_attempts`: Number of transient agent retry attempts. Defaults
   to `0`.
-- `enable_metrics`: Enables metrics collection when supported. Defaults to
-  `false`.
 - `debug`: Enables debug behavior in the underlying agent. Defaults to `false`.
 
 ### `server`
@@ -492,6 +499,48 @@ Redis examples:
 checkpointer:
   type: redis_plain
   redis_url: redis://localhost:6379
+```
+
+### `budget`
+
+Optional object passed through to `AgentFactory(..., budget_config=...)`.
+
+Token budgeting is enforced with LangChain agent middleware before and after
+model calls:
+
+- `max_input_tokens`: Approximate maximum input tokens allowed for one model
+  call. Conversation messages are quietly trimmed before the call when needed.
+  If the system prompt alone leaves no room for messages, the agent returns a
+  token-budget error instead of calling the model.
+- `reserve_output_tokens`: Tokens held back from `max_input_tokens` for the
+  model response.
+- `max_output_tokens`: Output-token cap passed into the model call through
+  `model_settings`. The default key is `max_tokens`.
+- `max_model_calls_per_turn`: Maximum model calls allowed during one agent run.
+- `max_tool_calls_per_turn`: Maximum tool calls allowed during one agent run.
+- `max_session_tokens`: Maximum persisted total tokens for one AUTOMA context.
+- `max_user_tokens`: Maximum persisted total tokens for one user.
+- `summarize_when_tokens`: Enables LangChain summarization middleware when the
+  message history reaches this approximate token count.
+- `keep_recent_messages`: Number of recent messages kept by summarization.
+- `store`: Optional token-usage persistence backend. SQLite is currently
+  implemented; the store interface is isolated so DynamoDB can be added without
+  changing agent middleware.
+
+```yaml
+budget:
+  max_input_tokens: 12000
+  reserve_output_tokens: 1200
+  max_output_tokens: 1000
+  max_model_calls_per_turn: 6
+  max_tool_calls_per_turn: 10
+  max_session_tokens: 100000
+  max_user_tokens: 500000
+  summarize_when_tokens: 10000
+  keep_recent_messages: 20
+  store:
+    backend: sqlite
+    db_path: ./token_usage.db
 ```
 
 ## Troubleshooting

@@ -234,7 +234,6 @@ def build_agent_factory(
         mcp_configs=mcp_configs,
         subagent_config=subagents,
         blackboard_config=blackboard_config,
-        enable_metrics=True,
         debug=True,
     )
 
@@ -275,9 +274,7 @@ async def main() -> None:
     lighting_card = load_card(BASE_DIR / "agent_cards" / "lighting_agent.json")
     simulation_card = load_card(BASE_DIR / "agent_cards" / "simulation_agent.json")
     output_card = load_card(BASE_DIR / "agent_cards" / "output_agent.json")
-    coordinator_card = load_card(
-        BASE_DIR / "agent_cards" / "orchestrator_agent.json"
-    )
+    coordinator_card = load_card(BASE_DIR / "agent_cards" / "orchestrator_agent.json")
 
     planner = build_agent_factory(
         card=planner_card,
