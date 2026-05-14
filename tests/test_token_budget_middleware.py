@@ -38,6 +38,23 @@ class FailingUsageStore:
         raise AssertionError("asummarize_usage should not be called")
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "max_input_tokens",
+        "max_output_tokens",
+        "max_model_calls_per_turn",
+        "max_tool_calls_per_turn",
+        "max_session_tokens",
+        "max_user_tokens",
+        "summarize_when_tokens",
+    ],
+)
+def test_token_budget_config_rejects_zero_for_optional_limits(field_name):
+    with pytest.raises(ValueError, match=f"{field_name} must be greater than 0"):
+        TokenBudgetConfig(**{field_name: 0})
+
+
 def test_token_budget_middleware_trims_messages_and_sets_output_limit():
     middleware = TokenBudgetMiddleware(
         budget=TokenBudgetConfig(

@@ -73,7 +73,7 @@ class TokenBudgetMiddleware(AgentMiddleware):
         keep long-running agent loops inside a context window.
         """
         request = self._apply_output_budget(request)
-        if not self.budget.max_input_tokens:
+        if self.budget.max_input_tokens is None:
             return request
 
         system_tokens = 0
@@ -101,7 +101,7 @@ class TokenBudgetMiddleware(AgentMiddleware):
 
     def _apply_output_budget(self, request: ModelRequest) -> ModelRequest:
         """Attach a provider output-token cap without overriding caller settings."""
-        if not self.budget.max_output_tokens:
+        if self.budget.max_output_tokens is None:
             return request
         settings = dict(request.model_settings or {})
         settings.setdefault(
@@ -296,7 +296,7 @@ def build_token_budget_middlewares(
             agent_name=agent_name,
         )
     ]
-    if budget.summarize_when_tokens:
+    if budget.summarize_when_tokens is not None:
         middlewares.append(
             SummarizationMiddleware(
                 model,
@@ -305,11 +305,11 @@ def build_token_budget_middlewares(
                 token_counter=count_tokens_approximately,
             )
         )
-    if budget.max_model_calls_per_turn:
+    if budget.max_model_calls_per_turn is not None:
         middlewares.append(
             ModelCallLimitMiddleware(run_limit=budget.max_model_calls_per_turn)
         )
-    if budget.max_tool_calls_per_turn:
+    if budget.max_tool_calls_per_turn is not None:
         middlewares.append(
             ToolCallLimitMiddleware(run_limit=budget.max_tool_calls_per_turn)
         )

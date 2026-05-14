@@ -40,20 +40,27 @@ class TokenBudgetConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_positive_limits(self) -> "TokenBudgetConfig":
-        fields = [
+        optional_limits = [
             "max_input_tokens",
-            "reserve_output_tokens",
             "max_output_tokens",
             "max_model_calls_per_turn",
             "max_tool_calls_per_turn",
             "max_session_tokens",
             "max_user_tokens",
             "summarize_when_tokens",
+        ]
+        for field_name in optional_limits:
+            value = getattr(self, field_name)
+            if value is not None and value <= 0:
+                raise ValueError(f"{field_name} must be greater than 0")
+
+        non_negative_fields = [
+            "reserve_output_tokens",
             "keep_recent_messages",
         ]
-        for field_name in fields:
+        for field_name in non_negative_fields:
             value = getattr(self, field_name)
-            if value is not None and value < 0:
+            if value < 0:
                 raise ValueError(f"{field_name} must be greater than or equal to 0")
         if self.max_input_tokens is not None:
             prompt_budget = self.max_input_tokens - self.reserve_output_tokens
