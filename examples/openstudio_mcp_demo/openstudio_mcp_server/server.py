@@ -22,6 +22,7 @@ from examples.openstudio_mcp_demo.openstudio_mcp_server.runtime.artifact_store i
 from examples.openstudio_mcp_demo.openstudio_mcp_server.runtime.job_manager import JobManager
 from examples.openstudio_mcp_demo.openstudio_mcp_server.runtime.measure_registry import MeasureRegistry
 from examples.openstudio_mcp_demo.openstudio_mcp_server.runtime.workspace_manager import WorkspaceManager
+from examples.openstudio_mcp_demo.openstudio_mcp_server.sdk_docs import OpenStudioSdkDocLookup
 from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.model import register_model_tools
 from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.results import register_results_tools
 from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.schemas import (
@@ -38,6 +39,7 @@ from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.schemas import (
     error_payload,
     success_payload,
 )
+from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.sdk_docs import register_sdk_doc_tools
 from examples.openstudio_mcp_demo.openstudio_mcp_server.tools.sim import register_sim_tools
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -121,6 +123,7 @@ class OpenStudioService:
             base_dir=BASE_DIR,
         )
         self.openstudio_path = os.getenv("OPENSTUDIO_PATH", "").strip()
+        self.sdk_docs = OpenStudioSdkDocLookup.from_env()
         self._sim_tasks: dict[str, asyncio.Task] = {}
         self.model_states: dict[str, OpenStudioModelState] = {}
 
@@ -436,6 +439,53 @@ class OpenStudioService:
             tables = []
         return success_payload(summary_text=summary_text, tables=tables)
 
+    def sdk_docs_route(self, *, query: str, limit: int = 6) -> dict[str, Any]:
+        return self.sdk_docs.route(query=query, limit=limit)
+
+    def sdk_docs_find_classes(
+        self,
+        *,
+        query: str,
+        include_detail: bool = False,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        return self.sdk_docs.find_classes(
+            query=query,
+            include_detail=include_detail,
+            limit=limit,
+        )
+
+    def sdk_docs_list_methods(
+        self,
+        *,
+        class_name: str,
+        keyword: str | None = None,
+        limit: int = 80,
+    ) -> dict[str, Any]:
+        return self.sdk_docs.list_methods(
+            class_name=class_name,
+            keyword=keyword,
+            limit=limit,
+        )
+
+    def sdk_docs_get_method(self, *, class_name: str, method_name: str) -> dict[str, Any]:
+        return self.sdk_docs.get_method(class_name=class_name, method_name=method_name)
+
+    def sdk_docs_search_methods(
+        self,
+        *,
+        keyword: str,
+        class_filter: str | None = None,
+        include_detail: bool = False,
+        limit: int = 40,
+    ) -> list[dict[str, Any]]:
+        return self.sdk_docs.search_methods(
+            keyword=keyword,
+            class_filter=class_filter,
+            include_detail=include_detail,
+            limit=limit,
+        )
+
     def _resolve_model_path(self, model_uri: str) -> Path:
         if model_uri.startswith("file://"):
             parsed = urlparse(model_uri)
@@ -724,6 +774,7 @@ def create_server(
     register_model_tools(mcp, service)
     register_sim_tools(mcp, service)
     register_results_tools(mcp, service)
+    register_sdk_doc_tools(mcp, service)
 
     return mcp
 

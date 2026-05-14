@@ -16,6 +16,8 @@ It provides:
 - `model_*` tools for model lifecycle operations.
 - `sim_*` tools for asynchronous OpenStudio simulation execution.
 - `results_*` tools for SQL-backed post-processing and summarization.
+- `sdk_docs_*` tools for deterministic lookup against local OpenStudio SDK HTML
+  documentation.
 
 The intended split is:
 
@@ -23,6 +25,8 @@ The intended split is:
   results retrieval.
 - `run_python` + OpenStudio Python SDK = flexible local model-inspection and
   model-editing workspace.
+- `sdk_docs_*` = exact API lookup for SDK constructors, getters, setters,
+  parameter types, units, and warnings before drafting scripts.
 - Skills = reusable deterministic modeling workflows and guardrails.
 
 ## Architecture
@@ -37,7 +41,7 @@ The example has four layers:
 
 2. MCP server layer
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/server.py`
-- Registers model/sim/results MCP tools.
+- Registers model/sim/results/sdk-docs MCP tools.
 - Uses standard MCP success/error envelope.
 
 3. Runtime/state layer
@@ -96,6 +100,31 @@ The example has four layers:
 
 `results_summarize(data, format)` returns readable summary text/tables.
 
+### SDK documentation tools
+
+The optional `sdk_docs_*` tools inspect local Doxygen-generated OpenStudio SDK
+HTML documentation. Set `OPENSTUDIO_SDK_DOCS_DIR` to the directory containing
+`classopenstudio_1_1model_*.html` files.
+
+- `sdk_docs_route(query)`: identify likely SDK wiki packs and OpenStudio model
+  classes for an SDK scripting request.
+- `sdk_docs_find_classes(query)`: find model SDK classes by name or keyword.
+- `sdk_docs_list_methods(class_name, keyword)`: list methods on a class.
+- `sdk_docs_get_method(class_name, method_name)`: return exact signature,
+  docs, unit notes, and a local source URL for a method.
+- `sdk_docs_search_methods(keyword, class_filter)`: search method names across
+  model classes.
+
+You can build a local cache summary for inspection:
+
+```bash
+python3 examples/openstudio_mcp_demo/scripts/build_sdk_doc_index.py \
+  --docs-dir /path/to/openstudio-sdk-html \
+  --output examples/openstudio_mcp_demo/.sdk_doc_index.json
+```
+
+The generated cache is ignored by git.
+
 ## Setup
 
 1. Copy `sample.env` to `.env`.
@@ -104,6 +133,9 @@ The example has four layers:
 4. Ensure the Python executable configured in `specs/openstudio_agent.yaml` can
    import the OpenStudio Python SDK when using SDK inspection/editing. If needed,
    update `tools.tools[0].config.python_executable`.
+5. Optional but recommended: set `OPENSTUDIO_SDK_DOCS_DIR` to local OpenStudio
+   SDK HTML documentation so the agent can verify exact SDK APIs before writing
+   scripts.
 
 ## YAML Agent Spec
 
@@ -128,6 +160,7 @@ The spec points to:
 - `CHAT_BOT_MODEL_BASE_URL`
 - `OPENSTUDIO_MCP_HOST`
 - `OPENSTUDIO_MCP_PORT`
+- `OPENSTUDIO_SDK_DOCS_DIR`
 
 ## Run
 
@@ -191,7 +224,9 @@ The spec points to:
 - `examples/openstudio_mcp_demo/architecture_diagram.md`: Sponsor-friendly architecture/workflow diagrams.
 - `examples/openstudio_mcp_demo/ADVANCED_USER_GUIDE.md`: Advanced extension guide for measures, policies, and skills.
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/server.py`: MCP server entrypoint.
-- `examples/openstudio_mcp_demo/openstudio_mcp_server/tools/`: model/sim/results tools.
+- `examples/openstudio_mcp_demo/openstudio_mcp_server/sdk_docs/`: local SDK HTML parser and lookup helper.
+- `examples/openstudio_mcp_demo/openstudio_mcp_server/tools/`: model/sim/results/sdk-docs tools.
 - `examples/openstudio_mcp_demo/openstudio_mcp_server/runtime/`: workspace, artifact, job managers.
+- `examples/openstudio_mcp_demo/scripts/build_sdk_doc_index.py`: optional SDK doc index builder.
 - `examples/openstudio_mcp_demo/skills/hvac_sizing_assistant.md`: skill prompt contract.
 - `examples/openstudio_mcp_demo/policy/*.yaml`: allowlist and runtime gates.
