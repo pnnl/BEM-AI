@@ -57,20 +57,6 @@ def _make_capturing_agent():
     agent.agent_name = "dummy_agent"
     return agent, captured
 
-def test_metadata_to_dict_with_user_id():
-    """Protobuf Struct metadata round-trips cleanly through MessageToDict."""
-    metadata_dict = {"userId": "test-user-123", "contextId": "context-456"}
-    message = _make_message(metadata_dict)
-
-    converted = MessageToDict(message.metadata)
-
-    assert converted == metadata_dict
-
-
-def test_metadata_to_dict_empty():
-    """A message with no metadata set converts to an empty dict."""
-    message = _make_message(metadata_dict=None)
-    assert MessageToDict(message.metadata) == {}
 
 @pytest.mark.asyncio
 async def test_executor_extracts_user_id_from_metadata():

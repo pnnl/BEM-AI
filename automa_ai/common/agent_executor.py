@@ -88,14 +88,9 @@ class GenericAgentExecutor(AgentExecutor):
         if error:
             raise InvalidParamsError()
 
-        metadata = context.message.metadata
-
-        if metadata:
-            try:
-                metadata = MessageToDict(metadata)
-            except Exception:
-                metadata = {}
-        else:
+        try:
+            metadata = MessageToDict(context.message.metadata)
+        except Exception:
             metadata = {}
 
         query = context.get_user_input()
