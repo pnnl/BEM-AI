@@ -6,6 +6,7 @@ from automa_ai.tools.registry import (
     build_langchain_tools,
 )
 from automa_ai.tools.decorators import tool
+from automa_ai.tools.run_command import build_run_command_tool
 from automa_ai.tools.run_python import build_run_python_tool
 from automa_ai.tools.web_search import build_web_search_tool
 from automa_ai.tools.yaml_agent import build_yaml_agent_tool
@@ -14,6 +15,7 @@ import logging
 
 for tool_type, builder in {
     "web_search": build_web_search_tool,
+    "run_command": build_run_command_tool,
     "run_python": build_run_python_tool,
     "yaml_agent": build_yaml_agent_tool,
 }.items():
