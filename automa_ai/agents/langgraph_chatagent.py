@@ -131,6 +131,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._memory_writer_task: asyncio.Task | None = None
 
     def _checkpoint_thread_id(self, session_id: str) -> str:
+        if AgentCoreMemorySaver is not None and isinstance(self.checkpointer, AgentCoreMemorySaver):
+            return session_id
         return f"{self.agent_name}:{session_id}"
 
     def close(self) -> None:
