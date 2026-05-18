@@ -62,6 +62,7 @@ BEM-AI/
 │   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
 │   │   └── adk_agent.py                # Google ADK based agent
 │   ├── client/                         # Under development
+│   ├── scheduler/                      # Session-scoped scheduled prompt loops
 │   ├── mcp_servers/                    # MCP library
 │   ├── network/                        # Network
 │   ├── common/                         # Common utilities
@@ -199,6 +200,34 @@ If either command is unavailable, startup fails with a clear error and tells you
 - Choose `redis_plain` when your deployment target is standard Redis or ElastiCache and you do not specifically need Redis Stack modules.
 - Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
 - Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
+
+### Scheduled prompt loops
+
+AUTOMA-AI includes a session-scoped scheduler foundation for Claude-style recurring prompts.
+The current implementation supports fixed intervals, task listing/cancellation primitives,
+seven-day task expiry, slash-command parsing helpers, and runners for both local agents and
+A2A clients.
+
+```python
+from automa_ai.scheduler import (
+    LoopScheduler,
+    build_local_agent_loop_runner,
+    parse_interval,
+)
+
+scheduler = LoopScheduler(build_local_agent_loop_runner(agent))
+scheduler.create_loop(
+    prompt="check whether the simulation finished",
+    interval=parse_interval("5m"),
+    context_id="session-1",
+)
+
+await scheduler.run_due_tasks()
+```
+
+Default loop prompts can be stored in `.automa/loop.md` at the project root or in
+`~/.automa/loop.md`. The command parser currently recognizes `/loop`, `/tasks`, and `/cancel`.
+Dynamic self-paced scheduling and UI wiring are intentionally left for later integration work.
 
 ### A2A Server Configuration
 
