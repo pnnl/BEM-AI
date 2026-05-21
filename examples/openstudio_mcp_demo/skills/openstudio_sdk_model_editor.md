@@ -159,6 +159,10 @@ the Python script until all matching packs are loaded.
 - Load `sdk_hvac` for air-loop topology, plant-loop topology, zone equipment,
   thermostats, setpoint managers, coils, fans, outdoor air controllers, sizing
   objects, HVAC availability schedules, and served-zone summaries.
+- Load `openstudio_vav_reheat_system_creator` in addition to `sdk_hvac` when
+  the user asks to add, create, prototype, or draft a multi-zone VAV reheat
+  system. That skill owns the VAV system creation sequence and required
+  clarification gates.
 - Load both `sdk_hvac` and `sdk_spaces_zones_loads` when HVAC information needs
   to be summarized by space, thermal zone, or served zone.
 - Load `sdk_simulation_results` only to explain or review OpenStudio simulation
