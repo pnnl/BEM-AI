@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 
 import pytest
@@ -118,17 +119,36 @@ def test_validate_command_policy_allows_limited_git_forms(tmp_path) -> None:
 
     assert validate_command_policy(["git", "status", "--short"], config) == [
         "git",
+        "--no-pager",
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "diff.external=",
         "status",
         "--short",
     ]
     assert validate_command_policy(["git", "diff", "--stat"], config) == [
         "git",
+        "--no-pager",
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "diff.external=",
         "diff",
+        "--no-ext-diff",
+        "--no-textconv",
         "--stat",
     ]
     assert validate_command_policy(["git", "diff", "--name-only"], config) == [
         "git",
+        "--no-pager",
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "diff.external=",
         "diff",
+        "--no-ext-diff",
+        "--no-textconv",
         "--name-only",
     ]
 
@@ -172,6 +192,9 @@ def test_run_command_config_rejects_unknown_runner_or_profile() -> None:
 async def test_run_command_rg_excludes_blocked_files_even_with_broad_glob(
     tmp_path,
 ) -> None:
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required for rg execution coverage")
+
     (tmp_path / ".env").write_text("SECRET=hidden-root\n", encoding="utf-8")
     nested = tmp_path / "nested"
     nested.mkdir()

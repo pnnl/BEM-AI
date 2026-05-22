@@ -46,6 +46,8 @@ def validate_command_policy(argv: list[str], config: RunCommandToolConfig) -> li
 
     if command == "rg":
         return _append_rg_blocked_file_excludes(argv, config)
+    if command == "git":
+        return _normalize_git_argv(argv)
     return argv
 
 
@@ -200,6 +202,20 @@ def _validate_git(argv: list[str]) -> None:
             "Only `git status`, `git status --short`, `git diff --stat`, "
             "and `git diff --name-only` are allowed."
         )
+
+
+def _normalize_git_argv(argv: list[str]) -> list[str]:
+    """Disable git helpers/config behavior that can launch external commands."""
+    prefix = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external="]
+    if argv[1] == "diff":
+        return [
+            *prefix,
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            *argv[2:],
+        ]
+    return [*prefix, *argv[1:]]
 
 
 def _validate_workspace_path(

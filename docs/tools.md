@@ -135,7 +135,8 @@ Current `exploration` profile:
   separate argv tokens, such as `-g "*.py"` and `--max-count 10`; combined
   forms are intentionally unsupported.
 - Allows only `git status`, `git status --short`, `git diff --stat`, and
-  `git diff --name-only`
+  `git diff --name-only`. Allowed Git forms are normalized with pager, external
+  diff, and textconv helpers disabled before execution.
 - Rejects commands outside the profile, path traversal outside `workspace_root`,
   blocked sensitive paths, and unsupported flags
 - Adds `rg` negative glob rules for `blocked_file_names` after user-provided
