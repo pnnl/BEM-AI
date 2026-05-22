@@ -50,8 +50,8 @@ class FakeClient:
 
     async def send_streaming_message(self, message, context_id=None):
         self.calls.append({"message": message, "context_id": context_id})
-        yield {"kind": "status-update"}
-        yield {"kind": "artifact-update"}
+        yield {"result": {"kind": "status-update"}}
+        yield {"result": {"kind": "artifact-update"}}
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,9 @@ async def test_a2a_loop_runner_reuses_context_and_emits_chunks() -> None:
     scheduler = LoopScheduler(
         build_a2a_loop_runner(
             client,
-            on_chunk=lambda task, chunk: chunks.append((task.id, chunk["kind"])),
+            on_chunk=lambda task, chunk: chunks.append(
+                (task.id, chunk["result"]["kind"])
+            ),
         ),
         now_provider=clock,
     )

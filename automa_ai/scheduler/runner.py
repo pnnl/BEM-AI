@@ -49,7 +49,8 @@ class LoopScheduler:
             raise ValueError("prompt cannot be empty")
         if interval <= timedelta(0):
             raise ValueError("interval must be greater than zero")
-        if not context_id.strip():
+        context_id = context_id.strip()
+        if not context_id:
             raise ValueError("context_id cannot be empty")
 
         now = self._current_time()
