@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage
@@ -115,6 +116,56 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
             "automa_context_id": "session-1",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_invoke_records_agent_turn_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+    captured: dict = {}
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            captured["payload"] = payload
+            captured["config"] = config
+            return {"ok": True}
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke(
+        "hello",
+        "session-1",
+        task_id="task-1",
+        user_id="user-1",
+    )
+
+    assert result == {"ok": True}
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["type"] for record in records] == [
+        "span_start",
+        "event",
+        "event",
+        "span_end",
+    ]
+    assert records[0]["name"] == "agent.turn"
+    assert records[0]["attributes"]["agent.name"] == "test-agent"
+    assert records[1]["attributes"]["message.content"]["length"] == 5
+    assert records[-1]["status"] == "ok"
 
 
 @pytest.mark.asyncio

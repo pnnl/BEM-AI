@@ -166,6 +166,7 @@ class YamlAgentSpec(BaseModel):
     blackboard: dict[str, Any] | None = None
     checkpointer: dict[str, Any] | str | None = None
     budget: dict[str, Any] | None = None
+    telemetry: dict[str, Any] | str | None = None
 
     _base_dir: Path = Path.cwd()
 
@@ -262,6 +263,9 @@ class YamlAgentSpec(BaseModel):
             "checkpointer_config": self.checkpointer,
             "budget_config": _rebase_budget_config(
                 self.budget, base_dir=self._base_dir
+            ),
+            "telemetry_config": _rebase_telemetry_config(
+                self.telemetry, base_dir=self._base_dir
             ),
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
@@ -430,6 +434,25 @@ def _rebase_budget_config(
     if isinstance(store, dict) and store.get("backend", "sqlite") == "sqlite":
         _rebase_mapping_path(store, "db_path", base_dir=base_dir)
 
+    return resolved
+
+
+def _rebase_telemetry_config(
+    telemetry: dict[str, Any] | str | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | str | None:
+    """Return telemetry config with local JSONL paths rebased.
+
+    YAML specs are often launched from a different working directory than the
+    spec file itself. Rebasing here keeps telemetry output colocated with the
+    example/spec unless the user provided an absolute path.
+    """
+    if telemetry is None or isinstance(telemetry, str):
+        return telemetry
+
+    resolved = deepcopy(telemetry)
+    _rebase_mapping_path(resolved, "path", base_dir=base_dir)
     return resolved
 
 

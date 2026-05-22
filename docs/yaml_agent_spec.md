@@ -543,6 +543,27 @@ budget:
     db_path: ./token_usage.db
 ```
 
+### `telemetry`
+
+Optional object or string passed through to
+`AgentFactory(..., telemetry_config=...)`.
+
+Local JSONL telemetry records trace/span/event shaped data without requiring an
+external collector:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+  max_content_chars: 4000
+```
+
+Relative `path` values are resolved from the YAML file's directory. See
+`docs/telemetry.md` for privacy modes and the AWS AgentCore/OpenTelemetry
+direction.
+
 ## Troubleshooting
 
 `agent_card.supportedInterfaces must contain at least one interface.`

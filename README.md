@@ -154,6 +154,25 @@ tools:
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
 See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_demo.py` for runnable examples.
 
+### Agent telemetry
+
+`LANGGRAPHCHAT` agents can emit local-first telemetry without requiring an
+external observability backend. The current recorder writes OpenTelemetry-shaped
+span/event records to JSONL, and the API is designed so a future optional
+OpenTelemetry/AWS AgentCore recorder can export the same data.
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+```
+
+Then pass this to `AgentFactory(..., telemetry_config=telemetry)` or include it
+in a YAML agent spec. See `docs/telemetry.md` for the schema, privacy modes, and
+AgentCore direction.
+
 ### Checkpointer configuration
 
 `LANGGRAPHCHAT` agents can also be configured with an explicit checkpointer backend through `AgentFactory`.
