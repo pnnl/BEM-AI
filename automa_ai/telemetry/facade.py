@@ -27,14 +27,16 @@ def _new_id() -> str:
 
 
 def _now_ns() -> int:
-    """Use monotonic-ish wall clock nanoseconds for duration math."""
-    return time.time_ns()
+    """Use monotonic nanoseconds for duration math."""
+    return time.monotonic_ns()
 
 
 def _now_iso() -> str:
     """Return an ISO-like UTC timestamp for JSONL readability."""
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + (
-        f".{time.time_ns() % 1_000_000_000:09d}Z"
+    wall_time_ns = time.time_ns()
+    wall_time_s = wall_time_ns // 1_000_000_000
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(wall_time_s)) + (
+        f".{wall_time_ns % 1_000_000_000:09d}Z"
     )
 
 
