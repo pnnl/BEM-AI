@@ -123,16 +123,23 @@ Configuration fields:
 - `timeout_s` (default `20`)
 - `max_stdout_chars`, `max_stderr_chars`
 - `workspace_root`
-- `blocked_path_globs`
+- `blocked_file_names`: exact sensitive file names blocked from direct path
+  access and excluded from `rg` traversal
 
 Current `exploration` profile:
 - Allows `pwd`
-- Allows bounded `ls`, `cat`, `head`, `tail`, and `sed -n <start>,<end>p`
-- Allows bounded `rg` search/file-list forms
+- Allows bounded `ls`, `cat`, `head`, `tail`, and `sed -n <start>,<end>p`.
+  `head` and `tail` accept only `-n <N>` as separate argv tokens; shorthand
+  forms such as `-n10` and `-10` are intentionally unsupported.
+- Allows bounded `rg` search/file-list forms. Options that take values must use
+  separate argv tokens, such as `-g "*.py"` and `--max-count 10`; combined
+  forms are intentionally unsupported.
 - Allows only `git status`, `git status --short`, `git diff --stat`, and
   `git diff --name-only`
 - Rejects commands outside the profile, path traversal outside `workspace_root`,
   blocked sensitive paths, and unsupported flags
+- Adds `rg` negative glob rules for `blocked_file_names` after user-provided
+  globs, so broad includes such as `-g "*"` do not re-include blocked files
 - Does not interpret shell operators, redirection, or command chaining because
   the tool accepts `argv`, not shell text
 

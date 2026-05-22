@@ -24,13 +24,13 @@ class LocalSubprocessRunner:
 
     def __init__(self, config: RunCommandToolConfig):
         self.config = config
+        self.workspace_root = Path(config.workspace_root).resolve()
 
     async def run(self, argv: list[str]) -> RunCommandResult:
         warnings: list[str] = []
-        workspace_root = Path(self.config.workspace_root or os.getcwd()).resolve()
         process = await asyncio.create_subprocess_exec(
             *argv,
-            cwd=str(workspace_root),
+            cwd=str(self.workspace_root),
             env=_build_subprocess_env(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -39,7 +39,9 @@ class LocalSubprocessRunner:
             stdout_b, stderr_b = await asyncio.wait_for(
                 process.communicate(), timeout=self.config.timeout_s
             )
-            exit_code = process.returncode
+            if process.returncode is None:
+                await process.wait()
+            exit_code = process.returncode if process.returncode is not None else 1
             success = exit_code == 0
         except asyncio.TimeoutError:
             process.kill()
@@ -48,6 +50,12 @@ class LocalSubprocessRunner:
             exit_code = 124
             success = False
             warnings.append("Execution timed out and the process was terminated.")
+        except BaseException:
+            # Cancellation bypasses Exception; still clean up the child process.
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
 
         stdout = stdout_b.decode("utf-8", errors="replace")
         stderr = stderr_b.decode("utf-8", errors="replace")

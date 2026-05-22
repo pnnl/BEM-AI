@@ -90,10 +90,7 @@ class RunCommandTool(BaseDefaultTool):
         }
 
 
-def build_run_command_tool(
-    config: dict[str, Any], _runtime_deps: Any
-) -> RunCommandTool:
+def build_run_command_tool(config: dict[str, Any], runtime_deps: Any) -> RunCommandTool:
+    _ = runtime_deps
     parsed = RunCommandToolConfig.model_validate(config)
-    if parsed.runner != "local_subprocess":
-        raise ValueError(f"Unsupported run_command runner: {parsed.runner}")
     return RunCommandTool(parsed)

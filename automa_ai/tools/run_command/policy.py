@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from automa_ai.tools.run_command.config import RunCommandToolConfig
 
@@ -22,7 +22,7 @@ def validate_command_policy(argv: list[str], config: RunCommandToolConfig) -> li
     if any(not isinstance(part, str) or not part for part in argv):
         raise CommandPolicyViolationError("argv must contain only non-empty strings.")
 
-    workspace_root = Path(config.workspace_root or ".").resolve()
+    workspace_root = Path(config.workspace_root).resolve()
     command = argv[0]
 
     if command == "pwd":
@@ -44,6 +44,8 @@ def validate_command_policy(argv: list[str], config: RunCommandToolConfig) -> li
             f"Command is not allowed in exploration profile: {command}"
         )
 
+    if command == "rg":
+        return _append_rg_blocked_file_excludes(argv, config)
     return argv
 
 
@@ -83,9 +85,7 @@ def _validate_path_only_command(
         raise CommandPolicyViolationError(f"{argv[0]} requires at least one path.")
     for path in paths:
         if path.startswith("-"):
-            raise CommandPolicyViolationError(
-                f"Unsupported {argv[0]} argument: {path}"
-            )
+            raise CommandPolicyViolationError(f"Unsupported {argv[0]} argument: {path}")
         _validate_workspace_path(path, workspace_root, config)
 
 
@@ -208,14 +208,16 @@ def _validate_workspace_path(
     config: RunCommandToolConfig,
 ) -> None:
     path = Path(raw_path)
-    resolved = path.resolve() if path.is_absolute() else (workspace_root / path).resolve()
+    resolved = (
+        path.resolve() if path.is_absolute() else (workspace_root / path).resolve()
+    )
     if resolved != workspace_root and workspace_root not in resolved.parents:
         raise CommandPolicyViolationError(
             f"Path must stay within workspace_root: {raw_path}"
         )
     relative = resolved.relative_to(workspace_root)
-    relative_text = relative.as_posix() or "."
-    if _matches_blocked_path(relative_text, config.blocked_path_globs):
+    # Block by path component so nested sensitive files such as nested/.env fail.
+    if _contains_blocked_file_name(relative, config.blocked_file_names):
         raise CommandPolicyViolationError(f"Path is blocked by policy: {raw_path}")
 
 
@@ -223,13 +225,59 @@ def _validate_glob(glob: str, config: RunCommandToolConfig) -> None:
     if not glob or "\x00" in glob:
         raise CommandPolicyViolationError("rg glob must be a non-empty string.")
     normalized = glob.lstrip("!")
-    if _matches_blocked_path(normalized, config.blocked_path_globs):
+    # Reject explicit includes of blocked files; broad includes are handled below.
+    if _glob_targets_blocked_file_name(normalized, config.blocked_file_names):
         raise CommandPolicyViolationError(f"Glob is blocked by policy: {glob}")
 
 
-def _matches_blocked_path(path_text: str, blocked_globs: list[str]) -> bool:
-    path = PurePosixPath(path_text)
-    return any(path.match(pattern) for pattern in blocked_globs)
+def _contains_blocked_file_name(path: Path, blocked_file_names: list[str]) -> bool:
+    """Return true when any path component is an exact blocked file name."""
+    return any(part in blocked_file_names for part in path.parts)
+
+
+def _glob_targets_blocked_file_name(glob: str, blocked_file_names: list[str]) -> bool:
+    """Return true for globs that explicitly name a blocked file."""
+    parts = Path(glob).parts
+    return any(part in blocked_file_names for part in parts)
+
+
+def _append_rg_blocked_file_excludes(
+    argv: list[str],
+    config: RunCommandToolConfig,
+) -> list[str]:
+    if not config.blocked_file_names:
+        return argv
+
+    insert_at = _rg_blocked_exclude_insert_index(argv)
+    excludes: list[str] = []
+    for name in config.blocked_file_names:
+        # ripgrep applies later globs last, so append excludes after user globs.
+        excludes.extend(["-g", f"!{name}", "-g", f"!**/{name}"])
+    return [*argv[:insert_at], *excludes, *argv[insert_at:]]
+
+
+def _rg_blocked_exclude_insert_index(argv: list[str]) -> int:
+    """Find the position after rg option tokens and before pattern/path tokens."""
+    if len(argv) >= 2 and argv[1] == "--files":
+        index = 2
+        while index < len(argv):
+            arg = argv[index]
+            if arg in {"-g", "--glob"}:
+                index += 2
+            elif arg.startswith("-"):
+                index += 1
+            else:
+                break
+        return index
+
+    index = 1
+    while index < len(argv) and argv[index].startswith("-"):
+        arg = argv[index]
+        if arg in {"-g", "--glob", "--max-count"}:
+            index += 2
+        else:
+            index += 1
+    return index
 
 
 def _validate_positive_int(value: str, *, option: str) -> None:
@@ -238,6 +286,7 @@ def _validate_positive_int(value: str, *, option: str) -> None:
 
 
 def _is_line_range_expr(expr: str) -> bool:
+    """Accept only sed print ranges, for example 10,20p."""
     if not expr.endswith("p"):
         return False
     body = expr[:-1]
