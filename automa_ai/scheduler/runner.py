@@ -147,9 +147,12 @@ class LoopScheduler:
     @staticmethod
     def _next_scheduled_time(task: LoopTask, now: datetime) -> datetime:
         next_run_at = task.next_run_at
-        while next_run_at <= now:
-            next_run_at += task.interval
-        return next_run_at
+        if next_run_at > now:
+            return next_run_at
+
+        overdue = now - next_run_at
+        intervals_to_advance = overdue // task.interval + 1
+        return next_run_at + intervals_to_advance * task.interval
 
     @staticmethod
     def _expire_if_needed(task: LoopTask, now: datetime) -> None:
