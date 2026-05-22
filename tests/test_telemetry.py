@@ -8,6 +8,7 @@ from langchain_core.tools import StructuredTool
 
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.telemetry import (
+    Telemetry,
     build_telemetry,
     current_span_id,
     current_trace_id,
@@ -106,6 +107,24 @@ def test_noop_recorder_does_not_create_path(tmp_path) -> None:
 def test_otel_recorder_is_explicitly_optional() -> None:
     with pytest.raises(ImportError, match="OpenTelemetry"):
         build_telemetry({"enabled": True, "recorder": "otel"})
+
+
+def test_span_start_failure_restores_context() -> None:
+    class FailingRecorder:
+        def record(self, item):
+            raise OSError("cannot write telemetry")
+
+    telemetry = Telemetry(
+        config=TelemetryConfig(enabled=True),
+        recorder=FailingRecorder(),
+    )
+
+    with pytest.raises(OSError, match="cannot write telemetry"):
+        with telemetry.span("agent.turn"):
+            pass
+
+    assert current_trace_id() is None
+    assert current_span_id() is None
 
 
 def test_telemetry_config_from_string() -> None:
