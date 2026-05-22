@@ -59,4 +59,7 @@ def parse_interval(value: str) -> timedelta:
 
     unit = match.group("unit").lower()
     seconds = amount * _UNIT_SECONDS[unit]
-    return timedelta(seconds=seconds)
+    try:
+        return timedelta(seconds=seconds)
+    except OverflowError as exc:
+        raise IntervalParseError("interval is too large") from exc
