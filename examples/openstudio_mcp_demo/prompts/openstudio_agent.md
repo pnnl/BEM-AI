@@ -55,6 +55,23 @@ Use `results_*` tools after simulation artifacts are available:
 - `results_summarize`: convert queried result payloads into concise readable
   summaries or tables.
 
+### MCP `sdk_docs_*`
+
+Use `sdk_docs_*` tools to retrieve exact OpenStudio SDK API facts from the
+local SDK HTML documentation. These tools are for SDK script planning, not for
+simulation or result retrieval.
+
+- `sdk_docs_route`: map a user request to likely SDK wiki packs and SDK
+  classes.
+- `sdk_docs_find_classes`: find OpenStudio model classes by class name or
+  keyword.
+- `sdk_docs_list_methods`: list methods available on a class, optionally
+  filtered by keyword.
+- `sdk_docs_get_method`: retrieve an exact method signature, parameter list,
+  return type, documentation notes, and local source URL.
+- `sdk_docs_search_methods`: search method names across OpenStudio model
+  classes when the target class is uncertain.
+
 ### `run_python` + OpenStudio Python SDK
 
 Use `run_python` only when model inspection or model editing requires a
@@ -74,13 +91,23 @@ contract, and safety rules.
    load `openstudio_sdk_model_editor` and follow that skill for script drafting,
    SDK context-pack selection, safety rules, approval, execution, and result
    reporting.
-5. If the task requires iterative editing and simulation, use this loop:
+5. Before drafting OpenStudio SDK scripts, use `sdk_docs_route` to identify
+   likely wiki packs and classes. Use `sdk_docs_get_method` for constructors,
+   getters, setters, unit-sensitive methods, and methods that previously failed
+   or are not already covered by the loaded SDK wiki examples.
+6. If the C++ SDK docs do not show a Python collection helper or generated
+   binding method, use a small Python introspection snippet during script
+   planning, such as `dir(model)` or `dir(openstudio.model.ClassName)`, before
+   assuming the Python method spelling.
+   If local SDK docs are not configured, say so and use loaded wiki examples
+   plus targeted introspection instead of guessing.
+7. If the task requires iterative editing and simulation, use this loop:
    load `openstudio_sdk_model_editor`, inspect/edit with `run_python`, save a
    copied `.osm`, load the copied model with `model_load`, prepare/validate it
    with `model_*`, run with `sim_run`, poll with `sim_status`, fetch artifacts
    with `sim_artifacts`, query with `results_query`, summarize with
    `results_summarize`, then decide whether the next edit iteration is needed.
-6. If the model path, edit scope, target values, units, run mode, weather file,
+8. If the model path, edit scope, target values, units, run mode, weather file,
    or output path are missing, ask a focused clarifying question.
 
 ## Final Response Expectations
