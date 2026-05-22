@@ -225,7 +225,9 @@ def _validate_glob(glob: str, config: RunCommandToolConfig) -> None:
     if not glob or "\x00" in glob:
         raise CommandPolicyViolationError("rg glob must be a non-empty string.")
     normalized = glob.lstrip("!")
-    # Reject explicit includes of blocked files; broad includes are handled below.
+    # Reject any glob that explicitly targets a blocked file name, including
+    # exclusion globs such as `!.env`; broader matches are still handled by the
+    # appended rg excludes below.
     if _glob_targets_blocked_file_name(normalized, config.blocked_file_names):
         raise CommandPolicyViolationError(f"Glob is blocked by policy: {glob}")
 
