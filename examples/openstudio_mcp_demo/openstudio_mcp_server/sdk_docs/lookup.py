@@ -318,9 +318,10 @@ class OpenStudioSdkDocLookup:
             for method in class_doc.methods
             if normalized_keyword is None or normalized_keyword in _normalize(method.name)
         ]
+        bounded_limit = max(0, min(limit, 200))
         return {
             **self._class_summary(class_doc),
-            "methods": [asdict(method) for method in methods[: max(1, min(limit, 200))]],
+            "methods": [asdict(method) for method in methods[:bounded_limit]],
             "total_matches": len(methods),
         }
 
