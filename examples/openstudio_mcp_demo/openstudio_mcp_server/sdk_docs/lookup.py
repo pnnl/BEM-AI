@@ -323,8 +323,19 @@ class OpenStudioSdkDocLookup:
             "total_matches": len(methods),
         }
 
-    def get_method(self, class_name: str, method_name: str) -> dict[str, Any]:
-        """Return exact signature and documentation for one class method."""
+    def get_method(
+        self,
+        class_name: str,
+        method_name: str,
+        *,
+        anchor: str | None = None,
+        signature_contains: str | None = None,
+    ) -> dict[str, Any]:
+        """Return exact signature and documentation for one class method.
+
+        `anchor` and `signature_contains` disambiguate overloaded methods that
+        share a C++ member name but have different parameter lists.
+        """
         class_doc = self._resolve_class(class_name)
         matches = [
             method
@@ -340,18 +351,43 @@ class OpenStudioSdkDocLookup:
         if not matches:
             raise KeyError(f"Method not found on {class_doc.class_name}: {method_name}")
 
+        overloads = [
+            self._method_overload_summary(class_doc, method) for method in matches
+        ]
+        if anchor:
+            matches = [
+                method
+                for method in matches
+                if _normalize_anchor(method.anchor) == _normalize_anchor(anchor)
+            ]
+        if signature_contains:
+            normalized_signature_contains = signature_contains.lower()
+            matches = [
+                method
+                for method in matches
+                if normalized_signature_contains
+                in self._method_signature(class_doc, method).lower()
+            ]
+        if not matches:
+            raise KeyError(
+                f"Method overload not found on {class_doc.class_name}: {method_name}"
+            )
+
         method = matches[0]
         section = self._method_section(class_doc, method.anchor)
         signature = _extract_between(section, '<div class="memproto">', "</div>")
         docs = _extract_between(section, '<div class="memdoc">', "</div>")
+        clean_signature = _clean_html(signature)
         return {
             **self._class_summary(class_doc),
             "method": method.name,
+            "anchor": method.anchor,
             "href": method.href,
-            "signature": _clean_html(signature),
+            "signature": clean_signature,
             "documentation": _clean_html(docs),
             "source_url": self._source_url(method.href),
-            "notes": _method_notes(method.name, docs),
+            "notes": _method_notes(method.name, docs, clean_signature),
+            "overloads": overloads,
         }
 
     def search_methods(
@@ -366,6 +402,7 @@ class OpenStudioSdkDocLookup:
         classes = self._load_classes()
         normalized_keyword = _normalize(keyword)
         normalized_class_filter = _normalize(class_filter) if class_filter else None
+        bounded_limit = max(1, min(limit, 100))
         results: list[dict[str, Any]] = []
         for class_doc in classes.values():
             if class_doc.is_detail_impl and not include_detail:
@@ -384,11 +421,12 @@ class OpenStudioSdkDocLookup:
                         "class_name": class_doc.class_name,
                         "qualified_name": class_doc.qualified_name,
                         "method": method.name,
+                        "anchor": method.anchor,
                         "href": method.href,
                         "source_url": self._source_url(method.href),
                     }
                 )
-                if len(results) >= limit:
+                if len(results) >= bounded_limit:
                     return results
         return results
 
@@ -463,6 +501,24 @@ class OpenStudioSdkDocLookup:
         )
         end = start + 1 + next_match.start() if next_match else len(text)
         return text[start:end]
+
+    def _method_signature(self, class_doc: ClassDoc, method: MethodRef) -> str:
+        section = self._method_section(class_doc, method.anchor)
+        signature = _extract_between(section, '<div class="memproto">', "</div>")
+        return _clean_html(signature)
+
+    def _method_overload_summary(
+        self,
+        class_doc: ClassDoc,
+        method: MethodRef,
+    ) -> dict[str, str]:
+        return {
+            "method": method.name,
+            "anchor": method.anchor,
+            "href": method.href,
+            "signature": self._method_signature(class_doc, method),
+            "source_url": self._source_url(method.href),
+        }
 
     def _source_url(self, href: str) -> str:
         if self.docs_dir is None:
@@ -558,6 +614,10 @@ def _normalize(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
+def _normalize_anchor(value: str) -> str:
+    return value[1:] if value.startswith("#") else value
+
+
 def _dedupe(items: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -569,20 +629,22 @@ def _dedupe(items: list[str]) -> list[str]:
     return result
 
 
-def _method_notes(method_name: str, docs_html: str) -> list[str]:
+def _method_notes(method_name: str, docs_html: str, signature: str = "") -> list[str]:
     docs = _clean_html(docs_html).lower()
+    signature_text = signature.lower()
+    haystack = f"{docs} {signature_text}"
     notes: list[str] = []
-    if "radians" in docs or "radian" in docs:
+    if "radians" in haystack or "radian" in haystack:
         notes.append(
             "This method documents an angle in radians. Convert with "
             "openstudio.convert(value, 'rad', 'deg') before degree-based reporting."
         )
-    if "w/m" in docs or "m^2" in docs or "m2" in docs:
+    if "w/m" in haystack or "m^2" in haystack or "m2" in haystack:
         notes.append(
             "The documentation references SI units. Confirm or convert "
             "user-provided IP values before calling the SDK."
         )
-    if "boost::optional" in docs or method_name.startswith(("get", "optional")):
+    if "boost::optional" in haystack or method_name.startswith(("get", "optional")):
         notes.append(
             "If the Python binding returns an OpenStudio optional, check "
             "is_initialized() before get()."

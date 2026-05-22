@@ -110,8 +110,10 @@ HTML documentation. Set `OPENSTUDIO_SDK_DOCS_DIR` to the directory containing
   classes for an SDK scripting request.
 - `sdk_docs_find_classes(query)`: find model SDK classes by name or keyword.
 - `sdk_docs_list_methods(class_name, keyword)`: list methods on a class.
-- `sdk_docs_get_method(class_name, method_name)`: return exact signature,
-  docs, unit notes, and a local source URL for a method.
+- `sdk_docs_get_method(class_name, method_name, anchor=None,
+  signature_contains=None)`: return exact signature, docs, unit notes, and a
+  local source URL for a method. Use `anchor` or `signature_contains` when the
+  SDK docs show multiple overloads for the same method name.
 - `sdk_docs_search_methods(keyword, class_filter)`: search method names across
   model classes.
 

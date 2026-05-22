@@ -80,12 +80,19 @@ def register_sdk_doc_tools(mcp, service) -> None:
             "SDK class method."
         ),
     )
-    async def sdk_docs_get_method(class_name: str, method_name: str) -> dict[str, Any]:
+    async def sdk_docs_get_method(
+        class_name: str,
+        method_name: str,
+        anchor: str | None = None,
+        signature_contains: str | None = None,
+    ) -> dict[str, Any]:
         try:
             return success_payload(
                 **service.sdk_docs_get_method(
                     class_name=class_name,
                     method_name=method_name,
+                    anchor=anchor,
+                    signature_contains=signature_contains,
                 )
             )
         except SdkDocsUnavailableError as exc:

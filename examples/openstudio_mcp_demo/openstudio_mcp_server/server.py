@@ -468,8 +468,20 @@ class OpenStudioService:
             limit=limit,
         )
 
-    def sdk_docs_get_method(self, *, class_name: str, method_name: str) -> dict[str, Any]:
-        return self.sdk_docs.get_method(class_name=class_name, method_name=method_name)
+    def sdk_docs_get_method(
+        self,
+        *,
+        class_name: str,
+        method_name: str,
+        anchor: str | None = None,
+        signature_contains: str | None = None,
+    ) -> dict[str, Any]:
+        return self.sdk_docs.get_method(
+            class_name=class_name,
+            method_name=method_name,
+            anchor=anchor,
+            signature_contains=signature_contains,
+        )
 
     def sdk_docs_search_methods(
         self,
