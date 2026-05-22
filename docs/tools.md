@@ -102,6 +102,59 @@ tools:
         - ctypes
 ```
 
+## Built-in tool: `run_command`
+
+> ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
+
+`run_command` executes curated local commands with `argv` only. It is meant for
+bounded repository exploration, not arbitrary shell access.
+
+Input fields:
+- `argv` (required): command and arguments as a list of strings
+- `timeout_s` (optional, capped by tool config)
+
+Output format:
+- `success`, `stdout`, `stderr`, `exit_code`
+- `meta`: `{runner, profile, warnings}`
+
+Configuration fields:
+- `runner` (default `local_subprocess`)
+- `profile` (default `exploration`)
+- `timeout_s` (default `20`)
+- `max_stdout_chars`, `max_stderr_chars`
+- `workspace_root`
+- `blocked_file_names`: exact sensitive file names blocked from direct path
+  access and excluded from `rg` traversal
+
+Current `exploration` profile:
+- Allows `pwd`
+- Allows bounded `ls`, `cat`, `head`, `tail`, and `sed -n <start>,<end>p`.
+  `head` and `tail` accept only `-n <N>` as separate argv tokens; shorthand
+  forms such as `-n10` and `-10` are intentionally unsupported.
+- Allows bounded `rg` search/file-list forms. Options that take values must use
+  separate argv tokens, such as `-g "*.py"` and `--max-count 10`; combined
+  forms are intentionally unsupported.
+- Allows only `git status`, `git status --short`, `git diff --stat`, and
+  `git diff --name-only`. Allowed Git forms are normalized with pager, external
+  diff, and textconv helpers disabled before execution.
+- Rejects commands outside the profile, path traversal outside `workspace_root`,
+  blocked sensitive paths, and unsupported flags
+- Adds `rg` negative glob rules for `blocked_file_names` after user-provided
+  globs, so broad includes such as `-g "*"` do not re-include blocked files
+- Does not interpret shell operators, redirection, or command chaining because
+  the tool accepts `argv`, not shell text
+
+Example config:
+
+```yaml
+tools:
+  - type: run_command
+    config:
+      profile: exploration
+      timeout_s: 20
+      workspace_root: .
+```
+
 ## Built-in tool: `yaml_agent`
 
 > ⚠️ This tool must be explicitly enabled in `tools_config` to be used.

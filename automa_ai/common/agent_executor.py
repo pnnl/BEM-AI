@@ -19,6 +19,8 @@ from a2a.types import (
     UnsupportedOperationError,
     InvalidParamsError,
 )
+from google.protobuf.json_format import MessageToDict
+
 
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
@@ -86,7 +88,10 @@ class GenericAgentExecutor(AgentExecutor):
         if error:
             raise InvalidParamsError()
 
-        metadata = context.message.metadata or {}
+        try:
+            metadata = MessageToDict(context.message.metadata)
+        except Exception:
+            metadata = {}
 
         query = context.get_user_input()
         task = context.current_task
