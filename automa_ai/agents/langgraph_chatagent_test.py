@@ -94,6 +94,12 @@ def test_load_skill_tool_response_is_never_streamed():
     assert _should_emit_tool_response("run_python", "normal result")
 
 
+def test_event_identity_attributes_omit_absent_ids():
+    assert GenericLangGraphChatAgent._event_identity_attributes(
+        session_id="session-1"
+    ) == {"session.id": "session-1"}
+
+
 @pytest.mark.asyncio
 async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
     captured: dict = {}

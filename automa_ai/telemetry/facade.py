@@ -136,18 +136,25 @@ class SpanScope:
             )
         else:
             self._span_token = set_current_span(self.span_id)
-        self.telemetry.recorder.record(
-            {
-                "type": "span_start",
-                "trace_id": self.trace_id,
-                "span_id": self.span_id,
-                "parent_span_id": self.parent_span_id,
-                "name": self.name,
-                "kind": self.kind,
-                "timestamp": _now_iso(),
-                "attributes": self.telemetry._attributes(self.attributes),
-            }
-        )
+        try:
+            self.telemetry.recorder.record(
+                {
+                    "type": "span_start",
+                    "trace_id": self.trace_id,
+                    "span_id": self.span_id,
+                    "parent_span_id": self.parent_span_id,
+                    "name": self.name,
+                    "kind": self.kind,
+                    "timestamp": _now_iso(),
+                    "attributes": self.telemetry._attributes(self.attributes),
+                }
+            )
+        except Exception:
+            # `record()` can fail after contextvars are already set. Restore the
+            # previous trace/span before re-raising so later work in this async
+            # task cannot inherit a half-started span.
+            self._reset_context()
+            raise
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
@@ -168,30 +175,38 @@ class SpanScope:
                 attributes["exception.stacktrace"] = "".join(
                     traceback.format_exception(exc_type, exc, tb)
                 )
-        self.telemetry.recorder.record(
-            {
-                "type": "span_end",
-                "trace_id": self.trace_id,
-                "span_id": self.span_id,
-                "parent_span_id": self.parent_span_id,
-                "name": self.name,
-                "kind": self.kind,
-                "timestamp": _now_iso(),
-                "status": status,
-                "duration_ms": (
-                    (end_ns - self._start_ns) / 1_000_000
-                    if self._start_ns is not None
-                    else None
-                ),
-                "attributes": self.telemetry._attributes(attributes),
-            }
-        )
-        if self._trace_tokens is not None:
-            reset_trace_context(self._trace_tokens)
-        elif self._span_token is not None:
-            reset_current_span(self._span_token)
+        try:
+            self.telemetry.recorder.record(
+                {
+                    "type": "span_end",
+                    "trace_id": self.trace_id,
+                    "span_id": self.span_id,
+                    "parent_span_id": self.parent_span_id,
+                    "name": self.name,
+                    "kind": self.kind,
+                    "timestamp": _now_iso(),
+                    "status": status,
+                    "duration_ms": (
+                        (end_ns - self._start_ns) / 1_000_000
+                        if self._start_ns is not None
+                        else None
+                    ),
+                    "attributes": self.telemetry._attributes(attributes),
+                }
+            )
+        finally:
+            self._reset_context()
         # Returning False preserves normal exception propagation.
         return False
+
+    def _reset_context(self) -> None:
+        """Restore the parent context exactly once when a span is done."""
+        if self._trace_tokens is not None:
+            reset_trace_context(self._trace_tokens)
+            self._trace_tokens = None
+        elif self._span_token is not None:
+            reset_current_span(self._span_token)
+            self._span_token = None
 
     async def __aenter__(self) -> "SpanScope":
         return self.__enter__()

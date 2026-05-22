@@ -336,6 +336,21 @@ class GenericLangGraphChatAgent(BaseAgent):
             attributes["user.id"] = user_id
         return attributes
 
+    @staticmethod
+    def _event_identity_attributes(
+        *,
+        session_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return event identity attributes without null optional ids."""
+        attributes = {"session.id": session_id}
+        if task_id is not None:
+            attributes["task.id"] = task_id
+        if user_id is not None:
+            attributes["user.id"] = user_id
+        return attributes
+
     async def invoke(
         self,
         query,
@@ -375,9 +390,11 @@ class GenericLangGraphChatAgent(BaseAgent):
                     attributes={
                         "message.role": "user",
                         "message.content": query,
-                        "session.id": context_id,
-                        "task.id": task_id,
-                    },
+                        **self._event_identity_attributes(
+                            session_id=context_id,
+                            task_id=task_id,
+                        ),
+                    }
                 )
                 context_token = set_subagent_context_id(context_id)
                 emitter_token = set_subagent_emitter(emit_subagent_event)
@@ -389,8 +406,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                         "agent.response",
                         attributes={
                             "response.type": type(response).__name__,
-                            "session.id": context_id,
-                            "task.id": task_id,
+                            **self._event_identity_attributes(
+                                session_id=context_id,
+                                task_id=task_id,
+                            ),
                         },
                     )
                 finally:
@@ -421,17 +440,8 @@ class GenericLangGraphChatAgent(BaseAgent):
                 mode="stream",
             ),
         )
-        span_scope.__enter__()
+        span_entered = False
         span_closed = False
-        self.telemetry.event(
-            "message",
-            attributes={
-                "message.role": "user",
-                "message.content": query,
-                "session.id": context_id,
-                "task.id": task_id,
-            },
-        )
 
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
@@ -447,6 +457,19 @@ class GenericLangGraphChatAgent(BaseAgent):
             await subagent_event_queue.put(e)
 
         try:
+            span_scope.__enter__()
+            span_entered = True
+            self.telemetry.event(
+                "message",
+                attributes={
+                    "message.role": "user",
+                    "message.content": query,
+                    **self._event_identity_attributes(
+                        session_id=context_id,
+                        task_id=task_id,
+                    ),
+                },
+            )
             inputs = await self._build_stream_inputs(
                 query, context_id, task_id, user_id, metadata
             )
@@ -459,9 +482,13 @@ class GenericLangGraphChatAgent(BaseAgent):
             if not self.graph:
                 await self.init_graph(emit_subagent_event)
         except Exception as exc:
-            span_scope.__exit__(type(exc), exc, exc.__traceback__)
-            if telemetry_token is not None:
-                reset_trace_context(telemetry_token)
+            try:
+                if span_entered:
+                    span_scope.__exit__(type(exc), exc, exc.__traceback__)
+                    span_closed = True
+            finally:
+                if telemetry_token is not None:
+                    reset_trace_context(telemetry_token)
             raise
 
         # seen_messages = set()
@@ -532,8 +559,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                                             attributes={
                                                 "tool.name": tool_call.get("name"),
                                                 "tool.arguments": tool_call.get("args"),
-                                                "session.id": context_id,
-                                                "task.id": task_id,
+                                                **self._event_identity_attributes(
+                                                    session_id=context_id,
+                                                    task_id=task_id,
+                                                ),
                                             },
                                         )
                                         tool_call_str += f"Making tool calls: **{tool_call.get('name')}**:\n\n"
@@ -555,8 +584,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     attributes={
                                         "tool.name": ck.name,
                                         "tool.result": ck.content,
-                                        "session.id": context_id,
-                                        "task.id": task_id,
+                                        **self._event_identity_attributes(
+                                            session_id=context_id,
+                                            task_id=task_id,
+                                        ),
                                     },
                                 )
                                 if ck.content:
@@ -706,10 +737,12 @@ class GenericLangGraphChatAgent(BaseAgent):
                 await self._memory_write_queue.put(None)
                 if self._memory_writer_task:
                     await self._memory_writer_task
-            if not span_closed:
-                span_scope.__exit__(None, None, None)
-            if telemetry_token is not None:
-                reset_trace_context(telemetry_token)
+            try:
+                if not span_closed:
+                    span_scope.__exit__(None, None, None)
+            finally:
+                if telemetry_token is not None:
+                    reset_trace_context(telemetry_token)
 
     async def _start_memory_writer(self):
         """Background task that writes memory entries without blocking the forwarder."""
@@ -922,9 +955,11 @@ class GenericLangGraphChatAgent(BaseAgent):
                 "message.role": "assistant",
                 "message.content": final_text,
                 "artifact.content": artifact_text,
-                "session.id": session_id,
-                "task.id": task_id,
-                "user.id": user_id,
+                **self._event_identity_attributes(
+                    session_id=session_id,
+                    task_id=task_id,
+                    user_id=user_id,
+                ),
             },
         )
 
