@@ -40,10 +40,15 @@ def parse_scheduler_command(
         return TasksCommand()
 
     if text.startswith("/cancel"):
-        parts = text.split(maxsplit=1)
-        if len(parts) != 2 or not parts[1].strip():
+        remainder = text[len("/cancel") :]
+        if not remainder:
             raise ValueError("/cancel requires a task id")
-        return CancelCommand(task_id=parts[1].strip())
+        if not remainder[0].isspace():
+            return None
+        task_id = remainder.strip()
+        if not task_id:
+            raise ValueError("/cancel requires a task id")
+        return CancelCommand(task_id=task_id)
 
     if not text.startswith("/loop"):
         return None
