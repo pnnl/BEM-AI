@@ -297,9 +297,10 @@ class OpenStudioSdkDocLookup:
                 continue
             results.append((score, class_doc))
         results.sort(key=lambda item: (-item[0], item[1].class_name))
+        bounded_limit = max(0, min(limit, 100))
         return [
             self._class_summary(class_doc)
-            for _, class_doc in results[: max(1, min(limit, 100))]
+            for _, class_doc in results[:bounded_limit]
         ]
 
     def list_methods(
