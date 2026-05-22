@@ -242,8 +242,8 @@ class OpenStudioSdkDocLookup:
                 scored.append((score, domain, config))
 
         scored.sort(key=lambda item: (-item[0], item[1]))
-        selected = scored[:limit]
-        wiki_packs: list[str] = ["sdk_index", "sdk_core_patterns"]
+        bounded_limit = max(0, limit)
+        selected = scored[:bounded_limit]
         classes: list[str] = []
         for _, _, config in selected:
             wiki_packs.extend(config["wiki_packs"])
