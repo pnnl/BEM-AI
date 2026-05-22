@@ -150,6 +150,11 @@ tools:
       timeout_s: 20
       workspace_root: .
       allow_network: false  # Import-policy toggle only; not runtime network isolation.
+  - type: run_command
+    config:
+      profile: exploration
+      timeout_s: 20
+      workspace_root: .
 ```
 
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
