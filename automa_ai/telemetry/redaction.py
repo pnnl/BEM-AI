@@ -43,7 +43,7 @@ def sanitize_text(
     content = text
     if mode == "redacted":
         content = SECRET_VALUE_PATTERN.sub("[REDACTED]", content)
-    if max_chars >= 0 and len(content) > max_chars:
+    if len(content) > max_chars:
         content = content[:max_chars]
         sanitized["truncated"] = True
     sanitized["content"] = content
