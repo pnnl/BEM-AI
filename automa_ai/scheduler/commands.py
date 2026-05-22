@@ -52,6 +52,8 @@ def parse_scheduler_command(
 
     if not text.startswith("/loop"):
         return None
+    if len(text) > len("/loop") and not text[len("/loop")].isspace():
+        return None
 
     rest = text[len("/loop") :].strip()
     if not rest:
