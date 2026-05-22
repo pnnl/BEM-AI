@@ -14,14 +14,45 @@ def test_parse_scheduler_command_supports_loop_variants() -> None:
         interval=None,
         prompt=None,
     )
-    assert parse_scheduler_command("/loop 5m check the job queue") == LoopCommand(
+    assert parse_scheduler_command(
+        '/loop --interval 5m --prompt "check the job queue"'
+    ) == LoopCommand(
         interval="5m",
+        prompt="check the job queue",
+    )
+    assert parse_scheduler_command(
+        "/loop -i every 10 minutes -p check the job queue"
+    ) == LoopCommand(
+        interval="every 10 minutes",
         prompt="check the job queue",
     )
     assert parse_scheduler_command("/loop keep working") == LoopCommand(
         interval=None,
         prompt="keep working",
     )
+
+
+def test_parse_scheduler_command_treats_unflagged_text_as_prompt_only() -> None:
+    assert parse_scheduler_command("/loop 5m check the job queue") == LoopCommand(
+        interval=None,
+        prompt="5m check the job queue",
+    )
+
+
+def test_parse_scheduler_command_rejects_invalid_loop_options() -> None:
+    try:
+        parse_scheduler_command("/loop --interval soon --prompt check")
+    except ValueError as exc:
+        assert str(exc) == "invalid /loop interval: soon"
+    else:
+        raise AssertionError("expected ValueError")
+
+    try:
+        parse_scheduler_command("/loop --interval 5m check")
+    except ValueError as exc:
+        assert str(exc) == "invalid /loop interval: 5m check"
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_parse_scheduler_command_supports_tasks_and_cancel() -> None:

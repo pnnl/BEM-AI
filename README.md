@@ -232,6 +232,17 @@ await scheduler.run_due_tasks()
 
 Default loop prompts can be stored in `.automa/loop.md` at the project root or in
 `~/.automa/loop.md`. The command parser currently recognizes `/loop`, `/tasks`, and `/cancel`.
+Use explicit loop options when setting a cadence or prompt from slash commands:
+
+```text
+/loop --interval 5m --prompt "check whether the simulation finished"
+/loop -i "every 10 minutes" -p "check CI status"
+/loop --prompt "continue unfinished work"
+/tasks
+/cancel <task_id>
+```
+
+Bare text after `/loop` is treated as prompt text only; it is not guessed as an interval.
 Dynamic self-paced scheduling and UI wiring are intentionally left for later integration work.
 
 ### A2A Server Configuration

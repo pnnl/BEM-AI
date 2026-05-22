@@ -34,6 +34,7 @@ class LoopScheduler:
         self._task_ttl = task_ttl
         self._tasks: dict[str, LoopTask] = {}
         self._stop_event: asyncio.Event | None = None
+        self._run_lock = asyncio.Lock()
 
     def create_loop(
         self,
@@ -51,7 +52,7 @@ class LoopScheduler:
         if not context_id.strip():
             raise ValueError("context_id cannot be empty")
 
-        now = self._coerce_aware_utc(self._now())
+        now = self._current_time()
         resolved_task_id = task_id or uuid4().hex
         if resolved_task_id in self._tasks:
             raise ValueError(f"task id already exists: {resolved_task_id}")
@@ -70,6 +71,7 @@ class LoopScheduler:
 
     def list_tasks(self, *, active_only: bool = False) -> list[LoopTask]:
         """Return known tasks in creation order."""
+        self._refresh_expired_tasks()
         tasks = list(self._tasks.values())
         if active_only:
             tasks = [task for task in tasks if task.is_active]
@@ -82,6 +84,10 @@ class LoopScheduler:
     def cancel(self, task_id: str) -> bool:
         """Cancel an active task, returning whether it existed and changed."""
         task = self._tasks.get(task_id)
+        if task is not None:
+            # Keep manual cancellation consistent with scheduler polling: an
+            # elapsed TTL wins over a late cancel request.
+            self._expire_if_needed(task, self._current_time())
         if task is None or not task.is_active:
             return False
         task.status = LoopTaskStatus.CANCELLED
@@ -89,28 +95,29 @@ class LoopScheduler:
 
     async def run_due_tasks(self) -> list[LoopTask]:
         """Execute due tasks once and return the tasks that were attempted."""
-        now = self._coerce_aware_utc(self._now())
-        attempted: list[LoopTask] = []
+        async with self._run_lock:
+            now = self._current_time()
+            attempted: list[LoopTask] = []
 
-        for task in self._tasks.values():
-            self._expire_if_needed(task, now)
-            if not task.is_active or task.next_run_at > now:
-                continue
-
-            attempted.append(task)
-            try:
-                await self._task_runner(task)
-            except Exception as exc:
-                task.last_error = f"{type(exc).__name__}: {exc}"
-            else:
-                task.last_error = None
-            finally:
-                task.run_count += 1
-                task.last_run_at = now
-                task.next_run_at = self._next_scheduled_time(task, now)
+            for task in self._tasks.values():
                 self._expire_if_needed(task, now)
+                if not task.is_active or task.next_run_at > now:
+                    continue
 
-        return attempted
+                attempted.append(task)
+                try:
+                    await self._task_runner(task)
+                except Exception as exc:
+                    task.last_error = f"{type(exc).__name__}: {exc}"
+                else:
+                    task.last_error = None
+                finally:
+                    task.run_count += 1
+                    task.last_run_at = now
+                    task.next_run_at = self._next_scheduled_time(task, now)
+                    self._expire_if_needed(task, now)
+
+            return attempted
 
     async def run_forever(self, *, poll_interval_s: float = 1.0) -> None:
         """Poll for due tasks until ``stop`` is called."""
@@ -137,6 +144,16 @@ class LoopScheduler:
         """Request shutdown of ``run_forever``."""
         if self._stop_event is not None:
             self._stop_event.set()
+
+    def _current_time(self) -> datetime:
+        """Return the scheduler clock normalized to aware UTC."""
+        return self._coerce_aware_utc(self._now())
+
+    def _refresh_expired_tasks(self) -> None:
+        """Apply TTL expiry before read-only views expose task status."""
+        now = self._current_time()
+        for task in self._tasks.values():
+            self._expire_if_needed(task, now)
 
     @staticmethod
     def _coerce_aware_utc(value: datetime) -> datetime:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shlex
 
 from automa_ai.scheduler.intervals import IntervalParseError, parse_interval
 
@@ -59,16 +60,80 @@ def parse_scheduler_command(
     if not rest:
         return LoopCommand(interval=None, prompt=None)
 
-    candidate, _, remainder = rest.partition(" ")
+    return _parse_loop_command(rest)
+
+
+def _parse_loop_command(raw_args: str) -> LoopCommand:
+    """Parse ``/loop`` arguments without guessing interval boundaries."""
     try:
-        parse_interval(candidate)
-    except IntervalParseError:
-        return LoopCommand(interval=None, prompt=rest)
+        # shlex lets callers quote multi-word interval/prompt values while still
+        # supporting unquoted forms like: --interval every 10 minutes --prompt check.
+        tokens = shlex.split(raw_args)
+    except ValueError as exc:
+        raise ValueError(f"invalid /loop arguments: {exc}") from exc
+
+    interval: str | None = None
+    prompt: str | None = None
+    positional_prompt: list[str] = []
+    saw_option = False
+    index = 0
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"--interval", "-i"}:
+            if interval is not None:
+                raise ValueError("/loop interval was provided more than once")
+            saw_option = True
+            interval_tokens, index = _consume_option_value(tokens, index + 1)
+            interval = " ".join(interval_tokens)
+            try:
+                parse_interval(interval)
+            except IntervalParseError as exc:
+                raise ValueError(f"invalid /loop interval: {interval}") from exc
+            continue
+
+        if token in {"--prompt", "-p"}:
+            if prompt is not None:
+                raise ValueError("/loop prompt was provided more than once")
+            saw_option = True
+            prompt_tokens, index = _consume_option_value(tokens, index + 1)
+            prompt = " ".join(prompt_tokens)
+            continue
+
+        if token.startswith("-"):
+            raise ValueError(f"unsupported /loop option: {token}")
+
+        positional_prompt.append(token)
+        index += 1
+
+    if positional_prompt and saw_option:
+        raise ValueError("unexpected /loop text; pass prompt text with --prompt")
+
+    if positional_prompt:
+        prompt = " ".join(positional_prompt)
 
     return LoopCommand(
-        interval=candidate,
-        prompt=remainder.strip() or None,
+        interval=interval,
+        prompt=prompt or None,
     )
+
+
+def _consume_option_value(tokens: list[str], start: int) -> tuple[list[str], int]:
+    """Return tokens for one option value, stopping at the next known option."""
+    value: list[str] = []
+    index = start
+    while index < len(tokens):
+        # Values may contain spaces, so consume multiple tokens until another
+        # supported option starts. This intentionally allows prompt text such as
+        # "--status" without requiring extra escaping.
+        if tokens[index] in {"--interval", "-i", "--prompt", "-p"}:
+            break
+        value.append(tokens[index])
+        index += 1
+
+    if not value:
+        raise ValueError(f"{tokens[start - 1]} requires a value")
+    return value, index
 
 
 def load_default_loop_prompt(
