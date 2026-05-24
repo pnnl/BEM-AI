@@ -25,7 +25,7 @@ Out of the box, AUTOMA-AI supports:
 
 ## Why AUTOMA-AI?
 
-Many agent frameworks make it easy to create a small set of role-based agents and let them collaborate through prompts or chat history. That is useful for quick prototypes, but production applications often require more:
+Many agent frameworks are optimized for quickly defining agents, tools, tasks, graph flows, or provider-native agent workflows. Those approaches are useful and often the right choice. Production applications, however, often require an additional integration layer:
 
 - Agents may need to run as independently deployed services.
 - Tools may come from local Python functions, REST APIs, or MCP servers.
@@ -55,7 +55,7 @@ AUTOMA-AI supports protocol-first collaboration through Google A2A. Agents can c
 
 ### Blackboard/shared state
 
-The shared blackboard is a key AUTOMA-AI concept. Agents can write structured artifacts to shared state instead of relying only on chat history. This reduces token pressure, creates a clearer source of truth, improves traceability, and makes long-running workflows easier to inspect and resume.
+The shared blackboard is a key AUTOMA-AI concept. Agents can write structured artifacts to shared state instead of relying only on chat history. This is intended to reduce token pressure, create a clearer source of truth, improve traceability, and make long-running workflows easier to inspect and resume.
 
 ### Memory stores
 
@@ -74,6 +74,8 @@ AUTOMA-AI provides model provider abstractions for multiple LLM hosts, including
 Retriever interfaces support grounding agents in external data. Providers can be registered by name or supplied through custom implementations, enabling application-specific retrieval backends.
 
 ## Key differentiators
+
+AUTOMA-AI's differentiator is not any single feature such as A2A, MCP, memory, tools, retrieval, or skills. Its differentiator is the integration of these ideas into a provider-neutral, protocol-aware, interface-first framework for stateful scientific and engineering workflows.
 
 ### 1. Protocol-first agent collaboration
 
@@ -103,13 +105,17 @@ AUTOMA-AI is intended to serve as a foundation for real PNNL applications, inclu
 
 ## How AUTOMA-AI is different
 
-AUTOMA-AI is not intended to replace every agent framework. It optimizes for a different set of requirements.
+AUTOMA-AI is not intended to replace every agent framework. It optimizes for a different center of gravity: provider-neutral, protocol-aware, plugin-and-play infrastructure for stateful workflows and production application integration.
 
-| Framework style | Strengths | AUTOMA-AI distinction |
+| Framework / ecosystem | Strong fit | AUTOMA-AI distinction |
 | --- | --- | --- |
-| CrewAI and role-based multi-agent frameworks | Fast onboarding, simple role/task definitions, strong for prototypes and lightweight collaboration | AUTOMA-AI focuses more on production integration, protocol interoperability, shared state, and pluggable infrastructure |
-| LangGraph-based custom agents | Powerful graph-based execution and state management | AUTOMA-AI can build on LangGraph while adding higher-level interfaces for tools, memory, blackboards, model providers, retrievers, and A2A collaboration |
-| Custom application-specific agents | Maximum control for one application | AUTOMA-AI provides reusable interfaces so components can be shared across applications and deployment environments |
+| CrewAI and role-based multi-agent frameworks | Quickly defining role-based agents, tasks, crews, and flows with approachable onboarding | AUTOMA-AI emphasizes protocol-based collaboration, shared blackboard state, and replaceable infrastructure interfaces for deeply integrated applications |
+| LangGraph | Fine-grained, stateful graph execution and controllable agent workflows | AUTOMA-AI can build on LangGraph while adding higher-level application interfaces for agents, skills, tools, retrievers, blackboards, model providers, and A2A collaboration |
+| AutoGen | Flexible multi-agent conversation patterns involving LLMs, tools, code, and human input | AUTOMA-AI places more emphasis on structured workflow artifacts, shared state, and production integration boundaries |
+| Semantic Kernel and enterprise integration frameworks | Enterprise application integration, plugins, planners, memory, and cloud/provider ecosystem alignment | AUTOMA-AI aims to remain provider-neutral and infrastructure-pluggable across model hosts, memory stores, tools, retrievers, and deployment backends |
+| LlamaIndex / Haystack-style data and RAG frameworks | Data-centric LLM applications, document pipelines, retrieval, and knowledge-grounded workflows | AUTOMA-AI treats retrieval as one replaceable component inside a broader stateful multi-agent workflow architecture |
+| OpenAI Agents SDK / Claude Agent SDK / Google ADK | First-party agent development within specific model/provider ecosystems | AUTOMA-AI focuses on framework-composable integration across providers, protocols, and application-specific infrastructure |
+| Custom application-specific agents | Maximum control for one application | AUTOMA-AI provides reusable interfaces and architectural patterns that can be shared across applications and deployment environments |
 
 In short, AUTOMA-AI is best understood as **composable agent infrastructure** for building interoperable, stateful, production-oriented agent systems.
 
@@ -123,6 +129,7 @@ AUTOMA-AI is a good fit when your application needs:
 - Shared structured artifacts across agents.
 - Pluggable infrastructure for tools, memory, retrievers, models, and deployment backends.
 - Integration with MCP tools or A2A-compatible agents.
+- Provider-neutral integration across multiple model hosts.
 - A foundation for production applications rather than a short-lived demo.
 
 ## When another framework may be enough
@@ -130,6 +137,8 @@ AUTOMA-AI is a good fit when your application needs:
 Another framework may be a better fit when:
 
 - You only need a simple role-based multi-agent prototype.
+- You want to stay entirely within one provider-native agent SDK.
+- Your main problem is retrieval or document processing rather than workflow state and integration.
 - Your workflow can be completed in one short conversation without persistent state.
 - You do not need shared blackboard state, checkpointing, or remote agent collaboration.
 - You prefer a larger community ecosystem and more mature onboarding materials today.
@@ -239,6 +248,8 @@ Core concepts include:
 - **Specialized agents**: Domain-specific agents for focused tasks.
 - **Agent card service**: Stores and retrieves agent metadata for discovery.
 - **Tools and resources**: External tool and resource access through native tools and MCP servers.
+
+For the architectural north star, see [docs/architecture.md](docs/architecture.md).
 
 ## Configuration
 
