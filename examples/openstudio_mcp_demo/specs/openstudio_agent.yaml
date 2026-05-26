@@ -39,6 +39,12 @@ runtime:
   agent_type: langgraph-chat
   debug: true
 
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ../logs/telemetry.jsonl
+  content_mode: metadata
+
 tools:
   tools:
     - type: run_python
