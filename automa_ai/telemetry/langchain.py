@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 
 from automa_ai.telemetry.facade import Telemetry
@@ -31,7 +32,7 @@ def wrap_langchain_tool(
     description = getattr(tool, "description", "") or ""
     args_schema = getattr(tool, "args_schema", None)
 
-    async def _arun(**kwargs: Any) -> Any:
+    async def _arun(config: RunnableConfig, **kwargs: Any) -> Any:
         """StructuredTool coroutine preserving the original tool call contract."""
         async with telemetry.span(
             "tool.call",
@@ -50,7 +51,7 @@ def wrap_langchain_tool(
                     "tool.arguments": kwargs,
                 },
             )
-            result = await tool.ainvoke(kwargs)
+            result = await tool.ainvoke(kwargs, config=config)
             telemetry.event(
                 "tool.output",
                 attributes={
@@ -66,6 +67,14 @@ def wrap_langchain_tool(
         description=description,
         args_schema=args_schema,
         coroutine=_arun,
+        return_direct=getattr(tool, "return_direct", False),
+        response_format=getattr(tool, "response_format", "content"),
+        handle_tool_error=getattr(tool, "handle_tool_error", False),
+        handle_validation_error=getattr(tool, "handle_validation_error", False),
+        verbose=getattr(tool, "verbose", False),
+        callbacks=getattr(tool, "callbacks", None),
+        tags=getattr(tool, "tags", None),
+        metadata=getattr(tool, "metadata", None),
     )
     setattr(wrapped, "_automa_telemetry_wrapped", True)
     setattr(wrapped, "_automa_telemetry_source", source_type)

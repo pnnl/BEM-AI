@@ -46,6 +46,38 @@ For `LANGGRAPHCHAT` agents, telemetry captures:
 - trace context propagation through A2A metadata using
   `telemetry_trace_id` and `telemetry_parent_span_id`.
 
+## Tool Wrapping Behavior
+
+When telemetry is enabled, AUTOMA-AI wraps LangChain tool objects so each tool
+call can emit a `tool.call` span plus `tool.input` and `tool.output` events. The
+wrapper must not change tool behavior. It forwards the original LangChain
+`RunnableConfig` to the wrapped tool so callbacks, tags, metadata, and
+config-injected behavior continue to work.
+
+The wrapper also preserves execution-affecting fields from the original tool:
+
+- `return_direct`
+- `response_format`
+- `handle_tool_error`
+- `handle_validation_error`
+- `verbose`
+- `callbacks`
+- `tags`
+- `metadata`
+
+Most built-in AUTOMA-AI tools use default values for these fields today.
+However, these fields are part of LangChain's public tool surface and can be
+present on tools supplied by MCP adapters, direct LangChain integrations, or
+future custom tool builders. Telemetry code should preserve them because a tool
+with `return_direct=true` or custom error handling can change agent control flow
+if those settings are dropped.
+
+Future work: decide whether AUTOMA-AI should expose selected LangChain tool
+execution options, such as `return_direct`, `tags`, `metadata`, and custom error
+handling, through first-class tool configuration. Telemetry already preserves
+these fields when they are present, but most AUTOMA-AI tool config paths do not
+currently let users set them directly.
+
 Records are OpenTelemetry-shaped:
 
 ```json

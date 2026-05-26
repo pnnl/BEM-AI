@@ -393,6 +393,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         **self._event_identity_attributes(
                             session_id=context_id,
                             task_id=task_id,
+                            user_id=user_id,
                         ),
                     }
                 )
@@ -409,6 +410,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             **self._event_identity_attributes(
                                 session_id=context_id,
                                 task_id=task_id,
+                                user_id=user_id,
                             ),
                         },
                     )
@@ -467,6 +469,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     **self._event_identity_attributes(
                         session_id=context_id,
                         task_id=task_id,
+                        user_id=user_id,
                     ),
                 },
             )
@@ -562,6 +565,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                                 **self._event_identity_attributes(
                                                     session_id=context_id,
                                                     task_id=task_id,
+                                                    user_id=user_id,
                                                 ),
                                             },
                                         )
@@ -587,6 +591,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                         **self._event_identity_attributes(
                                             session_id=context_id,
                                             task_id=task_id,
+                                            user_id=user_id,
                                         ),
                                     },
                                 )

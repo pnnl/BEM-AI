@@ -75,7 +75,8 @@ def sanitize_mapping(
     """Sanitize one telemetry attributes mapping.
 
     Attribute keys drive behavior:
-    - obvious secret keys are always removed;
+    - obvious secret keys are kept but their values are replaced with
+      "[REDACTED]";
     - payload-like keys get length/hash metadata by default;
     - ordinary string metadata such as `agent.name` stays readable.
     """

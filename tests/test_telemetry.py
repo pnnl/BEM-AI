@@ -4,6 +4,7 @@ import json
 import asyncio
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 
 from automa_ai.config.telemetry import TelemetryConfig
@@ -162,3 +163,41 @@ def test_wrap_langchain_tool_records_tool_span(tmp_path) -> None:
     assert records[0]["type"] == "span_start"
     assert records[0]["attributes"]["tool.name"] == "add_numbers"
     assert records[0]["attributes"]["tool.source"] == "binding"
+
+
+def test_wrap_langchain_tool_preserves_config_and_execution_fields(tmp_path) -> None:
+    async def read_config(value: str, config: RunnableConfig) -> dict:
+        return {
+            "value": value,
+            "request_id": config["metadata"]["request_id"],
+        }
+
+    tool = StructuredTool.from_function(
+        name="read_config",
+        description="Read runtime config.",
+        coroutine=read_config,
+        return_direct=True,
+        metadata={"tool_meta": "kept"},
+        tags=["original"],
+        handle_tool_error="handled",
+        handle_validation_error="invalid",
+    )
+    path = tmp_path / "telemetry.jsonl"
+    telemetry = build_telemetry(
+        {"enabled": True, "recorder": "jsonl", "path": str(path)}
+    )
+    wrapped = wrap_langchain_tool(tool, telemetry, source_type="binding")
+
+    result = asyncio.run(
+        wrapped.ainvoke(
+            {"value": "hello"},
+            config={"metadata": {"request_id": "req-1"}},
+        )
+    )
+
+    assert result == {"value": "hello", "request_id": "req-1"}
+    assert wrapped.return_direct is True
+    assert wrapped.metadata == {"tool_meta": "kept"}
+    assert wrapped.tags == ["original"]
+    assert wrapped.handle_tool_error == "handled"
+    assert wrapped.handle_validation_error == "invalid"

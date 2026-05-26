@@ -178,6 +178,8 @@ async def test_invoke_records_agent_turn_telemetry(tmp_path):
     assert records[0]["name"] == "agent.turn"
     assert records[0]["attributes"]["agent.name"] == "test-agent"
     assert records[1]["attributes"]["message.content"]["length"] == 5
+    assert records[1]["attributes"]["user.id"] == "user-1"
+    assert records[2]["attributes"]["user.id"] == "user-1"
     assert records[-1]["status"] == "ok"
 
 
