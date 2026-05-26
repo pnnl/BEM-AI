@@ -14,6 +14,7 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_START,
     ARTIFACT_END,
 )
+from automa_ai.telemetry import current_span_id, current_trace_id
 from automa_ai.token_management import TokenBudgetExceededError
 
 
@@ -39,7 +40,12 @@ class DummyMemoryManager:
         return None
 
 
-def build_agent(*, retriever=None, memory_manager=None) -> GenericLangGraphChatAgent:
+def build_agent(
+    *,
+    retriever=None,
+    memory_manager=None,
+    telemetry_config=None,
+) -> GenericLangGraphChatAgent:
     return GenericLangGraphChatAgent(
         agent_name="test-agent",
         description="test",
@@ -48,6 +54,7 @@ def build_agent(*, retriever=None, memory_manager=None) -> GenericLangGraphChatA
         response_format=None,
         retriever=retriever,
         memory_manager=memory_manager,
+        telemetry_config=telemetry_config,
     )
 
 
@@ -203,6 +210,76 @@ async def test_forward_subagent_events_emits_text():
     task.cancel()
     assert item["response_type"] == "text"
     assert "(final)" in item["content"]
+
+
+@pytest.mark.asyncio
+async def test_forward_subagent_events_sanitizes_metadata_payload(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        }
+    )
+    subagent_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
+    output_queue: asyncio.Queue = asyncio.Queue()
+
+    task = asyncio.create_task(
+        agent._forward_subagent_events(subagent_queue, output_queue)
+    )
+    await subagent_queue.put(
+        StreamEvent(
+            source="subagent:test",
+            type="text",
+            content="hello",
+            metadata={"api_key": "secret", "note": "private"},
+        )
+    )
+
+    await asyncio.wait_for(output_queue.get(), timeout=1)
+    task.cancel()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    metadata_payload = records[0]["attributes"]["subagent.metadata_payload"]
+    assert metadata_payload["length"] > 0
+    assert metadata_payload["sha256"]
+    assert "content" not in metadata_payload
+
+
+@pytest.mark.asyncio
+async def test_stream_cancelled_during_setup_closes_span_as_error(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+        }
+    )
+
+    async def raise_cancelled(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    agent._build_stream_inputs = raise_cancelled
+
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in agent.stream("hello", "session-1", "task-1"):
+            pass
+
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert records[-1]["type"] == "span_end"
+    assert records[-1]["status"] == "error"
+    assert records[-1]["attributes"]["exception.type"] == "CancelledError"
+    assert current_trace_id() is None
+    assert current_span_id() is None
 
 
 @pytest.mark.asyncio

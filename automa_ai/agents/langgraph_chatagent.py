@@ -481,7 +481,7 @@ class GenericLangGraphChatAgent(BaseAgent):
             self._ensure_blackboard(context_id)
             if not self.graph:
                 await self.init_graph(emit_subagent_event)
-        except Exception as exc:
+        except BaseException as exc:
             try:
                 if span_entered:
                     span_scope.__exit__(type(exc), exc, exc.__traceback__)
@@ -725,7 +725,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     break
                 # print(f"Yielding from {item.get('source')}: {item.get('content', '')[:50]}...")
                 yield item
-        except Exception as exc:
+        except BaseException as exc:
             span_scope.__exit__(type(exc), exc, exc.__traceback__)
             span_closed = True
             raise
@@ -823,7 +823,14 @@ class GenericLangGraphChatAgent(BaseAgent):
                         "subagent.source": e.source,
                         "subagent.event_type": e.type,
                         "subagent.content": e.content,
-                        "subagent.metadata": e.metadata or {},
+                        # Serialize arbitrary metadata so the sanitizer treats
+                        # it as one payload and stores only hash/length by
+                        # default, instead of preserving nested secret fields.
+                        "subagent.metadata_payload": json.dumps(
+                            e.metadata or {},
+                            default=str,
+                            sort_keys=True,
+                        ),
                     },
                 )
                 await output_queue.put(
