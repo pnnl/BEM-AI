@@ -98,6 +98,10 @@ budget:
   store:
     backend: sqlite
     db_path: ./token_usage.db
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
 """
     )
 
@@ -115,6 +119,27 @@ budget:
     assert kwargs["checkpointer_config"] == {"type": "default"}
     assert kwargs["budget_config"]["max_input_tokens"] == 1000
     assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
+    assert kwargs["telemetry_config"]["enabled"] is True
+    assert kwargs["telemetry_config"]["recorder"] == "jsonl"
+
+
+def test_yaml_agent_spec_rebases_telemetry_jsonl_path(tmp_path: Path) -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+""",
+        base_dir=tmp_path,
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["telemetry_config"]["path"] == str(
+        tmp_path / "logs" / "telemetry.jsonl"
+    )
 
 
 def test_yaml_agent_spec_rebases_budget_sqlite_db_path(tmp_path: Path) -> None:

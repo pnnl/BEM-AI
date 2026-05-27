@@ -30,6 +30,7 @@ from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config import CheckpointerConfig
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.config.token_budget import TokenBudgetConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
@@ -280,6 +281,7 @@ class AgentFactory:
         blackboard_config: BlackboardConfig | Dict | None = None,
         checkpointer_config: CheckpointerConfig | Dict[str, Any] | str | None = None,
         budget_config: TokenBudgetConfig | Dict[str, Any] | None = None,
+        telemetry_config: TelemetryConfig | Dict[str, Any] | str | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
@@ -309,6 +311,7 @@ class AgentFactory:
         self.blackboard_config = blackboard_config
         self.checkpointer_config = checkpointer_config
         self.budget_config = budget_config
+        self.telemetry_config = telemetry_config
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
@@ -482,6 +485,7 @@ class AgentFactory:
                 transient_retry_attempts=self.transient_retry_attempts,
                 budget_config=budget_config,
                 token_usage_store=token_usage_store,
+                telemetry_config=self.telemetry_config,
                 debug=self.debug,
             )
 

@@ -59,6 +59,13 @@ tools_config = {
     ]
 }
 
+telemetry_config = {
+    "enabled": True,
+    "recorder": "jsonl",
+    "path": str(base_dir / "logs" / "telemetry.jsonl"),
+    "content_mode": "metadata",
+}
+
 
 CHAT_COT = """
 You are AUTOMA-AI, a dynamic multi-agent network system built on Google's A2A and Anthropic's MCP protocols, combining the power of LangChain, Google GenAI, and modern agent orchestration for engineering task orchestration.
@@ -223,6 +230,7 @@ chatbot = AgentFactory(
     mcp_configs={"weather_mcp": weather_mcp_config},
     skills_config=skill_config,
     tools_config=tools_config,
+    telemetry_config=telemetry_config,
     debug=True,
 )
 
