@@ -100,12 +100,48 @@ def build_agent_card_embeddings(agent_card_dir: str, persist_dir: str = "./chrom
     logger.info(f"Indexed {len(agent_cards)} agent cards into ChromaDB.")
     return collection
 
+def _keyword_agent_uri(query: str) -> str | None:
+    normalized = query.lower()
+
+    if any(term in normalized for term in ("run simulation", "annual simulation", "simulate")):
+        return "resource://agent_cards/simulation_agent"
+
+    if any(term in normalized for term in ("window-to-wall", "window to wall", "wwr", "envelope", "insulation")):
+        return "resource://agent_cards/envelope_agent"
+
+    if any(term in normalized for term in ("lighting", "lpd", "daylighting")):
+        return "resource://agent_cards/lighting_agent"
+
+    if (
+        any(term in normalized for term in ("retrieve", "report", "record", "get"))
+        and any(term in normalized for term in ("eui", "energy use intensity", "output", "result"))
+    ):
+        return "resource://agent_cards/output_agent"
+
+    if any(term in normalized for term in ("generate", "load", "template", "typical", "baseline model")):
+        return "resource://agent_cards/template_agent"
+
+    return None
+
+
 # ---- 4. Query the best match ----
 def find_best_match(query: str, persist_dir: str = "./chroma_store") -> dict | None:
     """Find the most semantically similar agent card to a text query."""
     client = get_chroma_client(persist_dir)
     embed_fn = get_embedding_function()
     collection = client.get_or_create_collection(name="agent_cards", embedding_function=embed_fn)
+
+    keyword_uri = _keyword_agent_uri(query)
+    if keyword_uri:
+        keyword_match = collection.get(ids=[keyword_uri])
+        if keyword_match["metadatas"]:
+            logger.info(f"Query text: {query}")
+            logger.info(f"Keyword-routed match: {keyword_uri}")
+            return {
+                "uri": keyword_uri,
+                "agent_card": json.loads(keyword_match["metadatas"][0]["full_card"]),
+                "distance": 0.0,
+            }
 
     results = collection.query(query_texts=[query], n_results=1)
 
