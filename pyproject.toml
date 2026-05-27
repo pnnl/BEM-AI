@@ -52,7 +52,7 @@ web = [
     "rank-bm25>=0.2.2",
 ]
 rerank = ["sentence-transformers>=3.4.1"]
-sim_bem_network = ["openstudio>=3.10.0", "streamlit>=1.51.0"]
+sim_bem_network = ["openstudio>=3.10.0", "streamlit>=1.51.0", "lark-oapi>=1.4.0"]
 sim_chat_demo = ["streamlit>=1.51.0"]
 sim_chat_stream_demo = ["streamlit>=1.51.0"]
 eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0"]

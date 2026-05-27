@@ -1,395 +1,476 @@
-from __future__ import annotations
+################
+# This is the same network as bem_network but
+# using agent factory approach
+################
 
 import asyncio
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from urllib.parse import urlparse
 
+from a2a.types import AgentCard
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from typing import Literal
 
-from automa_ai.agents import GenericAgentType, GenericLLM
+from automa_ai.agents import GenericLLM, GenericAgentType
 from automa_ai.agents.agent_factory import AgentFactory
-from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer, A2AServerManager
-from automa_ai.common.mcp_registry import MCPServerConfig, MCPServerManager
+from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.mcp_registry import MCPServerConfig
 from app_mcps import model_mcp, os_mcp
+from automa_ai.common.types import TaskList
+from automa_ai.network.agentic_network import MultiAgentNetwork
+from automa_ai.observability import create_feishu_notifier_from_env
 
 logger = logging.getLogger(__name__)
+event_notifier = create_feishu_notifier_from_env()
 
-BASE_DIR = Path(__file__).resolve().parent
-ENV_PATH = BASE_DIR / ".env"
-BLACKBOARD_BASE_DIR = BASE_DIR / ".demo_blackboards"
-load_dotenv(dotenv_path=ENV_PATH)
-
-
-COORDINATOR_COT = """
-You are the BEM coordinator for an OpenStudio energy modeling workflow.
-
-Use the shared blackboard as the source of truth.
-
-Rules:
-- Always call blackboard_read before deciding the next step.
-- Ask for missing required information instead of guessing.
-- Use the planner agent first when there is no task plan in the blackboard.
-- If no model exists yet, use the model generator agent before any modification or simulation work.
-- Use the envelope agent only for envelope requests such as window-to-wall-ratio updates.
-- Use the lighting agent only for daylighting or lighting updates.
-- Run simulations before asking the output agent for EUI results.
-- When comparing savings, make sure both the original model and the modified model are simulated and evaluated.
-- After each delegated task, read the blackboard again and decide the next step.
-
-When you delegate, include the relevant blackboard state in the task text so the subagent has enough context.
-
-Your final answer should summarize:
-- what work was completed,
-- which model paths were produced,
-- which simulations were run,
-- the EUI results or savings if available,
-- any missing information still required from the user.
-"""
+# Find the directory where this script is located
+# Pointing to automa_ai
+base_dir = Path(__file__).resolve().parent
+env_path = base_dir / ".env"
+load_dotenv(dotenv_path=env_path)
+api_key = os.getenv("API_KEY")
 
 
+def resolve_backend(provider: str | None, base_url: str | None) -> GenericLLM:
+    if provider:
+        normalized = provider.strip().lower().replace("_", "-")
+        for candidate in GenericLLM:
+            if candidate.value == normalized:
+                return candidate
+        raise ValueError(f"Unsupported model provider: {provider}")
+
+    if base_url:
+        normalized_path = urlparse(base_url.strip()).path.rstrip("/")
+        if normalized_path == "/v1":
+            return GenericLLM.OPENAI_COMPATIBLE
+    return GenericLLM.OLLAMA
+
+########################################################################################
+######## Prompts #######################################################################
 PLANNER_COT = """
-You are the planner for a building energy modeling team.
+You are the manager of an OpenStudio energy modeling team, you receive a user request and break it down into actionable tasks.
 
-Use the blackboard as the source of truth.
+## Team
+The agents in your team are:
+1. Energy Model Generator Agent: Generates a typical energy model based on energy standard, building type and location.
+2. Energy Model Envelope Agent: makes updates to building envelopes such as reducing window to wall ratio and surface (wall, roof, floor etc.) insulation adjustment.
+3. Energy Model Lighting Agent: makes updates to lighting power densities, add or remove daylighting sensors.
+4. Energy Simulation Agent: Perform an annual simulation to evaluate energy consumption of an OpenStudio model.
+5. Energy Output Agent: Help to retrieve energy use intensity after a simulation
 
-Rules:
-- Always call blackboard_read first.
-- If the request is missing required information, ask one clear follow-up question.
-- When you have enough information, write a concise task plan to the blackboard.
-- Use only blackboard_write ops: set, merge, append, remove.
-- Store the plan at path plan.
-- Keep the plan short and actionable.
+Always use chain-of-thought reasoning before generating tasks.
+If the user asks to report EUI, energy consumption, or simulation results, include explicit Energy Output Agent task(s) to retrieve the requested outputs after simulations. Output retrieval is allowed and is not considered data analysis.
+Do not invent file paths for modified models. For downstream simulation or output tasks after an envelope/lighting modification, refer to the updated model path returned by the previous agent in the blackboard (for example, updated_model_path), instead of hard-coding a new path.
+## QUESTION FORMAT
+You question should contain both status and question and formatted as the example below:
+{
+    "status": "input_required",
+    "question": {{add your question}}
+}
 
-Typical task sequence:
-1. Generate or load the original model.
-2. Apply model modifications if requested.
-3. Run simulation for the original model when comparison is needed.
-4. Run simulation for the modified model when comparison is needed.
-5. Retrieve EUI outputs.
-6. Summarize the outcome.
+CHAIN-OF-THOUGHT PROCESS:
+Before each response, reason through:
+1. What are my team's capabilities? [Understand your team's capability]
+2. What information do I already have? [List all known information]
+3. To leverage my team's capabilities, what is the next unknown information? [Identify gap]
+4. How should i naturally ask for this information? [Formulate question]
+5. If I have all the information I need, I should now proceed to generating tasks
+Always include a task to run simulation on original model. Do not generate tasks for data analysis, or data comparisons.
 
-Return a concise response that explains either:
-- the missing input you still need, or
-- the task plan that was written to the blackboard.
+## OUTPUT FORMAT
+Your output should follow this example format. Make sure the output is a valid JSON using double quotes only. 
+DO NOT add anything else apart from the JSON format below:
+{
+    "original_query": "I need a small office model",
+    "blackboard":
+    {
+        "original_model_path": "/usr/model/abc.osm",
+    },
+    "status: "completed", "input-required", "error"
+    "tasks": [
+        {
+            "id": 1,
+            "description": "Sample task 1",
+            "status": "pending"
+        }, 
+        {
+            "id": 2,
+            "description": "Sample task 2",
+            "status": "pending"
+        }
+    ]
+}
 """
-
-
-TEMPLATE_COT = """
-You generate an OpenStudio model template.
-
-Use the blackboard as the source of truth.
-
-Rules:
-- Always call blackboard_read first.
-- If blackboard already contains models.original_model_path, do not generate another model.
-- If save_dir, building_type, energy_standard, or location are missing, ask one clear follow-up question.
-- Use get_climate_by_location when location is available.
-- Use load_openstudio_model once all required inputs are known.
-- Write generated data back with blackboard_write.
-
-Write these fields when successful:
-- request.building_type
-- request.energy_standard
-- request.location
-- models.original_model_path
-- models.current_model_path
-- models.climate_zone
-
-Return a concise response describing what model was loaded or what input is missing.
-"""
-
 
 ENVELOPE_COT = """
-You update the envelope of an OpenStudio model.
+You are an energy modeler specialized in OpenStudio envelope updates.
+Check out the blackboard to confirm if you have all the information needed to perform the task.
+You do not need to check out the history. Instead, you should focus on your current task. 
 
-Use the blackboard as the source of truth.
+Call appropriate tools to perform the task. If new data generated, add it to blackboard.
+Your final output should strictly follow the example RESPONSE format:
 
-Rules:
-- Always call blackboard_read first.
-- Use models.current_model_path if it exists, otherwise use models.original_model_path.
-- If no model path exists, ask the coordinator to provide or generate a model first.
-- Use modify_window_to_wall_ratio for window-to-wall-ratio changes.
-- After a successful update, write:
-  - models.modified_model_path
-  - models.current_model_path
-  - modifications.envelope
-
-Return a concise response describing the envelope update or the missing prerequisite.
+RESPONSE:
+{
+    "status": "completed",
+    "description": "Description of the task performed",
+    "blackboard": {
+        "original_model_path": {{the user provided or loaded energy model}},
+        "updated_model_path": {{tool returned directory}}
+        ...
+    }
+}
 """
 
+TEMPLATE_COT = """
+You only job is to verify user request and load an OpenStudio model representing a typical building.
+Check blackboard. If blackboard has original_model_path, then generate RESPONSE 
+DO NOT check the history. Instead, you should focus on your current task.
+
+## QUESTION FORMAT
+You question should follow the example format below:
+{
+    "status": "input_required",
+    "question": {{add your question}}
+}
+
+Reasoning follow the DECISION TREE ONLY when blackboard does not have the original_model_path
+DECISION TREE:
+1. save_dir:
+    - If unknown, ask user for a local directory to save the model
+    - If known, move to step 2
+2. building_type:
+    - If unknown, ask user for the building type
+    - If known, move to step 3
+3. energy_standard:
+    - If unknown, ask user for the energy standard (e.g., 90.1 2019)
+    - If known, move to step 4
+4. location:
+    - If unknown, ask user for the location (e.g., Boulder, Colorado)
+    - If known, move to step 5
+5. generate the RESPONSE.
+
+CHAIN-OF-THOUGHT PROCESS:
+Before each response, reason through:
+1. What information do I already have? [List all known information]
+2. what is the next unknown information? [Identify gap]
+3. How should i naturally ask for this information? [Formulate question]
+4. If I have all the information I need, I should now proceed with the task
+
+Call appropriate tools to perform the task. If new data generated, add it to blackboard.
+Your final output should strictly follow the example RESPONSE format:
+
+RESPONSE:
+{
+    "status": "completed",
+    "description": "Loaded the model",
+    "blackboard": {
+        "original_model_path": {{save_dir}},
+        {{some other new data}}
+    }
+}
+"""
 
 LIGHTING_COT = """
-You update lighting features in an OpenStudio model.
+You are an energy modeler specialized in OpenStudio lighting updates.
+Check out the blackboard to confirm if you have all the information needed to perform the task.
+You do not need to check out the history. Instead, you should focus on your current task.
 
-Use the blackboard as the source of truth.
+Call appropriate tools to perform the task. If new data generated, add it to blackboard.
+Your final output should strictly follow the example RESPONSE format:
 
-Rules:
-- Always call blackboard_read first.
-- Use models.current_model_path if it exists, otherwise use models.original_model_path.
-- If no model path exists, ask the coordinator to provide or generate a model first.
-- Use add_daylight_sensor for daylighting requests.
-- After a successful update, write:
-  - models.modified_model_path
-  - models.current_model_path
-  - modifications.lighting
-
-Return a concise response describing the lighting update or the missing prerequisite.
+RESPONSE:
+{
+    "status": "completed",
+    "description": "Description of the task performed",
+    "blackboard": {
+        "original_model_path": new_path
+        "updated_model_path": {{tool returned directory}}
+        {{new data}}
+    }
+}
 """
-
 
 SIMULATION_COT = """
-You run OpenStudio simulations.
+Your only job is to call a tool to run annual simulation.
+You should NOT check the history, instead, focus on your primary task.
 
-Use the blackboard as the source of truth.
+Based on the query request, you can select a model path in the blackboard.
+If new data generated, add it to blackboard.
 
-Rules:
-- Always call blackboard_read first.
-- If the task mentions the original model, use models.original_model_path.
-- If the task mentions the modified or updated model, use models.modified_model_path or models.current_model_path.
-- Otherwise use models.current_model_path when available, else models.original_model_path.
-- If the chosen model path is missing, ask for the prerequisite model.
-- Use run_openstudio_simulation on the chosen model path.
-- After a successful run, write a completion record under simulations.
+Your final output should strictly follow the example RESPONSE format:
 
-Return a concise response describing which model was simulated.
+RESPONSE:
+{
+    "status": "completed",
+    "description": "Completed the simulation",
+    "blackboard": {
+        {{new data}}
+    }
+}
+
 """
-
 
 OUTPUT_COT = """
-You retrieve simulation outputs from an OpenStudio model.
+Your only task is to retrieve simulation outputs from an OpenStudio model path.
+You should NOT check the history, instead, focus on your only task.
+Check out the blackboard to confirm if you have the model paths. OpenStudio simulation results can be retrieved from the model itself instead of its output folder.
+If there are multiple model paths, iteratively retrieve the simulation outputs per model path.
 
-Use the blackboard as the source of truth.
-
-Rules:
-- Always call blackboard_read first.
-- If the task mentions the original model, use models.original_model_path.
-- If the task mentions the modified or updated model, use models.modified_model_path or models.current_model_path.
-- Otherwise use models.current_model_path when available, else models.original_model_path.
-- If the chosen model path is missing, ask for the prerequisite model.
-- Use retrieve_openstudio_model_annual_site_eui on the chosen model path.
-- Write the retrieved result under outputs.
-
-Return a concise response describing the EUI result you retrieved.
+Call appropriate tools to perform the task. If new data generated, add it to blackboard.
+Your final output should strictly follow the example RESPONSE format:
+RESPONSE:
+{
+    "status": "completed",
+    "description": "Description of the task performed",
+    "blackboard": {
+        {{new data}}
+    }
+}
 """
 
+SUMMARY_COT = """
+Your job is to summarize the work that has performed.
+Your summary shall follow the format below.
 
-def load_card(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+In each section, there is an instruction to follow when generating the summary.
 
+### Task
+{query}
 
-def build_blackboard_config() -> dict[str, Any]:
-    return {
-        "enabled": True,
-        "store": {
-            "backend": "local_json",
-            "base_dir": str(BLACKBOARD_BASE_DIR),
-        },
-        "schema_name": "sim_bem_workflow",
-        "schema_version": "1.0.0",
-        "schema_description": "Shared state for the sim_bem_network example.",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "request": {"type": "object"},
-                "plan": {"type": "object"},
-                "models": {"type": "object"},
-                "modifications": {"type": "object"},
-                "simulations": {"type": "object"},
-                "outputs": {"type": "object"},
-            },
-            "additionalProperties": True,
-        },
-        "initial_data": {
-            "request": {},
-            "plan": {"tasks": []},
-            "models": {},
-            "modifications": {},
-            "simulations": {},
-            "outputs": {},
-        },
-    }
+### Building Energy Modeling Task
+In this section, you need to analyze what task has been performed by reading the {results}
 
+### Modeling Meta Data
+In this section, provide a summary based on {blackboard}
 
-def build_agent_factory(
-    *,
-    card: dict[str, Any],
-    instructions: str,
-    model_name: str,
-    model_base_url: str | None = None,
-    mcp_configs: dict[str, MCPServerConfig] | None = None,
-    subagents: list[SubAgentSpec] | None = None,
-    blackboard_config: dict[str, Any] | None = None,
-) -> AgentFactory:
-    return AgentFactory(
-        card=card,
-        instructions=instructions,
-        model_name=model_name,
-        model_base_url=model_base_url,
-        agent_type=GenericAgentType.LANGGRAPHCHAT,
-        chat_model=GenericLLM.OLLAMA,
-        mcp_configs=mcp_configs,
-        subagent_config=subagents,
-        blackboard_config=blackboard_config,
-        enable_metrics=True,
-        debug=True,
-    )
+### Summary
+Based on the above information, summarize the work that has performed in this task.
+
+"""
+
+#########################################################################################
+###### MCP ######################################
+oss_schema_mcp_config = MCPServerConfig(
+    name="oss_schema_mcp",
+    host="localhost",
+    port=10110,
+    serve=os_mcp.serve,
+    transport="sse",
+)
+
+oss_model_mcp_config = MCPServerConfig(
+    name="oss_model_mcp",
+    host="localhost",
+    port=10118,
+    serve=model_mcp.serve,
+    transport="sse",
+)
+
+#########################################################################################
+###### Define a planner agent that plans the tasks ######################################
+planner_model_name = os.getenv("PLANNER_MODEL_NAME")
+planner_model_base_url = os.getenv("PLANNER_MODEL_BASE_URL")
+planner_model_provider = os.getenv("PLANNER_MODEL_PROVIDER")
+planner_backend = resolve_backend(planner_model_provider, planner_model_base_url)
 
 
-def build_server_configurations() -> tuple[MCPServerConfig, MCPServerConfig]:
-    return (
-        MCPServerConfig(
-            name="oss_schema_mcp",
-            host="localhost",
-            port=10110,
-            serve=os_mcp.serve,
-            transport="sse",
-        ),
-        MCPServerConfig(
-            name="oss_model_mcp",
-            host="localhost",
-            port=10118,
-            serve=model_mcp.serve,
-            transport="sse",
-        ),
-    )
+class ResponseFormat(BaseModel):
+    status: Literal["input_required", "completed", "error"] = "input_required"
+    question: str = Field(description="Input needed from the user to generate the plan")
+    content: TaskList = Field(description="List of tasks when the plan is generated")
 
 
-async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    BLACKBOARD_BASE_DIR.mkdir(parents=True, exist_ok=True)
+# Compute full path to the agent card file
+agent_card_path = base_dir / "agent_cards/planner_agent.json"
+with Path.open(agent_card_path) as file:
+    data = json.load(file)
+    agent_card = AgentCard(**data)
 
-    planner_model_name = os.getenv("PLANNER_MODEL_NAME")
-    planner_model_base_url = os.getenv("PLANNER_MODEL_BASE_URL") or None
-    specialist_model_name = os.getenv("SPECIALIZED_AGENT_MODEL_NAME")
+planner = AgentFactory(
+    card=agent_card,
+    instructions=PLANNER_COT,
+    model_name=planner_model_name,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=planner_backend,
+    response_format=ResponseFormat,
+    model_base_url=planner_model_base_url,
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
 
-    oss_schema_mcp_config, oss_model_mcp_config = build_server_configurations()
-    blackboard_config = build_blackboard_config()
+#########################################################################################
+##### Define Speciality agents ###############################################################
+model_name = os.getenv("SPECIALIZED_AGENT_MODEL_NAME")
+model_url = os.getenv("SPECIALIZED_AGENT_MODEL_BASE_URL")
+specialized_model_provider = os.getenv("SPECIALIZED_AGENT_MODEL_PROVIDER")
+specialized_backend = resolve_backend(specialized_model_provider, model_url)
+# Load geometry agent.
+# Compute full path to the agent card file
+env_agent_card_path = base_dir / "agent_cards/envelope_agent.json"
+with Path.open(env_agent_card_path) as file:
+    data = json.load(file)
+    env_agent_card = AgentCard(**data)
 
-    planner_card = load_card(BASE_DIR / "agent_cards" / "planner_agent.json")
-    envelope_card = load_card(BASE_DIR / "agent_cards" / "envelope_agent.json")
-    template_card = load_card(BASE_DIR / "agent_cards" / "template_agent.json")
-    lighting_card = load_card(BASE_DIR / "agent_cards" / "lighting_agent.json")
-    simulation_card = load_card(BASE_DIR / "agent_cards" / "simulation_agent.json")
-    output_card = load_card(BASE_DIR / "agent_cards" / "output_agent.json")
-    coordinator_card = load_card(
-        BASE_DIR / "agent_cards" / "orchestrator_agent.json"
-    )
+env_modeler = AgentFactory(
+    card=env_agent_card,
+    instructions=ENVELOPE_COT,
+    model_name=model_name,
+    model_base_url=model_url,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=specialized_backend,
+    mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
 
-    planner = build_agent_factory(
-        card=planner_card,
-        instructions=PLANNER_COT,
-        model_name=planner_model_name,
-        model_base_url=planner_model_base_url,
-        blackboard_config=blackboard_config,
-    )
-    envelope_agent = build_agent_factory(
-        card=envelope_card,
-        instructions=ENVELOPE_COT,
-        model_name=specialist_model_name,
-        mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
-        blackboard_config=blackboard_config,
-    )
-    template_agent = build_agent_factory(
-        card=template_card,
-        instructions=TEMPLATE_COT,
-        model_name=specialist_model_name,
-        mcp_configs={"oss_model_mcp": oss_model_mcp_config},
-        blackboard_config=blackboard_config,
-    )
-    lighting_agent = build_agent_factory(
-        card=lighting_card,
-        instructions=LIGHTING_COT,
-        model_name=specialist_model_name,
-        mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
-        blackboard_config=blackboard_config,
-    )
-    simulation_agent = build_agent_factory(
-        card=simulation_card,
-        instructions=SIMULATION_COT,
-        model_name=specialist_model_name,
-        mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
-        blackboard_config=blackboard_config,
-    )
-    output_agent = build_agent_factory(
-        card=output_card,
-        instructions=OUTPUT_COT,
-        model_name=specialist_model_name,
-        mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
-        blackboard_config=blackboard_config,
-    )
-    coordinator = build_agent_factory(
-        card=coordinator_card,
-        instructions=COORDINATOR_COT,
-        model_name=planner_model_name,
-        model_base_url=planner_model_base_url,
-        subagents=[
-            SubAgentSpec(
-                name=planner_card["name"],
-                description=planner_card["description"],
-                agent_card=planner_card,
-            ),
-            SubAgentSpec(
-                name=template_card["name"],
-                description=template_card["description"],
-                agent_card=template_card,
-            ),
-            SubAgentSpec(
-                name=envelope_card["name"],
-                description=envelope_card["description"],
-                agent_card=envelope_card,
-            ),
-            SubAgentSpec(
-                name=lighting_card["name"],
-                description=lighting_card["description"],
-                agent_card=lighting_card,
-            ),
-            SubAgentSpec(
-                name=simulation_card["name"],
-                description=simulation_card["description"],
-                agent_card=simulation_card,
-            ),
-            SubAgentSpec(
-                name=output_card["name"],
-                description=output_card["description"],
-                agent_card=output_card,
-            ),
-        ],
-        blackboard_config=blackboard_config,
-    )
+# Load model template agent.
+tmp_agent_card_path = base_dir / "agent_cards/template_agent.json"
+with Path.open(tmp_agent_card_path) as file:
+    data = json.load(file)
+    tmp_agent_card = AgentCard(**data)
 
-    mcp_manager = MCPServerManager()
-    mcp_manager.add_server(oss_schema_mcp_config)
-    mcp_manager.add_server(oss_model_mcp_config)
+template_modeler = AgentFactory(
+    card=tmp_agent_card,
+    instructions=TEMPLATE_COT,
+    model_name=model_name,
+    model_base_url=model_url,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=specialized_backend,
+    mcp_configs={"oss_model_mcp": oss_model_mcp_config},
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
 
-    server_manager = A2AServerManager()
-    server_manager.add_server(A2AAgentServer(coordinator, coordinator_card))
-    server_manager.add_server(A2AAgentServer(planner, planner_card))
-    server_manager.add_server(A2AAgentServer(envelope_agent, envelope_card))
-    server_manager.add_server(A2AAgentServer(template_agent, template_card))
-    server_manager.add_server(A2AAgentServer(lighting_agent, lighting_card))
-    server_manager.add_server(A2AAgentServer(simulation_agent, simulation_card))
-    server_manager.add_server(A2AAgentServer(output_agent, output_card))
+# Load lighting model agent
+ltg_agent_card_path = base_dir / "agent_cards/lighting_agent.json"
+with Path.open(ltg_agent_card_path) as file:
+    data = json.load(file)
+    ltg_agent_card = AgentCard(**data)
 
-    await mcp_manager.start_all()
-    print("✅ MCP servers started.")
-    await server_manager.start_all()
-    print("✅ A2A Server started at http://localhost:10001/")
+lighting_modeler = AgentFactory(
+    card=ltg_agent_card,
+    instructions=LIGHTING_COT,
+    model_name=model_name,
+    model_base_url=model_url,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=specialized_backend,
+    mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
+
+# Load simulation model agent
+sim_agent_card_path = base_dir / "agent_cards/simulation_agent.json"
+with Path.open(sim_agent_card_path) as file:
+    data = json.load(file)
+    sim_agent_card = AgentCard(**data)
+
+simulation_agent = AgentFactory(
+    card=sim_agent_card,
+    instructions=SIMULATION_COT,
+    model_name=model_name,
+    model_base_url=model_url,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=specialized_backend,
+    mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
+
+# EnergyPlus output agent
+output_agent_card_path = base_dir / "agent_cards/output_agent.json"
+with Path.open(output_agent_card_path) as file:
+    data = json.load(file)
+    output_agent_card = AgentCard(**data)
+
+output_agent = AgentFactory(
+    card=output_agent_card,
+    instructions=OUTPUT_COT,
+    model_name=model_name,
+    model_base_url=model_url,
+    agent_type=GenericAgentType.LANGGRAPH,
+    chat_model=specialized_backend,
+    mcp_configs={"oss_schema_mcp": oss_schema_mcp_config},
+    api_key=api_key,
+    enable_metrics=True,
+    debug=True,
+)
+
+# Orchestrator agent
+orchestrator_agent_card_path = base_dir / "agent_cards/orchestrator_agent.json"
+with Path.open(orchestrator_agent_card_path) as file:
+    data = json.load(file)
+    orchestrator_agent_card = AgentCard(**data)
+
+orchestrator_agent = AgentFactory(
+    card=orchestrator_agent_card,
+    instructions=SUMMARY_COT,
+    model_name=planner_model_name,
+    model_base_url=planner_model_base_url,
+    agent_type=GenericAgentType.ORCHESTRATOR,
+    chat_model=planner_backend,
+    api_key=api_key,
+    event_notifier=event_notifier,
+    enable_metrics=True,
+    debug=True,
+)
+
+###Sample Questions
+### 1. I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, I want to update the model window to wall ratio to 0.35
+### 2. I have a model in local directory: /Users/xuwe123/ai/os-std-mod-mcp-server/resources/baseline.osm, Use this model to evaluate the energy savings from reducing window to wall ratio by 10%
+### 3. I want to evaluate the energy savings from reducing window to wall ratio by 10% for a medium office building that is designed according to ASHRAE 90.1 2019 in Tampa Florida.
+### 4. I have a model in local directory: /Users/xuwe123/ai/experiment/baseline.osm, I want to evaluate the energy savings by adding daylighting sensors
+
+
+async def main():
+    automa_network = MultiAgentNetwork(agent_cards_dir=base_dir / "agent_cards")
+    automa_network.add_mcp_server(oss_schema_mcp_config)
+    automa_network.add_mcp_server(oss_model_mcp_config)
+
+    orchestrator_server = A2AAgentServer(orchestrator_agent, orchestrator_agent_card)
+    planner_server = A2AAgentServer(planner, agent_card)
+    env_modeler_server = A2AAgentServer(env_modeler, env_agent_card)
+    lighting_server = A2AAgentServer(lighting_modeler, ltg_agent_card)
+    model_template_server = A2AAgentServer(template_modeler, tmp_agent_card)
+    sim_server = A2AAgentServer(simulation_agent, sim_agent_card)
+    output_server = A2AAgentServer(output_agent, output_agent_card)
+
+    automa_network.add_entry_agent(orchestrator_server)
+    automa_network.add_a2a_server(planner_server)
+    automa_network.add_a2a_server(env_modeler_server)
+    automa_network.add_a2a_server(lighting_server)
+    automa_network.add_a2a_server(model_template_server)
+    automa_network.add_a2a_server(sim_server)
+    automa_network.add_a2a_server(output_server)
+
+    await automa_network.run()
+    print("✅ Network started...")
     print("Type 'exit' or 'stop' to shut down.")
 
     loop = asyncio.get_event_loop()
-    while True:
-        cmd = await loop.run_in_executor(None, input, "> ")
-        if cmd.strip().lower() in {"exit", "stop", "quit"}:
-            break
+    stop_event = asyncio.Event()
 
-    print("🛑 Stopping servers...")
-    await server_manager.stop_all()
-    await mcp_manager.stop_all()
-    print("🧹 MCP and A2A servers stopped cleanly.")
+    async def wait_for_input():
+        while True:
+            cmd = await loop.run_in_executor(None, input, "> ")
+            if cmd.strip().lower() in {"exit", "stop", "quit"}:
+                stop_event.set()
+                break
+
+    await wait_for_input()
+    print("🛑 Stopping server...")
+    await automa_network.shutdown_all()
+    print("🧹 MCP and A2A Servers stopped cleanly.")
 
 
 if __name__ == "__main__":

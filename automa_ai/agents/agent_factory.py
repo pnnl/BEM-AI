@@ -8,6 +8,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from google.adk.models.lite_llm import LiteLlm
 from langchain_anthropic import ChatAnthropic
 from langchain_aws import ChatBedrockConverse
+from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
@@ -17,8 +18,10 @@ from pydantic import BaseModel, SecretStr
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.adk_agent import GenericADKAgent
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
+from automa_ai.agents.orchestrator_network_agent import OrchestratorNetworkAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
+from automa_ai.agents.request_chat_model import RequestChatCompletionsModel
 from automa_ai.blackboard.errors import SchemaValidationError
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry
 from automa_ai.blackboard.store import create_blackboard_store, BlackboardStoreConfig
@@ -27,6 +30,7 @@ from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
 from automa_ai.common.utils import map_mcp_config_to_server_config, load_tool_plugins
 from automa_ai.memory.manager import DefaultMemoryManager
+from automa_ai.observability.notifier import EventNotifier
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config import CheckpointerConfig
 from automa_ai.config.blackboard import BlackboardConfig
@@ -36,16 +40,61 @@ from automa_ai.checkpoint import PlainRedisSaver
 
 logger = logging.getLogger(__name__)
 
+OPENAI_COMPATIBLE_API_KEY_ENV_VARS = ("OPENAI_API_KEY", "API_KEY", "ACCESS_TOKEN")
+
+
+def _first_populated_env(*keys: str) -> str | None:
+    for key in keys:
+        value = os.getenv(key)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+def _extract_bearer_token(default_headers: Dict[str, str] | None) -> str | None:
+    if not default_headers:
+        return None
+    authorization = default_headers.get("Authorization") or default_headers.get("authorization")
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+def _normalize_backend(
+    backend: GenericLLM | BaseChatModel,
+    base_url: str | None,
+) -> GenericLLM | BaseChatModel:
+    from urllib.parse import urlparse
+    if isinstance(backend, BaseChatModel) or backend != GenericLLM.OLLAMA or not base_url:
+        return backend
+    parsed = urlparse(base_url.strip())
+    if parsed.path.rstrip("/") == "/v1":
+        logger.warning(
+            "Base URL %s looks like an OpenAI-compatible endpoint; using OPENAI_COMPATIBLE instead of OLLAMA.",
+            base_url,
+        )
+        return GenericLLM.OPENAI_COMPATIBLE
+    return backend
+
 
 def resolve_chat_model(
-    backend: GenericLLM,
+    backend: GenericLLM | BaseChatModel,
     model_name: str,
     agent_type: GenericAgentType,
     base_url: str | None = None,
     api_key: str | None = None,
     api_version: str | None = None,
     model_max_retries: int | None = None,
+    model_kwargs: Dict[str, Any] | None = None,
+    default_headers: Dict[str, str] | None = None,
 ):
+    backend = _normalize_backend(backend, base_url)
+
+    if isinstance(backend, BaseChatModel):
+        return backend
+
+    model_kwargs = model_kwargs or {}
+
     if backend == GenericLLM.OLLAMA:
         return ChatOllama(model=model_name, base_url=base_url, temperature=0)
     elif backend == GenericLLM.BEDROCK:
@@ -65,18 +114,29 @@ def resolve_chat_model(
             aws_access_key_id=SecretStr(aws_access_key_id),
             aws_secret_access_key=SecretStr(aws_secret_access_key),
         )
-    elif backend == GenericLLM.OPENAI:
-        temp_key = os.getenv("OPENAI_API_KEY")
-        assert (
-            api_key or temp_key
-        ), "You must provide an API key (api_key) or have OPENAI_API_KEY in the environment to access OpenAI GPT models"
-        # Need support for API key
-        if not api_key:
-            # use the key from environment variable.
-            api_key = temp_key
+    elif backend in [GenericLLM.OPENAI, GenericLLM.OPENAI_COMPATIBLE]:
+        resolved_api_key = (
+            api_key.strip()
+            if api_key and api_key.strip()
+            else _extract_bearer_token(default_headers)
+            or _first_populated_env(*OPENAI_COMPATIBLE_API_KEY_ENV_VARS)
+        )
+        assert resolved_api_key, (
+            "You must provide an API key to access OpenAI-compatible models. "
+            f"Checked explicit api_key plus env vars: {', '.join(OPENAI_COMPATIBLE_API_KEY_ENV_VARS)}"
+        )
+        if backend == GenericLLM.OPENAI_COMPATIBLE:
+            return RequestChatCompletionsModel(
+                model=model_name,
+                base_url=base_url or "",
+                api_key=SecretStr(resolved_api_key),
+                temperature=0,
+                streaming=True,
+                model_kwargs=model_kwargs,
+                default_headers=default_headers or {},
+            )
         # Detect Azure automatically
         if base_url and "azure.com" in base_url.lower():
-            # Azure OpenAI
             if not api_version:
                 raise ValueError(
                     "AzureChatOpenAI requires azure_api_version and azure_deployment"
@@ -84,7 +144,7 @@ def resolve_chat_model(
             streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
             return AzureChatOpenAI(
                 azure_endpoint=base_url,
-                api_key=SecretStr(api_key),
+                api_key=SecretStr(resolved_api_key),
                 api_version=api_version,
                 azure_deployment=model_name,
                 streaming=streaming,
@@ -92,7 +152,7 @@ def resolve_chat_model(
         return ChatOpenAI(
             model=model_name,
             base_url=base_url,
-            api_key=SecretStr(api_key),
+            api_key=SecretStr(resolved_api_key),
             temperature=0,
             streaming=True,
         )

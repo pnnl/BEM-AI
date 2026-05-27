@@ -13,9 +13,11 @@ from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel
 
 from automa_ai.agents import GenericLLM
+from automa_ai.common.normalization import sanitize_blackboard_update
 from automa_ai.common.response_parser import extract_and_parse_json
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.workflow import WorkflowGraph, WorkflowNode, Status
+from automa_ai.observability.notifier import AgentEvent, EventNotifier, NoOpEventNotifier
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,8 @@ class OrchestratorNetworkAgent(BaseAgent):
             agent_name: str,
             description: str,
             instructions: str,
-            chat_model: BaseChatModel
+            chat_model: BaseChatModel,
+            event_notifier: EventNotifier | None = None,
         ):
         super().__init__(
             agent_name=agent_name,
@@ -57,6 +60,30 @@ class OrchestratorNetworkAgent(BaseAgent):
         self.context_id = None
         self.summary_instruction = instructions
         self.chat_model = chat_model
+        self.event_notifier = event_notifier or NoOpEventNotifier()
+
+    async def _emit_event(
+        self,
+        event_type: str,
+        message: str,
+        *,
+        source: str,
+        target: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        await self.event_notifier.emit(
+            AgentEvent(
+                event_type=event_type,
+                source=source,
+                target=target,
+                session_id=session_id,
+                task_id=task_id,
+                message=message,
+                metadata=metadata or {},
+            )
+        )
 
     async def invoke(
         self,
@@ -119,7 +146,12 @@ class OrchestratorNetworkAgent(BaseAgent):
         node_label: str = None,
     ) -> WorkflowNode:
         """Add a node to the graph."""
-        node = WorkflowNode(task=query, node_key=node_key, node_label=node_label)
+        node = WorkflowNode(
+            task=query,
+            node_key=node_key,
+            node_label=node_label,
+            event_notifier=self.event_notifier,
+        )
         self.graph.add_node(node)
         if node_id:
             self.graph.add_edge(node_id, node.id)
@@ -148,7 +180,15 @@ class OrchestratorNetworkAgent(BaseAgent):
         start_node_id = None
         # Graph does not exist, start a new graph with planner node.
         if not self.graph:
-            self.graph = WorkflowGraph()
+            self.graph = WorkflowGraph(event_notifier=self.event_notifier)
+            await self._emit_event(
+                "session_started",
+                "Started a new orchestrated workflow session.",
+                source=self.agent_name,
+                session_id=context_id,
+                task_id=task_id,
+                metadata={"query": query},
+            )
             planner_node = self.add_graph_node(
                 task_id=task_id,
                 context_id=context_id,
@@ -161,6 +201,14 @@ class OrchestratorNetworkAgent(BaseAgent):
         elif self.graph.state == Status.PAUSED:
             start_node_id = self.graph.paused_node_id
             self.set_node_attributes(node_id=start_node_id, query=query)
+            await self._emit_event(
+                "session_resumed",
+                "Resumed a paused workflow session with new user input.",
+                source=self.agent_name,
+                session_id=context_id,
+                task_id=task_id,
+                metadata={"query": query, "paused_node_id": start_node_id},
+            )
 
         # This loop can be avoided if the workflow graph is dynamic or
         # is built from the results of the planner when the planner itself
@@ -226,7 +274,18 @@ class OrchestratorNetworkAgent(BaseAgent):
                                 if isinstance(parsed, dict):
                                     if parsed.get("status") and parsed["status"] == "completed" and parsed.get("blackboard"):
                                         # if the returned text generated response and response status is completed, update the blackboard.
-                                        self.graph.update_blackboard(parsed.get("blackboard"))
+                                        sanitized = sanitize_blackboard_update(agent_name, parsed.get("blackboard"))
+                                        if sanitized:
+                                            self.graph.update_blackboard(sanitized)
+                                            await self._emit_event(
+                                                "blackboard_updated",
+                                                f"Agent '{agent_name}' updated the shared blackboard.",
+                                                source=agent_name,
+                                                target="blackboard",
+                                                session_id=context_id,
+                                                task_id=task_id,
+                                                metadata={"delta": sanitized},
+                                            )
                             self.results.append(text)
                             yield {
                                 "response_type": "text",
@@ -240,8 +299,19 @@ class OrchestratorNetworkAgent(BaseAgent):
                             response_text = ""
                             # update blackboard
                             if artifact_data.get("blackboard"):
-                                self.graph.update_blackboard(artifact_data.get("blackboard"))
-                                response_text += f"Backboard update: {artifact_data.get('blackboard')} \n\n"
+                                sanitized = sanitize_blackboard_update(agent_name, artifact_data.get("blackboard"))
+                                if sanitized:
+                                    self.graph.update_blackboard(sanitized)
+                                    await self._emit_event(
+                                        "blackboard_updated",
+                                        f"Agent '{agent_name}' updated the shared blackboard.",
+                                        source=agent_name,
+                                        target="blackboard",
+                                        session_id=context_id,
+                                        task_id=task_id,
+                                        metadata={"delta": sanitized},
+                                    )
+                                    response_text += f"Backboard update: {sanitized} \n\n"
                             # update history
                             if artifact_data.get("results"):
                                 self.results.append(artifact.parts[0].root.data.get("results"))
@@ -257,6 +327,15 @@ class OrchestratorNetworkAgent(BaseAgent):
                                 # Define the edges
                                 current_node_id = start_node_id
                                 # print(artifact_data)
+                                await self._emit_event(
+                                    "planner_tasks_generated",
+                                    "Planner generated workflow tasks.",
+                                    source=agent_name,
+                                    target="workflow",
+                                    session_id=context_id,
+                                    task_id=task_id,
+                                    metadata={"tasks": artifact_data["tasks"]},
+                                )
                                 for idx, task_data in enumerate(artifact_data["tasks"]):
                                     # distribute relevant modeling tasks.
                                     response_text += f"- {task_data} \n"
@@ -314,6 +393,14 @@ class OrchestratorNetworkAgent(BaseAgent):
             # All individual actions completed, now generate the summary
             logger.info(f"Generating summary for {len(self.results)} results")
             summary = await self.generate_summary()
+            await self._emit_event(
+                "workflow_completed",
+                "Workflow completed successfully and generated a summary.",
+                source=self.agent_name,
+                session_id=context_id,
+                task_id=task_id,
+                metadata={"summary": summary},
+            )
             self.clear_state()
             logger.info(f"Summary: {summary}")
             yield {

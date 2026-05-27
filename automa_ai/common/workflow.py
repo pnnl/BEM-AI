@@ -21,6 +21,7 @@ from a2a.types import (
 
 from automa_ai.common.utils import get_agent_mcp_server_config
 from automa_ai.mcp_servers import client
+from automa_ai.observability.notifier import AgentEvent, EventNotifier, NoOpEventNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,11 @@ class WorkflowNode:
     """Represents a single node in a workflow graph."""
 
     def __init__(
-        self, task: str, node_key: str | None = None, node_label: str | None = None
+        self,
+        task: str,
+        node_key: str | None = None,
+        node_label: str | None = None,
+        event_notifier: EventNotifier | None = None,
     ):
         self.id = str(uuid.uuid4())
         self.node_key = node_key
@@ -47,6 +52,30 @@ class WorkflowNode:
         self.task = task
         self.result = None
         self.state = Status.READY
+        self.event_notifier = event_notifier or NoOpEventNotifier()
+
+    async def _emit_event(
+        self,
+        event_type: str,
+        message: str,
+        *,
+        source: str,
+        target: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        await self.event_notifier.emit(
+            AgentEvent(
+                event_type=event_type,
+                source=source,
+                target=target,
+                session_id=session_id,
+                task_id=task_id,
+                message=message,
+                metadata=metadata or {},
+            )
+        )
 
     async def get_planner_resource(self) -> AgentCard | None:
         logger.info("Getting resource for node %s", self.id)
@@ -109,7 +138,7 @@ class WorkflowNode:
 class WorkflowGraph:
     """Represents a graph of workflow nodes."""
 
-    def __init__(self) -> None:
+    def __init__(self, event_notifier: EventNotifier | None = None) -> None:
         self.graph = nx.DiGraph()
         self.nodes = {}
         self.latest_node = None
@@ -117,6 +146,7 @@ class WorkflowGraph:
         self.state = Status.INITIALIZED
         self.blackboard = {}
         self.paused_node_id = None
+        self.event_notifier = event_notifier or NoOpEventNotifier()
 
     def add_node(self, node) -> None:
         logger.info("Adding one %s", node.id)
