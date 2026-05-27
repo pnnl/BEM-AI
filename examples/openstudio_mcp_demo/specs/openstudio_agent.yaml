@@ -72,6 +72,8 @@ skills:
       path: ../skills/hvac_sizing_assistant.md
     openstudio_sdk_model_editor:
       path: ../skills/openstudio_sdk_model_editor.md
+    openstudio_vav_reheat_system_creator:
+      path: ../skills/openstudio_vav_reheat_system_creator.md
     openstudio_sdk_wiki:
       path: ../knowledge/openstudio_sdk_wiki
       mode: directory
