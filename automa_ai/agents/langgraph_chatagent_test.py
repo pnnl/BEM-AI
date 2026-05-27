@@ -165,6 +165,7 @@ async def test_invoke_records_agent_turn_telemetry(tmp_path):
     )
 
     assert result == {"ok": True}
+    agent.telemetry.flush()
     records = [
         json.loads(line)
         for line in telemetry_path.read_text(encoding="utf-8").splitlines()
@@ -242,6 +243,7 @@ async def test_forward_subagent_events_sanitizes_metadata_payload(tmp_path):
 
     await asyncio.wait_for(output_queue.get(), timeout=1)
     task.cancel()
+    agent.telemetry.flush()
     records = [
         json.loads(line)
         for line in telemetry_path.read_text(encoding="utf-8").splitlines()
@@ -273,6 +275,7 @@ async def test_stream_cancelled_during_setup_closes_span_as_error(tmp_path):
         async for _ in agent.stream("hello", "session-1", "task-1"):
             pass
 
+    agent.telemetry.flush()
     records = [
         json.loads(line)
         for line in telemetry_path.read_text(encoding="utf-8").splitlines()

@@ -8,9 +8,14 @@ or AWS service.
 ## Current recorders
 
 - `noop`: disabled/default behavior.
-- `jsonl`: appends local JSONL records to a file.
+- `jsonl`: appends local JSONL records to a file using a background writer
+  thread, so async agent execution does not block on each filesystem write.
 - `otel`: reserved for optional OpenTelemetry and AWS AgentCore integration.
   It is intentionally not bundled into the local-first MVP.
+
+`Telemetry.flush()` blocks until the JSONL recorder has persisted records
+accepted so far. Use it in tests, shutdown paths, or debugging scripts that need
+to read the file immediately after an agent turn.
 
 ## Configuration
 

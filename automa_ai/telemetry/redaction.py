@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -21,8 +22,20 @@ SECRET_VALUE_PATTERN = re.compile(
 
 
 def content_hash(value: Any) -> str:
-    """Return a stable digest so payloads can be correlated without storing them."""
-    text = value if isinstance(value, str) else repr(value)
+    """Return a canonical digest so payloads can be correlated without storing them."""
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(
+                value,
+                default=str,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError):
+            text = str(value)
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 

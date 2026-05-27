@@ -36,6 +36,7 @@ def test_jsonl_recorder_writes_span_and_event(tmp_path) -> None:
     with telemetry.span("agent.turn", attributes={"agent.name": "demo"}):
         telemetry.event("message", attributes={"content": "hello"})
 
+    telemetry.flush()
     records = _read_jsonl(path)
     assert [record["type"] for record in records] == [
         "span_start",
@@ -62,6 +63,7 @@ def test_nested_spans_preserve_parent_child_relationship(tmp_path) -> None:
         with telemetry.span("tool.call"):
             assert current_trace_id() == trace_id
 
+    telemetry.flush()
     records = _read_jsonl(path)
     child_start = records[1]
     assert child_start["name"] == "tool.call"
@@ -88,6 +90,7 @@ def test_redacted_mode_redacts_secret_values(tmp_path) -> None:
     ):
         pass
 
+    telemetry.flush()
     record = _read_jsonl(path)[0]
     assert record["attributes"]["api_key"] == "[REDACTED]"
     assert "[REDACTED]" in record["attributes"]["payload"]["content"]
@@ -128,6 +131,35 @@ def test_span_start_failure_restores_context() -> None:
     assert current_span_id() is None
 
 
+def test_exception_message_is_sanitized_in_metadata_mode(tmp_path) -> None:
+    path = tmp_path / "telemetry.jsonl"
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(path),
+            "content_mode": "metadata",
+        }
+    )
+
+    with pytest.raises(RuntimeError):
+        with telemetry.span("agent.turn"):
+            raise RuntimeError("Authorization: Bearer abcdefghijklmnop")
+
+    telemetry.flush()
+    records = _read_jsonl(path)
+    message = records[-1]["attributes"]["exception.message"]
+    assert message["length"] > 0
+    assert message["sha256"]
+    assert "content" not in message
+
+
+def test_content_hash_uses_canonical_mapping_form() -> None:
+    from automa_ai.telemetry.redaction import content_hash
+
+    assert content_hash({"b": 2, "a": 1}) == content_hash({"a": 1, "b": 2})
+
+
 def test_telemetry_config_from_string() -> None:
     cfg = TelemetryConfig.from_value("jsonl")
 
@@ -153,6 +185,7 @@ def test_wrap_langchain_tool_records_tool_span(tmp_path) -> None:
     result = asyncio.run(wrapped.ainvoke({"a": 2, "b": 3}))
 
     assert result == {"total": 5}
+    telemetry.flush()
     records = _read_jsonl(path)
     assert [record["name"] for record in records] == [
         "tool.call",

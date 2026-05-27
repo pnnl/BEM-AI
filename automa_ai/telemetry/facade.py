@@ -18,7 +18,7 @@ from automa_ai.telemetry.context import (
     set_trace_context,
 )
 from automa_ai.telemetry.recorders import NoopRecorder, TelemetryRecorder
-from automa_ai.telemetry.redaction import sanitize_mapping
+from automa_ai.telemetry.redaction import sanitize_mapping, sanitize_text
 
 
 def _new_id() -> str:
@@ -108,6 +108,14 @@ class Telemetry:
             max_chars=self.config.max_content_chars,
         )
 
+    def flush(self) -> None:
+        """Block until the recorder has persisted accepted telemetry items."""
+        self.recorder.flush()
+
+    def close(self) -> None:
+        """Close the underlying recorder when the caller owns its lifecycle."""
+        self.recorder.close()
+
 
 @dataclass
 class SpanScope:
@@ -170,7 +178,11 @@ class SpanScope:
             attributes.update(
                 {
                     "exception.type": type(exc).__name__,
-                    "exception.message": str(exc),
+                    "exception.message": sanitize_text(
+                        str(exc),
+                        mode="redacted" if self.telemetry.config.debug else "metadata",
+                        max_chars=self.telemetry.config.max_content_chars,
+                    ),
                 }
             )
             if self.telemetry.config.debug:
