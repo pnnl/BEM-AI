@@ -42,6 +42,7 @@ class JsonlRecorder:
         self._queue: queue.Queue[dict[str, Any] | object] = queue.Queue()
         self._error: BaseException | None = None
         self._closed = False
+        self._state_lock = threading.Lock()
         self._thread = threading.Thread(
             target=self._writer_loop,
             name=f"automa-jsonl-telemetry:{self.path}",
@@ -51,11 +52,12 @@ class JsonlRecorder:
         atexit.register(self._close_at_exit)
 
     def record(self, item: dict[str, Any]) -> None:
-        if self._closed:
-            raise RuntimeError("Cannot record telemetry after recorder is closed.")
-        if self._error is not None:
-            raise self._error
-        self._queue.put(item)
+        with self._state_lock:
+            if self._closed:
+                raise RuntimeError("Cannot record telemetry after recorder is closed.")
+            if self._error is not None:
+                raise self._error
+            self._queue.put(item)
 
     def flush(self) -> None:
         self._queue.join()
@@ -63,12 +65,13 @@ class JsonlRecorder:
             raise self._error
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._queue.put(self._STOP)
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._queue.put(self._STOP)
         self._queue.join()
         self._thread.join(timeout=5)
-        self._closed = True
         if self._error is not None:
             raise self._error
 

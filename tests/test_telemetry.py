@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import threading
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -15,6 +16,7 @@ from automa_ai.telemetry import (
     current_trace_id,
     wrap_langchain_tool,
 )
+from automa_ai.telemetry.recorders import JsonlRecorder
 
 
 def _read_jsonl(path):
@@ -106,6 +108,27 @@ def test_noop_recorder_does_not_create_path(tmp_path) -> None:
         telemetry.event("message")
 
     assert not path.exists()
+
+
+def test_jsonl_recorder_close_rejects_late_records_without_hanging(tmp_path) -> None:
+    recorder = JsonlRecorder(tmp_path / "telemetry.jsonl")
+    recorder.record({"type": "event", "name": "before-close"})
+    errors: list[BaseException] = []
+
+    def close_recorder() -> None:
+        try:
+            recorder.close()
+        except BaseException as exc:
+            errors.append(exc)
+
+    closer = threading.Thread(target=close_recorder)
+    closer.start()
+    closer.join(timeout=2)
+
+    assert not closer.is_alive()
+    assert errors == []
+    with pytest.raises(RuntimeError, match="closed"):
+        recorder.record({"type": "event", "name": "after-close"})
 
 
 def test_otel_recorder_is_explicitly_optional() -> None:
