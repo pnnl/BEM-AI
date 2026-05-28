@@ -398,8 +398,9 @@ loader validates cards loaded from `spec_path`, `card_path`, and inline
 
 Optional object or list passed through to `AgentFactory(..., tools_config=...)`.
 The YAML loader only rebases path fields it can identify safely. Today that
-means the built-in `run_python` tool's `config.workspace_root` is resolved from
-the YAML file's directory. Other tool config strings are passed through as-is.
+means the built-in `run_python` tool's `config.workspace_root` and
+`config.failure_experience_path` are resolved from the YAML file's directory.
+Other tool config strings are passed through as-is.
 For local `@tool` functions, set `type` to the fully qualified dotted function
 path. The tool registry imports the module from that path before building the
 tool, which also works when A2A servers construct agents in child processes.
@@ -422,7 +423,10 @@ List form:
 ```yaml
 tools:
   - type: run_python
-    config: {}
+    config:
+      workspace_root: .
+      warn_script_lines: 120
+      failure_experience_path: ./logs/python_script_failure_experience.jsonl
 ```
 
 ### `skills`
@@ -549,7 +553,8 @@ Optional object or string passed through to
 `AgentFactory(..., telemetry_config=...)`.
 
 Local JSONL telemetry records trace/span/event shaped data without requiring an
-external collector:
+external collector. Use `recorder: otel` to export through OpenTelemetry OTLP for
+AWS AgentCore observability:
 
 ```yaml
 telemetry:
@@ -560,9 +565,9 @@ telemetry:
   max_content_chars: 4000
 ```
 
-Relative `path` values are resolved from the YAML file's directory. See
-`docs/telemetry.md` for privacy modes and the AWS AgentCore/OpenTelemetry
-direction.
+Relative JSONL `path` values are resolved from the YAML file's directory.
+OpenTelemetry export uses the standard `OTEL_EXPORTER_OTLP_*` environment
+variables. See `docs/telemetry.md` for privacy modes and AWS AgentCore details.
 
 ## Troubleshooting
 

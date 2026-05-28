@@ -159,9 +159,51 @@ def test_jsonl_recorder_close_rejects_late_records_without_hanging(tmp_path) -> 
         recorder.record({"type": "event", "name": "after-close"})
 
 
-def test_otel_recorder_is_explicitly_optional() -> None:
-    with pytest.raises(ImportError, match="OpenTelemetry"):
-        build_telemetry({"enabled": True, "recorder": "otel"})
+def test_otel_recorder_exports_spans_and_events(monkeypatch) -> None:
+    from opentelemetry.sdk.trace.export import SpanExportResult
+
+    class CapturingExporter:
+        def __init__(self):
+            self.spans = []
+
+        def export(self, spans):
+            self.spans.extend(spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self):
+            return None
+
+        def force_flush(self, timeout_millis=30000):
+            return True
+
+    exporter = CapturingExporter()
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter",
+        lambda: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "service_name": "test-service",
+            "environment": "test",
+        }
+    )
+
+    with telemetry.span("agent.turn", kind="server", attributes={"agent.name": "demo"}):
+        telemetry.event("message", attributes={"content": "hello"})
+
+    telemetry.flush()
+    telemetry.close()
+
+    assert len(exporter.spans) == 1
+    span = exporter.spans[0]
+    assert span.name == "agent.turn"
+    assert span.resource.attributes["service.name"] == "test-service"
+    assert span.resource.attributes["deployment.environment"] == "test"
+    assert span.attributes["agent.name"] == "demo"
+    assert span.attributes["automa.duration_ms"] >= 0
+    assert [event.name for event in span.events] == ["message"]
 
 
 def test_span_start_failure_restores_context() -> None:

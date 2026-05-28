@@ -1,20 +1,21 @@
 # Agent Telemetry
 
 AUTOMA-AI includes a local-first telemetry facade for agent observability. The
-facade uses trace/span/event concepts that map cleanly to OpenTelemetry later,
-but the default implementation does not require an external collector, backend,
-or AWS service.
+facade uses trace/span/event concepts that map cleanly to OpenTelemetry.
+The default implementation does not require an external collector, backend,
+or AWS service, while the `otel` recorder can export to an OTLP collector
+for AWS AgentCore observability.
 
 ## Current recorders
 
 - `noop`: disabled/default behavior.
 - `jsonl`: appends local JSONL records to a file using a background writer
   thread, so async agent execution does not block on each filesystem write.
-- `otel`: reserved for optional OpenTelemetry and AWS AgentCore integration.
-  It is intentionally not bundled into the local-first MVP.
+- `otel`: exports spans and events through OpenTelemetry OTLP gRPC for AWS
+  AgentCore observability or any compatible collector.
 
-`Telemetry.flush()` blocks until the JSONL recorder has persisted records
-accepted so far. Use it in tests, shutdown paths, or debugging scripts that need
+`Telemetry.flush()` blocks until the selected recorder has persisted or exported
+accepted records. Use it in tests, shutdown paths, or debugging scripts that need
 to read the file immediately after an agent turn.
 
 ## Configuration
@@ -31,6 +32,21 @@ telemetry:
 ```
 
 The same object can be passed to `AgentFactory(..., telemetry_config=...)`.
+
+For AWS AgentCore observability, use the OpenTelemetry recorder and configure the
+standard OTLP exporter environment expected by your deployment target:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: agentcore
+```
+
+Common OpenTelemetry environment variables include `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_HEADERS`, and `OTEL_SERVICE_NAME`.
 
 `content_mode` controls how message and tool payloads are recorded:
 
@@ -101,8 +117,8 @@ Records are OpenTelemetry-shaped:
 
 AWS AgentCore observability uses OpenTelemetry-compatible telemetry. AUTOMA-AI
 keeps telemetry calls behind a small facade so local development can use JSONL
-while AgentCore deployments can later install an optional `otel` recorder that
-exports the same span/event model to ADOT/CloudWatch.
+while AgentCore deployments can use the `otel` recorder to export the same
+span/event model to ADOT/CloudWatch through OTLP.
 
 Do not put secrets or raw user data into trace propagation metadata. The A2A
 metadata only carries IDs needed to connect spans across local and remote

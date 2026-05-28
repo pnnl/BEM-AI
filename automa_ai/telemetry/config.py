@@ -7,7 +7,11 @@ from typing import Any
 
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.telemetry.facade import Telemetry
-from automa_ai.telemetry.recorders import JsonlRecorder, NoopRecorder
+from automa_ai.telemetry.recorders import (
+    JsonlRecorder,
+    NoopRecorder,
+    OpenTelemetryRecorder,
+)
 
 
 def build_telemetry(
@@ -32,12 +36,15 @@ def build_telemetry(
     if resolved.recorder == "noop":
         recorder = NoopRecorder()
     elif resolved.recorder == "jsonl":
-        path = resolved.resolved_path(base_dir=base_dir) or Path("./logs/telemetry.jsonl")
+        path = resolved.resolved_path(base_dir=base_dir) or Path(
+            "./logs/telemetry.jsonl"
+        )
         recorder = JsonlRecorder(path)
     elif resolved.recorder == "otel":
-        raise ImportError(
-            "The 'otel' telemetry recorder is reserved for optional OpenTelemetry/AWS "
-            "AgentCore integration and is not bundled with the local-first telemetry MVP."
+        recorder = OpenTelemetryRecorder(
+            service_name=resolved.service_name,
+            environment=resolved.environment,
+            attributes=resolved.attributes,
         )
     else:
         raise ValueError(f"Unsupported telemetry recorder: {resolved.recorder}")
