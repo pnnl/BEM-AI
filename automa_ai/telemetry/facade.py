@@ -129,6 +129,7 @@ class SpanScope:
     _start_ns: int | None = None
     _span_token: Any = None
     _trace_tokens: Any = None
+    _closed: bool = False
 
     def __enter__(self) -> "SpanScope":
         if not self.telemetry.enabled:
@@ -170,6 +171,9 @@ class SpanScope:
     def __exit__(self, exc_type, exc, tb) -> bool:
         if not self.telemetry.enabled:
             return False
+        if self._closed:
+            return False
+        self._closed = True
         end_ns = _now_ns()
         attributes: dict[str, Any] = {}
         status = "ok"

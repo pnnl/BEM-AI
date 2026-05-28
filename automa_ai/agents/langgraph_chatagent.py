@@ -487,8 +487,10 @@ class GenericLangGraphChatAgent(BaseAgent):
         except BaseException as exc:
             try:
                 if span_entered:
-                    span_scope.__exit__(type(exc), exc, exc.__traceback__)
-                    span_closed = True
+                    try:
+                        span_scope.__exit__(type(exc), exc, exc.__traceback__)
+                    finally:
+                        span_closed = True
             finally:
                 if telemetry_token is not None:
                     reset_trace_context(telemetry_token)
@@ -731,8 +733,10 @@ class GenericLangGraphChatAgent(BaseAgent):
                 # print(f"Yielding from {item.get('source')}: {item.get('content', '')[:50]}...")
                 yield item
         except BaseException as exc:
-            span_scope.__exit__(type(exc), exc, exc.__traceback__)
-            span_closed = True
+            try:
+                span_scope.__exit__(type(exc), exc, exc.__traceback__)
+            finally:
+                span_closed = True
             raise
         finally:
             for task in forwarder_tasks:

@@ -105,16 +105,8 @@ Disallowed uses:
    - output model path for edits.
 8. For edits, never overwrite the original model unless the user explicitly asks.
    Write a new `.osm` under `outputs/` or another user-approved path.
-9. Before executing Python, show the script intent, input path, output path, key
-   operations, and the complete Python script in a fenced `python` code block.
-   Do not summarize, omit, or refer to an unseen script. Ask for the user's
-   explicit approval and do not call `run_python` until approval is received.
-10. Execute one bounded Python script with `run_python`.
-11. Track failed `run_python` calls for the current task. If three attempts fail,
-   stop executing scripts. Report each failure attempt, the likely error causes
-   from stdout/stderr and warnings, and ask the user to verify or revise the
-   script before any further execution.
-12. Summarize like a senior building energy modeler:
+9. Prepare one bounded Python script for `run_python`.
+10. Summarize like a senior building energy modeler:
    - what was inspected or changed;
    - affected object counts and names when practical;
    - before/after values for edits;
@@ -233,4 +225,3 @@ If the task fails, print:
 - Do not import network libraries.
 - Do not use shell commands or subprocesses.
 - Do not perform simulation or results retrieval with `run_python`.
-- Do not execute generated Python without explicit user approval.

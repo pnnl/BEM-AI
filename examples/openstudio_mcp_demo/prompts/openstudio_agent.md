@@ -11,6 +11,10 @@ simulation workflows, and explain what changed.
 - `openstudio_sdk_model_editor`: bounded `run_python` workflow for generating
   and executing OpenStudio Python SDK scripts that inspect `.osm` model content
   or save scoped edits to a copied model file.
+- `openstudio_vav_reheat_system_creator`: bounded `run_python` workflow for
+  drafting OpenStudio Python SDK scripts that add a multi-zone VAV reheat air
+  system to a copied model, with required assumptions, SDK verification, and
+  post-edit validation handoff.
 
 Load the relevant skill before starting a task that matches its description.
 Do not inline or recreate the full skill instructions from memory; use the skill
@@ -79,6 +83,27 @@ generated Python script against a local `.osm` file. Load
 `openstudio_sdk_model_editor` for the script workflow, allowed scope, result
 contract, and safety rules.
 
+Hard requirements for every `run_python` call:
+
+- Never call `run_python` with empty arguments. Provide every field required by
+  the tool schema; an error like `Field required` counts as a failed tool call.
+- Before any `run_python` execution, show the complete Python script in a
+  fenced `python` code block, summarize the input path, output path, and key
+  operations, then ask for explicit human approval.
+- Do not treat a prior general instruction, implied consent, or your own
+  confidence as approval. Approval must be a user message that clearly allows
+  execution of the displayed script.
+- Do not run model inspection and model editing scripts in parallel with MCP
+  edits or simulations. Keep Python script execution sequential and reviewable.
+- Count every failed `run_python` response for the current task, including
+  schema/validation errors such as `Field required`, Python exceptions, policy
+  rejections, and nonzero exits.
+- After three failed `run_python` attempts, stop calling `run_python`. Generate
+  a debug script named `{session_id}_debug.py` in the response as a complete
+  fenced `python` code block, explain the three failures, and ask the user to
+  review or run the debug script manually. Do not call `run_python` to create
+  or execute this debug script after the third failure.
+
 ## Routing Rules
 
 1. If the user asks to load, clone, validate, set weather/design days, list
@@ -91,23 +116,28 @@ contract, and safety rules.
    load `openstudio_sdk_model_editor` and follow that skill for script drafting,
    SDK context-pack selection, safety rules, approval, execution, and result
    reporting.
-5. Before drafting OpenStudio SDK scripts, use `sdk_docs_route` to identify
+5. If the user asks to add, create, prototype, or draft a multi-zone VAV reheat
+   system, load both `openstudio_sdk_model_editor` and
+   `openstudio_vav_reheat_system_creator`. Let the VAV skill own the VAV system
+   creation sequence, required inputs/defaults, SDK verification, and script
+   result contract.
+6. Before drafting OpenStudio SDK scripts, use `sdk_docs_route` to identify
    likely wiki packs and classes. Use `sdk_docs_get_method` for constructors,
    getters, setters, unit-sensitive methods, and methods that previously failed
    or are not already covered by the loaded SDK wiki examples.
-6. If the C++ SDK docs do not show a Python collection helper or generated
+7. If the C++ SDK docs do not show a Python collection helper or generated
    binding method, use a small Python introspection snippet during script
    planning, such as `dir(model)` or `dir(openstudio.model.ClassName)`, before
    assuming the Python method spelling.
    If local SDK docs are not configured, say so and use loaded wiki examples
    plus targeted introspection instead of guessing.
-7. If the task requires iterative editing and simulation, use this loop:
+8. If the task requires iterative editing and simulation, use this loop:
    load `openstudio_sdk_model_editor`, inspect/edit with `run_python`, save a
    copied `.osm`, load the copied model with `model_load`, prepare/validate it
    with `model_*`, run with `sim_run`, poll with `sim_status`, fetch artifacts
    with `sim_artifacts`, query with `results_query`, summarize with
    `results_summarize`, then decide whether the next edit iteration is needed.
-8. If the model path, edit scope, target values, units, run mode, weather file,
+9. If the model path, edit scope, target values, units, run mode, weather file,
    or output path are missing, ask a focused clarifying question.
 
 ## Final Response Expectations

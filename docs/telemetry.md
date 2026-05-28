@@ -62,13 +62,19 @@ config-injected behavior continue to work.
 The wrapper also preserves execution-affecting fields from the original tool:
 
 - `return_direct`
-- `response_format`
 - `handle_tool_error`
 - `handle_validation_error`
 - `verbose`
 - `callbacks`
 - `tags`
 - `metadata`
+
+`response_format` is handled slightly differently. The wrapper delegates to the
+original tool's `ainvoke()`, so the original tool still enforces its own
+`response_format`, including `content_and_artifact`. The telemetry wrapper
+itself uses `response_format: content` to avoid applying LangChain's raw
+`(content, artifact)` tuple validation a second time to an already processed
+tool result.
 
 Most built-in AUTOMA-AI tools use default values for these fields today.
 However, these fields are part of LangChain's public tool surface and can be

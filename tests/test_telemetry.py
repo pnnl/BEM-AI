@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import contextvars
 import threading
 
 import pytest
@@ -70,6 +71,33 @@ def test_nested_spans_preserve_parent_child_relationship(tmp_path) -> None:
     child_start = records[1]
     assert child_start["name"] == "tool.call"
     assert child_start["parent_span_id"] == parent_span_id
+
+
+def test_span_exit_tolerates_different_context_cleanup(tmp_path) -> None:
+    path = tmp_path / "telemetry.jsonl"
+    telemetry = build_telemetry(
+        {"enabled": True, "recorder": "jsonl", "path": str(path)}
+    )
+
+    def enter_span():
+        scope = telemetry.span("agent.turn")
+        scope.__enter__()
+        return scope
+
+    entered_context = contextvars.Context()
+    scope = entered_context.run(enter_span)
+    exc = GeneratorExit()
+
+    scope.__exit__(GeneratorExit, exc, exc.__traceback__)
+    scope.__exit__(None, None, None)
+
+    telemetry.flush()
+    records = _read_jsonl(path)
+    assert [record["type"] for record in records] == ["span_start", "span_end"]
+    assert records[-1]["status"] == "error"
+    assert records[-1]["attributes"]["exception.type"] == "GeneratorExit"
+    assert current_trace_id() is None
+    assert current_span_id() is None
 
 
 def test_redacted_mode_redacts_secret_values(tmp_path) -> None:
@@ -257,3 +285,27 @@ def test_wrap_langchain_tool_preserves_config_and_execution_fields(tmp_path) -> 
     assert wrapped.tags == ["original"]
     assert wrapped.handle_tool_error == "handled"
     assert wrapped.handle_validation_error == "invalid"
+    assert wrapped._automa_original_response_format == "content"
+
+
+def test_wrap_langchain_tool_delegates_content_and_artifact_format(tmp_path) -> None:
+    async def make_artifact(value: str) -> tuple[str, dict]:
+        return f"content:{value}", {"artifact": value}
+
+    tool = StructuredTool.from_function(
+        name="make_artifact",
+        description="Return content and artifact.",
+        coroutine=make_artifact,
+        response_format="content_and_artifact",
+    )
+    path = tmp_path / "telemetry.jsonl"
+    telemetry = build_telemetry(
+        {"enabled": True, "recorder": "jsonl", "path": str(path)}
+    )
+    wrapped = wrap_langchain_tool(tool, telemetry, source_type="binding")
+
+    result = asyncio.run(wrapped.ainvoke({"value": "demo"}))
+
+    assert result == "content:demo"
+    assert wrapped.response_format == "content"
+    assert wrapped._automa_original_response_format == "content_and_artifact"
