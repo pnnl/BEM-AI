@@ -1,59 +1,227 @@
-# AUTOMA-AI - Autonomous Multi-Agent Network (Formerly BEM-AI)
+# AUTOMA-AI - Autonomous Multi-Agent Network
 
-AUTOMA-AI is an open-source framework for building production-ready AI agents powered by modern language models such as Gemini, ChatGPT, and Claude.
+**AUTOMA-AI is an integration-first framework for building production-oriented agent systems from interchangeable agents, tools, memory stores, checkpoints, and shared-state components.** It is designed for teams that need more than simple agent demos: persistent workflows, human checkpoints, distributed agents, and pluggable infrastructure.
 
-It provides a structured way to turn LLMs from simple chat interfaces into task-oriented agents that can plan, reason, and interact with external systems. Out of the box, AUTOMA-AI equips agents with capabilities such as:
+AUTOMA-AI treats agent systems as **composable agent infrastructure** rather than a monolithic agent stack. Instead of requiring every component to be implemented as a framework-specific agent, AUTOMA-AI provides protocol-driven integration points and plugin-and-play interfaces so agents, tools, retrievers, memory stores, blackboards, checkpointers, and model providers can be independently developed, replaced, and deployed.
 
-- **Tool and API integration** (via MCP or AUTOMA-AI tool interface)
-- **Retrieval pipelines** for grounding responses in data
-- **Memory systems** for session and long-term context
-- **Skills and workflows** for structured task execution
-- **Multi-agent orchestration** for complex problem-solving
+> **Formerly BEM-AI:** The original building energy modeling application has moved to the example folder: [examples/sim_bem_network](examples/sim_bem_network).
 
-AUTOMA-AI is designed with real-world deployment in mind. It supports AWS-based architectures and integrates with major cloud services, enabling teams to move from prototype to production quickly.
+## What is AUTOMA-AI?
 
-Under the hood, the framework builds on emerging standards like **Google’s A2A (Agent-to-Agent)** and **Anthropic’s MCP (Model Context Protocol)**, and leverages ecosystems such as LangChain and modern orchestration patterns to coordinate agents in engineering workflows.
+AUTOMA-AI is an open-source framework for building stateful, long-running workflows powered by modern language models such as OpenAI/ChatGPT, Azure OpenAI, Google GenAI/Gemini, Claude-compatible interfaces, AWS Bedrock, and local models such as Ollama.
 
-Ready to use automa-ai? do:
+The framework helps turn LLMs from simple chat interfaces into task-oriented agents that can plan, reason, use tools, collaborate with other agents, and interact with external systems. AUTOMA-AI is especially focused on production-oriented agent systems where teams need clear integration boundaries, persistent state, traceable artifacts, and deployment flexibility.
+
+Out of the box, AUTOMA-AI supports:
+
+- **Agents** that can run locally or be exposed as remote services.
+- **Skills and workflows** for structured task execution.
+- **Tool and API integration** through the AUTOMA-AI tool interface and MCP.
+- **Retrieval pipelines** for grounding responses in project or domain data.
+- **Memory stores** for session and long-term context.
+- **Shared blackboard state** for structured intermediate artifacts.
+- **Checkpointing** for resumable workflows.
+- **Multi-agent collaboration** through local delegation and protocol-based A2A communication.
+
+## Why AUTOMA-AI?
+
+Many agent frameworks are optimized for quickly defining agents, tools, tasks, graph flows, or provider-native agent workflows. Those approaches are useful and often the right choice. Production applications, however, often require an additional integration layer:
+
+- Agents may need to run as independently deployed services.
+- Tools may come from local Python functions, REST APIs, or MCP servers.
+- Memory may need to use SQLite, Chroma, DynamoDB, Redis, or cloud-native stores.
+- Workflows may need pause/resume, human approval, validation gates, and traceable intermediate outputs.
+- Applications may need to swap model providers without rewriting orchestration logic.
+
+AUTOMA-AI focuses on these requirements by decoupling orchestration logic from infrastructure choices. The framework provides standard interfaces and protocol-based integration points so teams can assemble the agent system that fits their application rather than adopting a single fixed stack.
+
+## Core architecture
+
+### Agents
+
+Agents are the main reasoning and execution units. They can be initialized through AUTOMA-AI factories, implemented as local Python objects, or exposed as remote A2A-compatible services. This allows teams to start simple and later distribute agents across services when the application requires it.
+
+### Skills
+
+Skills package reusable task instructions, completion criteria, and output expectations. They provide a structured layer between a general-purpose LLM and low-level tools, making it easier to reuse task logic across applications.
+
+### Tools and MCP
+
+AUTOMA-AI supports both its native tool interface and Anthropic's Model Context Protocol (MCP). Tools can be local functions, configured built-in tools, or external MCP servers. This allows tool implementations to evolve independently from the agent orchestration layer.
+
+### A2A agent collaboration
+
+AUTOMA-AI supports protocol-first collaboration through Google A2A. Agents can collaborate locally or through remote A2A servers. A2A is an integration option, not a requirement: users can create AUTOMA-AI agents directly when a local in-process workflow is sufficient, and expose agents as services when distributed deployment is needed.
+
+### Blackboard/shared state
+
+The shared blackboard is a key AUTOMA-AI concept. Agents can write structured artifacts to shared state instead of relying only on chat history. This is intended to reduce token pressure, create a clearer source of truth, improve traceability, and make long-running workflows easier to inspect and resume.
+
+### Memory stores
+
+AUTOMA-AI provides memory abstractions so implementations can be swapped based on application needs. A prototype may use an in-memory or local store, while a production system may use a database or cloud-native backend such as DynamoDB.
+
+### Checkpointing
+
+Checkpointing supports stateful, long-running workflows by preserving execution state. AUTOMA-AI includes configurable checkpointer support, including in-memory and Redis-backed options, so workflows can be resumed and deployed more reliably.
+
+### Model providers
+
+AUTOMA-AI provides model provider abstractions for multiple LLM hosts, including cloud models and local models. The goal is to keep application orchestration separate from the selected model endpoint.
+
+### Retrievers
+
+Retriever interfaces support grounding agents in external data. Providers can be registered by name or supplied through custom implementations, enabling application-specific retrieval backends.
+
+## Key differentiators
+
+AUTOMA-AI's differentiator is not any single feature such as A2A, MCP, memory, tools, retrieval, or skills. Its differentiator is the integration of these ideas into a provider-neutral, protocol-aware, interface-first framework for stateful scientific and engineering workflows.
+
+### 1. Protocol-first agent collaboration
+
+AUTOMA-AI supports open protocols such as Google A2A for agent-to-agent collaboration and MCP for tool integration. The framework does not require every component to be an AUTOMA-AI-specific class. Agents and tools can be local, remote, independently deployed, and reused outside a single application.
+
+### 2. Plugin-and-play interfaces
+
+AUTOMA-AI is designed around replaceable interfaces rather than one fixed implementation. Examples include:
+
+- Tool interface
+- MCP tool integration
+- Memory store interface
+- Blackboard/shared-state interface
+- Checkpointer interface
+- Model provider abstraction
+- Retriever interface
+
+This makes it possible to swap implementations such as SQLite, Chroma, DynamoDB, Redis, AWS services, local tools, MCP servers, OpenAI, Azure OpenAI, Bedrock, Ollama, and other providers without redesigning the entire workflow.
+
+### 3. Stateful, long-running workflows
+
+AUTOMA-AI is built for workflows that require persistence, pause/resume, validation checkpoints, human review, and traceable intermediate artifacts. The shared blackboard allows agents to coordinate through structured state instead of passing everything through conversational context.
+
+### 4. Production application foundation
+
+AUTOMA-AI is intended to serve as a foundation for real PNNL applications, including BEM-AI and PermitCE. It is production-oriented in its architecture, while the package, documentation, APIs, and community ecosystem are still evolving.
+
+## How AUTOMA-AI is different
+
+AUTOMA-AI is not intended to replace every agent framework. It optimizes for a different center of gravity: provider-neutral, protocol-aware, plugin-and-play infrastructure for stateful workflows and production application integration.
+
+| Framework / ecosystem | Strong fit | AUTOMA-AI distinction |
+| --- | --- | --- |
+| CrewAI and role-based multi-agent frameworks | Quickly defining role-based agents, tasks, crews, and flows with approachable onboarding | AUTOMA-AI emphasizes protocol-based collaboration, shared blackboard state, and replaceable infrastructure interfaces for deeply integrated applications |
+| LangGraph | Fine-grained, stateful graph execution and controllable agent workflows | AUTOMA-AI can build on LangGraph while adding higher-level application interfaces for agents, skills, tools, retrievers, blackboards, model providers, and A2A collaboration |
+| AutoGen | Flexible multi-agent conversation patterns involving LLMs, tools, code, and human input | AUTOMA-AI places more emphasis on structured workflow artifacts, shared state, and production integration boundaries |
+| Semantic Kernel and enterprise integration frameworks | Enterprise application integration, plugins, planners, memory, and cloud/provider ecosystem alignment | AUTOMA-AI aims to remain provider-neutral and infrastructure-pluggable across model hosts, memory stores, tools, retrievers, and deployment backends |
+| LlamaIndex / Haystack-style data and RAG frameworks | Data-centric LLM applications, document pipelines, retrieval, and knowledge-grounded workflows | AUTOMA-AI treats retrieval as one replaceable component inside a broader stateful multi-agent workflow architecture |
+| OpenAI Agents SDK / Claude Agent SDK / Google ADK | First-party agent development within specific model/provider ecosystems | AUTOMA-AI focuses on framework-composable integration across providers, protocols, and application-specific infrastructure |
+| Custom application-specific agents | Maximum control for one application | AUTOMA-AI provides reusable interfaces and architectural patterns that can be shared across applications and deployment environments |
+
+In short, AUTOMA-AI is best understood as **composable agent infrastructure** for building interoperable, stateful, production-oriented agent systems.
+
+## When to use AUTOMA-AI
+
+AUTOMA-AI is a good fit when your application needs:
+
+- Multiple agents or tools that may be independently developed or deployed.
+- Persistent workflow state and checkpointing.
+- Human checkpoints, review steps, or validation gates.
+- Shared structured artifacts across agents.
+- Pluggable infrastructure for tools, memory, retrievers, models, and deployment backends.
+- Integration with MCP tools or A2A-compatible agents.
+- Provider-neutral integration across multiple model hosts.
+- A foundation for production applications rather than a short-lived demo.
+
+## When another framework may be enough
+
+Another framework may be a better fit when:
+
+- You only need a simple role-based multi-agent prototype.
+- You want to stay entirely within one provider-native agent SDK.
+- Your main problem is retrieval or document processing rather than workflow state and integration.
+- Your workflow can be completed in one short conversation without persistent state.
+- You do not need shared blackboard state, checkpointing, or remote agent collaboration.
+- You prefer a larger community ecosystem and more mature onboarding materials today.
+
+AUTOMA-AI should be adopted when its integration-first architecture is valuable, not because every project needs a full production-oriented agent stack.
+
+## Installation
+
+Install AUTOMA-AI from PyPI:
 
 ```bash
 pip install automa-ai
 ```
-Wanna start a AI development with automa-ai? Don't miss the [sim_chat_stream_demo](examples/sim_chat_stream_demo) example to help you bootstrap an AI chatbot.
 
-NOTE:
-**BEM-AI** has moved to an example folder: [bem-ai](examples/sim_bem_network)
+For local development:
 
-## ⚠️ Project Status
+### Prerequisites
 
-This project is in its **early development phase** and is considered **highly unstable**. APIs, interfaces, and core functionality are subject to significant changes. Use for development and experimentation only.
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager
 
-## 🚀 Overview
+### Setup
 
-AUTOMA-AI creates a distributed multi-agent system that enables intelligent agents to communicate, collaborate, and coordinate using industry-standard protocols. The system leverages:
+1. **Clone the repository**
 
-- **Google A2A Protocol**: For agent-to-agent communication
-- **Anthropic MCP Protocol**: For model context management
-- **LangChain / LangGraph**: For LLM-based agent orchestration and workflow management
-- **Google GenAI**: For AI model integration
+   ```bash
+   git clone <repository-url>
+   cd BEM-AI
+   ```
 
-## 🛠️ Technology Stack
+2. **Install dependencies using uv**
 
-### Core Dependencies
-- **LangChain / LangGraph**: Agent framework and orchestration
-- **Google GenAI**: AI model integration
-- **Google A2A**: Agent-to-agent communication protocol
-- **Anthropic MCP**: Model context protocol implementation
+   ```bash
+   uv sync
+   ```
 
-### Development Tools
-- **uv**: Modern Python package management
-- **Python 3.12**: Runtime environment
+3. **Activate the virtual environment**
 
-## 📁 Project Structure
+   ```bash
+   uv shell
+   ```
 
-```
+## Minimal quick-start example
+
+The recommended starting point is the streaming chatbot example:
+
+- [examples/sim_chat_stream_demo](examples/sim_chat_stream_demo)
+
+This example shows how to bootstrap an AUTOMA-AI chatbot with streaming, tool integration, and the agent factory pattern.
+
+## Project status and maturity
+
+AUTOMA-AI is under active development. The project is designed for production-oriented applications, but the package is still maturing. APIs, interfaces, and examples may change as the framework evolves.
+
+Current focus areas include:
+
+- Stabilizing public interfaces for agents, tools, memory, blackboards, checkpointers, and retrievers.
+- Improving documentation and onboarding examples.
+- Expanding production deployment patterns for cloud and enterprise environments.
+- Strengthening A2A and MCP interoperability.
+- Supporting real PNNL applications such as BEM-AI and PermitCE.
+
+Use in production systems should be done with care and appropriate validation.
+
+## Technology stack
+
+### Core dependencies
+
+- **LangChain / LangGraph**: Agent execution, orchestration, and workflow patterns.
+- **Google A2A**: Agent-to-agent communication protocol.
+- **Anthropic MCP**: Tool and context protocol integration.
+- **Provider-specific LLM SDKs**: Model integration across cloud and local providers.
+
+### Development tools
+
+- **uv**: Modern Python package management.
+- **Python 3.12**: Runtime environment.
+
+## Project structure
+
+```text
 BEM-AI/
-├── examples/                           # Example engineering applications built with the foundational framework
+├── examples/                           # Example engineering applications built with the framework
 ├── automa_ai/
 │   ├── agent_test/                     # Test implementations and examples
 │   ├── agents/                         # Generic agent classes
@@ -72,58 +240,30 @@ BEM-AI/
 └── README.md                           # This file
 ```
 
-## 🔧 Installation
-We recommend install AUTOMA-AI through PYPI:
-```shell
-pip install automa-ai
-```
-This will install all packages needed under automa_ai folder.
+## Architecture
 
-
-### Prerequisites
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd bem-ai
-   ```
-
-2. **Install dependencies using uv**
-   ```bash
-   uv sync
-   ```
-
-3. **Activate the virtual environment**
-   ```bash
-   uv shell
-   ```
-
-## 🧪 Running Tests
-TBD
-
-## 🏗️ Architecture
 <img src="sources/architecture.png" alt="System Architecture" width="600">
 
-- **Orchestrator**: Assemble workflow, access agent card storage
-- **Task Memory**: Task memory including shared blackboard and conversation history
-- **Planner**: A planner agent
-- **Summary**: A summary agent
-- **Specialized agents**: Domain specific agents
-- **Agent Card Service**: A RAG pipeline stores agent cards
-- **Tool and Resources**: External tool and resource access through MCPs
+Core concepts include:
 
-## 📝 Configuration
+- **Orchestrator**: Assembles and coordinates workflow execution.
+- **Task memory**: Maintains conversation history and shared blackboard state.
+- **Planner**: Helps decompose and plan complex workflows.
+- **Summary**: Produces concise workflow or conversation summaries.
+- **Specialized agents**: Domain-specific agents for focused tasks.
+- **Agent card service**: Stores and retrieves agent metadata for discovery.
+- **Tools and resources**: External tool and resource access through native tools and MCP servers.
 
-Project configuration is managed through `pyproject.toml`. Key configuration areas include:
+For the architectural north star, see [docs/architecture.md](docs/architecture.md).
 
-- **Dependencies**: Core and development packages
-- **Build System**: uv-based build configuration
-- **Project Metadata**: Version, description, and author information
-- **Optional**: optional packages to use for UI integration and running examples.
+## Configuration
+
+Project configuration is managed through `pyproject.toml` and runtime configuration objects. Key configuration areas include:
+
+- **Dependencies**: Core and development packages.
+- **Build system**: uv-based build configuration.
+- **Project metadata**: Version, description, and author information.
+- **Optional packages**: Packages for UI integration and running examples.
 
 ### Default tools configuration
 
@@ -181,7 +321,7 @@ AgentCore direction.
 
 ### Checkpointer configuration
 
-`LANGGRAPHCHAT` agents can also be configured with an explicit checkpointer backend through `AgentFactory`.
+`LANGGRAPHCHAT` agents can be configured with an explicit checkpointer backend through `AgentFactory`.
 The default backend is in-memory. Redis is opt-in and requires a connection URL.
 
 There are two Redis backends:
@@ -266,11 +406,9 @@ Dynamic self-paced scheduling and UI wiring are intentionally left for later int
 
 ### A2A Server Configuration
 
-#### Base Path
+#### Base path
 
-You can mount an A2A agent server under a URL prefix by passing `base_url_path` to
-`A2AAgentServer`. This is useful when serving behind a reverse proxy or when you
-want a dedicated path segment for the agent.
+You can mount an A2A agent server under a URL prefix by passing `base_url_path` to `A2AAgentServer`. This is useful when serving behind a reverse proxy or when you want a dedicated path segment for the agent.
 
 ```python
 from automa_ai.common.agent_registry import A2AAgentServer
@@ -279,26 +417,27 @@ chatbot_a2a = A2AAgentServer(chatbot, public_agent_card, base_url_path="/permit"
 ```
 
 Notes:
-- Include a trailing slash in client URLs to avoid 307 redirects (SSE does not
-  follow redirects): e.g., 
 
-```python 
+- Include a trailing slash in client URLs to avoid 307 redirects because SSE does not follow redirects.
+
+```python
 SimpleClient(agent_url=f"{A2A_SERVER_URL}/permit/")
 ```
 
-#### Health Check Endpoint
+#### Health check endpoint
 
-Every A2A server automatically includes a health check endpoint that returns the agent's status. By default, it's available at `/health`, but you can customize the path:
+Every A2A server automatically includes a health check endpoint that returns the agent's status. By default, it is available at `/health`, but you can customize the path:
 
 ```python
 chatbot_a2a = A2AAgentServer(
-    chatbot, 
-    public_agent_card, 
+    chatbot,
+    public_agent_card,
     health_check_path="/status"
 )
 ```
 
 The health check returns a JSON response:
+
 ```json
 {
   "status": "healthy",
@@ -310,11 +449,10 @@ The status is `"healthy"` when the agent is initialized and ready, or `"unhealth
 
 ### Retriever configuration
 
-Automa-AI retrieval uses a provider-based spec (by name or dotted import path). Registry names must
-be registered with `register_retriever_provider(...)`, and only the embedding section is standardized;
-`retrieval_provider_config` is passed through to the selected provider.
+AUTOMA-AI retrieval uses a provider-based spec by registry name or dotted import path. Registry names must be registered with `register_retriever_provider(...)`. Only the embedding section is standardized; `retrieval_provider_config` is passed through to the selected provider.
 
 **Registered provider (registry name)**
+
 ```yaml
 retriever:
   enabled: true
@@ -332,6 +470,7 @@ retriever:
 ```
 
 **Custom provider (dotted import path)**
+
 ```yaml
 retriever:
   enabled: true
@@ -351,46 +490,54 @@ retriever:
     pinecone_env: "us-west-2"
 ```
 
-## Examples
-#### Single Agent Chatbot with Streamlit UI interface
-This example demonstrates the use of automa-ai for creating a live-streaming chatbot.
-The example uses QWEN3:4B as the language model and a sample MCP server is built to connect with the agent, demonstrating the capabilities of streaming and tool calling using a single chat bot.
-See [README](./examples/sim_chat_demo/README.md)
+## Example use cases
 
-#### Simple BEM typical building Network
-This example is the prototype of BEM-AI, which consists of multiple agents collaboratively completing a building energy modeling task together.
-See [README](./examples/sim_bem_network/README.md)
+### Single-agent chatbot with Streamlit UI
 
-### EnergyPlus Chatbot with EnergyPlus MCP server
-This example shows automa-ai integrates with EnergyPlus MCP, developed by LBNL.
-See [README](./examples/eplus_mcp_demo/README.md)
+This example demonstrates AUTOMA-AI for creating a live-streaming chatbot. It uses a sample MCP server to demonstrate streaming and tool calling with a single chatbot.
+See [examples/sim_chat_demo](examples/sim_chat_demo).
 
+### Simple BEM typical building network
 
-## 🔍 Development Guidelines
+This example is the prototype of BEM-AI, where multiple agents collaboratively complete a building energy modeling task.
+See [examples/sim_bem_network](examples/sim_bem_network).
 
-### Code Organization
+### EnergyPlus chatbot with EnergyPlus MCP server
+
+This example shows how AUTOMA-AI integrates with the EnergyPlus MCP server developed by LBNL.
+See [examples/eplus_mcp_demo](examples/eplus_mcp_demo).
+
+## Development guidelines
+
+### Code organization
+
 TBD
 
-### Dependency Management
-- Use `uv add <package>` to add new dependencies
-- Update `uv.lock` with `uv lock` after dependency changes
-- Keep dependencies minimal and focused
+### Dependency management
 
-### Testing Strategy
+- Use `uv add <package>` to add new dependencies.
+- Update `uv.lock` with `uv lock` after dependency changes.
+- Keep dependencies minimal and focused.
+
+### Testing strategy
+
 TBD
 
-## 🤝 Contributing
-TBD
+## Contributing
 
-## 📄 License
+Contributions are welcome as the framework matures. Areas where contributions are especially useful include:
 
-see [LICENSE](/LICENSE.md)
+- Documentation and onboarding examples.
+- Additional tool, memory, retriever, and checkpointer implementations.
+- A2A and MCP interoperability examples.
+- Production deployment patterns.
+- Tests and stability improvements.
 
----
+## License
 
-**Note**: This project is experimental and under active development. Use in production environments is not recommended at this time.
+See [LICENSE](LICENSE.md).
 
-## 📚 Citation
+## Citation
 
 If you use this framework in your research or projects, please cite the following paper:
 
@@ -400,3 +547,4 @@ If you use this framework in your research or projects, please cite the followin
   author={Xu, Weili and Wan, Hanlong and Antonopoulos, Chrissi and Goel, Supriya},
   journal={Available at SSRN 5447218}
 }
+```
