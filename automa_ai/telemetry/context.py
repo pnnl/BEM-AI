@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 
 
 _trace_id: ContextVar[str | None] = ContextVar("automa_trace_id", default=None)
@@ -34,8 +34,8 @@ def set_trace_context(*, trace_id: str, span_id: str | None = None):
 def reset_trace_context(tokens) -> None:
     """Restore the trace/span values that were active before `set_trace_context`."""
     trace_token, span_token = tokens
-    _span_id.reset(span_token)
-    _trace_id.reset(trace_token)
+    _reset_token(span_token)
+    _reset_token(trace_token)
 
 
 def set_current_span(span_id: str):
@@ -45,4 +45,24 @@ def set_current_span(span_id: str):
 
 def reset_current_span(token) -> None:
     """Restore the parent span after a nested span exits."""
-    _span_id.reset(token)
+    _reset_token(token)
+
+
+def _reset_token(token) -> None:
+    """Reset a ContextVar token, tolerating async-generator finalization context changes.
+
+    Python requires a `ContextVar` token to be reset in the same logical context
+    where it was created. Async generators may be closed by `athrow(GeneratorExit)`
+    from a different context after their consumer stops reading. In that cleanup
+    path the original context cannot be reset, so restore the token's old value
+    in the current cleanup context and avoid surfacing a noisy telemetry error.
+    Other reset failures still propagate because they indicate real token misuse,
+    such as resetting the same token twice.
+    """
+    try:
+        token.var.reset(token)
+    except ValueError as exc:
+        if "different Context" not in str(exc):
+            raise
+        old_value = None if token.old_value is Token.MISSING else token.old_value
+        token.var.set(old_value)

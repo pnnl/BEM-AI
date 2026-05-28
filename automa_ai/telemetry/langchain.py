@@ -68,7 +68,11 @@ def wrap_langchain_tool(
         args_schema=args_schema,
         coroutine=_arun,
         return_direct=getattr(tool, "return_direct", False),
-        response_format=getattr(tool, "response_format", "content"),
+        # The wrapped coroutine calls the original tool via `ainvoke()`, so the
+        # original tool has already applied its own response_format contract.
+        # Keep the wrapper at "content" to avoid validating that processed
+        # result a second time as a raw `(content, artifact)` tuple.
+        response_format="content",
         handle_tool_error=getattr(tool, "handle_tool_error", False),
         handle_validation_error=getattr(tool, "handle_validation_error", False),
         verbose=getattr(tool, "verbose", False),
@@ -78,4 +82,9 @@ def wrap_langchain_tool(
     )
     setattr(wrapped, "_automa_telemetry_wrapped", True)
     setattr(wrapped, "_automa_telemetry_source", source_type)
+    setattr(
+        wrapped,
+        "_automa_original_response_format",
+        getattr(tool, "response_format", "content"),
+    )
     return wrapped
