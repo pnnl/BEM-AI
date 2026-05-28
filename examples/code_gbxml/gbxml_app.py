@@ -13,6 +13,7 @@ from typing import Literal
 import os
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+
 # --- Framework imports (automa_ai-style) ---
 from a2a.types import AgentCard
 from dotenv import load_dotenv
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Base dir for this script (e.g., .../examples/gbxml)
 BASE_DIR = Path(__file__).resolve().parent
-env_path = BASE_DIR / '.env'
+env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
 ########################################################################################
 # Prompts
@@ -145,22 +146,24 @@ gbxml_mcp_config = MCPServerConfig(
 # Planner response schema
 ########################################################################################
 
+
 class ResponseFormat(BaseModel):
     status: Literal["input_required", "completed", "error"] = "input_required"
     question: str = Field(
-        description="If input is required, the question to the user",
-        default=""
+        description="If input is required, the question to the user", default=""
     )
     content: TaskList = Field(
-        description="List of tasks when the plan is generated",
-        default_factory=list
+        description="List of tasks when the plan is generated", default_factory=list
     )
+
 
 ########################################################################################
 # Instantiate agents via AgentFactory
 ########################################################################################
-planner_model_name = "llama3.3:70b" #os.getenv("PLANNER_MODEL_NAME") #need to set env var or hardcode
-planner_model_base_url = "http://rc-chat.pnl.gov:11434" #os.getenv("PLANNER_MODEL_BASE_URL") #need to set env var or hardcode
+planner_model_name = (
+    "llama3.3:70b"  # os.getenv("PLANNER_MODEL_NAME") #need to set env var or hardcode
+)
+planner_model_base_url = "http://rc-chat.pnl.gov:11434"  # os.getenv("PLANNER_MODEL_BASE_URL") #need to set env var or hardcode
 # Planner agent
 planner_card_path = BASE_DIR / "agent_cards" / "planner_agent.json"
 with Path.open(planner_card_path, encoding="utf-8") as f:
@@ -203,16 +206,16 @@ orchestrator_agent = AgentFactory(
     model_base_url=planner_model_base_url,
     agent_type=GenericAgentType.ORCHESTRATOR,
     chat_model=GenericLLM.OLLAMA,
-    enable_metrics=True,
-    debug = True
+    debug=True,
 )
 
 ########################################################################################
 # Main
 ########################################################################################
 
+
 async def main():
-    automa_network = MultiAgentNetwork(agent_cards_dir = BASE_DIR / "agent_cards")
+    automa_network = MultiAgentNetwork(agent_cards_dir=BASE_DIR / "agent_cards")
     # Register both MCP servers so specialists can use them
     automa_network.add_mcp_server(gbxml_mcp_config)
 

@@ -55,6 +55,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 examples/output/*
+examples/openstudio_mcp_demo/.sdk_doc_index.json
 
 # Sphinx documentation
 docs/_build/

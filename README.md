@@ -224,10 +224,15 @@ BEM-AI/
 ├── examples/                           # Example engineering applications built with the framework
 ├── automa_ai/
 │   ├── agent_test/                     # Test implementations and examples
-│   ├── agents/                         # Generic agent classes and factories
-│   ├── client/                         # Client utilities
-│   ├── mcp_servers/                    # MCP server utilities and examples
-│   ├── network/                        # Network and multi-agent coordination utilities
+│   ├── agents/                         # Generic agent classes
+│   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
+│   │   ├── agent_factor.py             # Agent factory - recommend utility to initialize an agent
+│   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
+│   │   └── adk_agent.py                # Google ADK based agent
+│   ├── client/                         # Under development
+│   ├── scheduler/                      # Session-scoped scheduled prompt loops
+│   ├── mcp_servers/                    # MCP library
+│   ├── network/                        # Network
 │   ├── common/                         # Common utilities
 │   └── prompts/                        # Shared prompt templates
 ├── pyproject.toml                      # Project configuration
@@ -285,10 +290,34 @@ tools:
       timeout_s: 20
       workspace_root: .
       allow_network: false  # Import-policy toggle only; not runtime network isolation.
+  - type: run_command
+    config:
+      profile: exploration
+      timeout_s: 20
+      workspace_root: .
 ```
 
 Then pass this to `AgentFactory(..., tools_config=tools)` for `LANGGRAPHCHAT` agents.
 See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_demo.py` for runnable examples.
+
+### Agent telemetry
+
+`LANGGRAPHCHAT` agents can emit local-first telemetry without requiring an
+external observability backend. The current recorder writes OpenTelemetry-shaped
+span/event records to JSONL, and the API is designed so a future optional
+OpenTelemetry/AWS AgentCore recorder can export the same data.
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+```
+
+Then pass this to `AgentFactory(..., telemetry_config=telemetry)` or include it
+in a YAML agent spec. See `docs/telemetry.md` for the schema, privacy modes, and
+AgentCore direction.
 
 ### Checkpointer configuration
 
@@ -336,7 +365,46 @@ If either command is unavailable, startup fails with a clear error and tells you
 - Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
 - Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
 
-### A2A server configuration
+### Scheduled prompt loops
+
+AUTOMA-AI includes a session-scoped scheduler foundation for Claude-style recurring prompts.
+The current implementation supports fixed intervals, task listing/cancellation primitives,
+seven-day task expiry, slash-command parsing helpers, and runners for both local agents and
+A2A clients.
+
+```python
+from automa_ai.scheduler import (
+    LoopScheduler,
+    build_local_agent_loop_runner,
+    parse_interval,
+)
+
+scheduler = LoopScheduler(build_local_agent_loop_runner(agent))
+scheduler.create_loop(
+    prompt="check whether the simulation finished",
+    interval=parse_interval("5m"),
+    context_id="session-1",
+)
+
+await scheduler.run_due_tasks()
+```
+
+Default loop prompts can be stored in `.automa/loop.md` at the project root or in
+`~/.automa/loop.md`. The command parser currently recognizes `/loop`, `/tasks`, and `/cancel`.
+Use explicit loop options when setting a cadence or prompt from slash commands:
+
+```text
+/loop --interval 5m --prompt "check whether the simulation finished"
+/loop -i "every 10 minutes" -p "check CI status"
+/loop --prompt "continue unfinished work"
+/tasks
+/cancel <task_id>
+```
+
+Bare text after `/loop` is treated as prompt text only; it is not guessed as an interval.
+Dynamic self-paced scheduling and UI wiring are intentionally left for later integration work.
+
+### A2A Server Configuration
 
 #### Base path
 

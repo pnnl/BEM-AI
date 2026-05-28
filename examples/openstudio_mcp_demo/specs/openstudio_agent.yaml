@@ -37,8 +37,13 @@ model:
 
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: true
   debug: true
+
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ../logs/telemetry.jsonl
+  content_mode: metadata
 
 tools:
   tools:
@@ -67,6 +72,8 @@ skills:
       path: ../skills/hvac_sizing_assistant.md
     openstudio_sdk_model_editor:
       path: ../skills/openstudio_sdk_model_editor.md
+    openstudio_vav_reheat_system_creator:
+      path: ../skills/openstudio_vav_reheat_system_creator.md
     openstudio_sdk_wiki:
       path: ../knowledge/openstudio_sdk_wiki
       mode: directory

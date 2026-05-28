@@ -1,34 +1,6 @@
-from datetime import datetime
-from typing import Any, Literal, Dict
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
-class ModelMetrics(BaseModel):
-    # Identification
-    session_id: str = Field(description="Session ID")
-    query_id: str = Field(description="Query ID")
-
-    # Model info
-    model: str = Field(description="Model name", default=None)
-    model_provider: str | None = Field(description="Model provider", default=None)
-    created_at: datetime | None = Field(default=None, description="Model timestamp")
-
-    total_duration: int | None = Field(default=None, description="Total duration (ns)")
-    load_duration: int | None = Field(default=None, description="Load duration (ns)")
-    prompt_eval_duration: int | None = Field(default=None, description="Prompt eval duration (ns)")
-    eval_duration: int | None = Field(default=None, description="Eval duration (ns)")
-
-    prompt_eval_count: int | None = Field(default=None, description="Prompt eval tokens")
-    eval_count: int | None = Field(default=None, description="Eval tokens")
-    input_tokens: int | None = Field(default=None, description="Input tokens")
-    output_tokens: int | None = Field(default=None, description="Output tokens")
-    total_tokens: int | None = Field(default=None, description="Total tokens")
-
-    # Raw metadata
-    raw_metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Unmodified metadata from model + LangGraph"
-    )
 
 
 class ServerConfig(BaseModel):

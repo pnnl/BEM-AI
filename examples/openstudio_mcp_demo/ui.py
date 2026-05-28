@@ -282,7 +282,7 @@ def _render_artifact(
 def main() -> None:
     st.set_page_config(page_title="OpenStudio MCP Demo", page_icon="🏗️", layout="centered")
     st.markdown(STATUS_PANEL_CSS, unsafe_allow_html=True)
-    st.title("🏗️ OpenStudio MCP Sizing Demo")
+    st.title("🏗️ OpenStudio AI Demo")
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = []

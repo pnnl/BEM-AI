@@ -13,7 +13,7 @@ from automa_ai.memory.memory_types import MemoryType
 from examples.sim_chat_stream_demo.mcp_server.mcp_server import serve
 
 base_dir = Path(__file__).resolve().parent
-env_path = base_dir / '.env'
+env_path = base_dir / ".env"
 load_dotenv(dotenv_path=env_path)
 
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +33,7 @@ weather_mcp_config = MCPServerConfig(
     host="localhost",
     port=10000,
     serve=serve,
-    transport="streamable-http"
+    transport="streamable-http",
 )
 
 # skill configuration
@@ -57,6 +57,13 @@ tools_config = {
             },
         }
     ]
+}
+
+telemetry_config = {
+    "enabled": True,
+    "recorder": "jsonl",
+    "path": str(base_dir / "logs" / "telemetry.jsonl"),
+    "content_mode": "metadata",
 }
 
 
@@ -223,8 +230,8 @@ chatbot = AgentFactory(
     mcp_configs={"weather_mcp": weather_mcp_config},
     skills_config=skill_config,
     tools_config=tools_config,
-    enable_metrics=True,
-    debug=True
+    telemetry_config=telemetry_config,
+    debug=True,
 )
 
 # Wrap chatbot agent in A2A agent server

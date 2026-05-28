@@ -19,6 +19,7 @@ def factorial(n: int) -> dict:
         return {"error": "ValueError", "message": "n too large (max 1000)"}
     return {"n": n, "result": str(math.factorial(n))}
 
+
 ARITHMETIC_COT = """
 You are a precise factorial calculator assistant. 
 Do not attempt mental math, only use the factorial tool provided.
@@ -60,9 +61,7 @@ arithmetic_agent = AgentFactory(
     chat_model=GenericLLM.OLLAMA,
     model_base_url=MODEL_BASE_URL,
     tools_config=tools_config,
-    enable_metrics=True,
     debug=True,
-
 )
 
 arithmetic_a2a = A2AAgentServer(arithmetic_agent, public_agent_card)

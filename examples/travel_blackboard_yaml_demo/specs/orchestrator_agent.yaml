@@ -30,7 +30,6 @@ model:
 
 runtime:
   agent_type: langgraph-chat
-  enable_metrics: false
   debug: false
 
 subagents:

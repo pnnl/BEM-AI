@@ -43,6 +43,8 @@ Disallowed uses:
    - `simulate_or_results`: use MCP tools instead of `run_python`.
    - `ambiguous_or_risky`: ask a clarifying question.
 2. Load SDK wiki context:
+   - call `sdk_docs_route` with the user request to identify likely SDK domains,
+     wiki packs, and OpenStudio classes;
    - load `sdk_index` to choose relevant examples and confirm the routing
      choice;
    - load `sdk_core_patterns` before drafting an SDK script;
@@ -50,15 +52,35 @@ Disallowed uses:
      before drafting code;
    - when a request spans multiple domains, load all matching packs instead of
      guessing from memory.
-3. Confirm required inputs:
+3. Retrieve exact SDK documentation before drafting code:
+   - use `sdk_docs_get_method` for constructors, setters, getters, unit-sensitive
+     methods, and methods not already shown in the loaded wiki examples;
+   - use `sdk_docs_list_methods` when the class is known but the exact method
+     name is uncertain;
+   - use `sdk_docs_search_methods` or `sdk_docs_find_classes` when the class is
+     uncertain;
+   - summarize important retrieved facts before writing code, especially return
+     type, parameter type, units, optional values, and exception warnings.
+   - if SDK docs are not configured, state that exact local SDK docs were
+     unavailable and rely on loaded wiki examples plus targeted Python binding
+     introspection instead of guessing.
+4. Use Python binding introspection only as a targeted fallback:
+   - OpenStudio docs describe the C++ API, while the Python binding may expose
+     generated helper names;
+   - if a collection getter or generated binding method is not present in the
+     C++ docs, inspect `dir(model)` or `dir(openstudio.model.ClassName)` before
+     assuming a spelling;
+   - keep introspection snippets read-only and do not use them as permission to
+     edit the model.
+5. Confirm required inputs:
    - model path or URI;
    - target object scope, such as all spaces, a named space type, thermal zones,
      envelope surfaces, schedules, loads, constructions, or HVAC objects;
    - requested edit values and units;
    - output path when an edit is requested.
-4. For any script that creates a new OpenStudio object in the model, review the
-   relevant SDK code pattern before drafting the script and identify all
-   required inputs:
+6. For any script that creates a new OpenStudio object in the model, review the
+   relevant SDK wiki pattern and `sdk_docs_get_method` constructor/setter docs
+   before drafting the script, then identify all required inputs:
    - object name;
    - numeric parameters and unit system;
    - referenced model objects, such as schedules, constructions, thermal zones,
@@ -72,24 +94,18 @@ Disallowed uses:
    objects from the model and ask the user to select one. If the user explicitly
    says to keep defaults, list assumptions with this exact format:
    `Object:Name.parameter: assumed to be x`.
-5. Draft a short workflow before using `run_python`:
+7. Draft a short workflow before using `run_python`:
    - input model path;
    - inspection or edit target;
    - OpenStudio SDK APIs expected to be used;
    - loaded SDK wiki packs used as examples;
+   - SDK documentation methods retrieved with `sdk_docs_get_method`;
+   - any Python binding introspection used to verify method spelling;
    - validation checks;
    - output model path for edits.
-6. For edits, never overwrite the original model unless the user explicitly asks.
+8. For edits, never overwrite the original model unless the user explicitly asks.
    Write a new `.osm` under `outputs/` or another user-approved path.
-7. Before executing Python, show the script intent, input path, output path, key
-   operations, and the complete Python script in a fenced `python` code block.
-   Do not summarize, omit, or refer to an unseen script. Ask for the user's
-   explicit approval and do not call `run_python` until approval is received.
-8. Execute one bounded Python script with `run_python`.
-9. Track failed `run_python` calls for the current task. If three attempts fail,
-   stop executing scripts. Report each failure attempt, the likely error causes
-   from stdout/stderr and warnings, and ask the user to verify or revise the
-   script before any further execution.
+9. Prepare one bounded Python script for `run_python`.
 10. Summarize like a senior building energy modeler:
    - what was inspected or changed;
    - affected object counts and names when practical;
@@ -135,6 +151,10 @@ the Python script until all matching packs are loaded.
 - Load `sdk_hvac` for air-loop topology, plant-loop topology, zone equipment,
   thermostats, setpoint managers, coils, fans, outdoor air controllers, sizing
   objects, HVAC availability schedules, and served-zone summaries.
+- Load `openstudio_vav_reheat_system_creator` in addition to `sdk_hvac` when
+  the user asks to add, create, prototype, or draft a multi-zone VAV reheat
+  system. That skill owns the VAV system creation sequence and required
+  clarification gates.
 - Load both `sdk_hvac` and `sdk_spaces_zones_loads` when HVAC information needs
   to be summarized by space, thermal zone, or served zone.
 - Load `sdk_simulation_results` only to explain or review OpenStudio simulation
@@ -148,12 +168,16 @@ the Python script until all matching packs are loaded.
 Required geometry rule: if a script uses `surface.azimuth()`, it must use the
 `surface_azimuth_degrees(surface)` helper from `sdk_geometry`. Do not treat raw
 `surface.azimuth()` as degrees and do not manually convert with `math.pi`.
+If needed, verify this with `sdk_docs_get_method` for
+`PlanarSurface.azimuth`, which documents the angle in radians.
 
 Required OpenStudio API naming rule: follow the exact SDK method spelling shown
 in the loaded wiki examples. Some OpenStudio collection getters use historical
 plural spellings that do not match common English pluralization. For building
 stories, use the `sdk_geometry` example spelling exactly:
-`model.getBuildingStorys()`.
+`model.getBuildingStorys()`. If a generated Python collection getter is not
+present in the C++ SDK docs, verify it with Python binding introspection before
+drafting code.
 
 Required object-creation rule: when creating a new OpenStudio object, do not
 draft or execute the script until required names, numeric values, units,
@@ -201,4 +225,3 @@ If the task fails, print:
 - Do not import network libraries.
 - Do not use shell commands or subprocesses.
 - Do not perform simulation or results retrieval with `run_python`.
-- Do not execute generated Python without explicit user approval.

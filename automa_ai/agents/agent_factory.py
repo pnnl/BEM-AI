@@ -30,9 +30,12 @@ from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config import CheckpointerConfig
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.config.telemetry import TelemetryConfig
+from automa_ai.config.token_budget import TokenBudgetConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
 from automa_ai.checkpoint import PlainRedisSaver
+from automa_ai.token_management.store import create_token_usage_store
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +156,7 @@ def _build_checkpointer(
             raise ImportError(
                 "AgentCore checkpointer requires 'langgraph-checkpoint-aws'."
             ) from exc
-        
+
         try:
             import boto3
         except ImportError as exc:
@@ -258,7 +261,6 @@ class AgentFactory:
                             "sample_mcp_1": MCPServerConfig(name="sample_mcp", host="localhost", port=10000, transport="sse"),
                             }
         retriever: BaseRetriever | dict | None = None Default None, knowledge base retrieval function.
-        enable_metrics: bool determine whether metrics tracking per task / query should be enabled or not.
         debug: bool determine whether debug mode should be enabled or not.
     """
 
@@ -278,12 +280,13 @@ class AgentFactory:
         tools_config: ToolsConfig | Dict | List[Dict] | None = None,
         blackboard_config: BlackboardConfig | Dict | None = None,
         checkpointer_config: CheckpointerConfig | Dict[str, Any] | str | None = None,
+        budget_config: TokenBudgetConfig | Dict[str, Any] | None = None,
+        telemetry_config: TelemetryConfig | Dict[str, Any] | str | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
         model_max_retries: int | None = None,
         transient_retry_attempts: int = 0,
-        enable_metrics: bool = False,
         debug: bool = False,
     ):
         if isinstance(card, AgentCard):
@@ -307,12 +310,13 @@ class AgentFactory:
         self.tools_config = tools_config
         self.blackboard_config = blackboard_config
         self.checkpointer_config = checkpointer_config
+        self.budget_config = budget_config
+        self.telemetry_config = telemetry_config
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
         self.model_max_retries = model_max_retries
         self.transient_retry_attempts = transient_retry_attempts
-        self.enable_metrics = enable_metrics
         self.debug = debug
 
     def get_agent(self):
@@ -425,6 +429,24 @@ class AgentFactory:
             else:
                 built_tool_specs = ToolsConfig.from_dict(self.tools_config).tools
 
+        budget_config = None
+        token_usage_store = None
+        if self.budget_config:
+            budget_config = (
+                self.budget_config
+                if isinstance(self.budget_config, TokenBudgetConfig)
+                else TokenBudgetConfig.from_dict(self.budget_config)
+            )
+            if budget_config.enabled:
+                token_usage_store = create_token_usage_store(budget_config.store)
+                if (
+                    budget_config.max_session_tokens is not None
+                    or budget_config.max_user_tokens is not None
+                ) and token_usage_store is None:
+                    raise ValueError(
+                        "Token session and user budgets require budget.store to be configured."
+                    )
+
         if self.agent_type == GenericAgentType.ADK:
             return GenericADKAgent(
                 agent_name=card.name,
@@ -461,7 +483,9 @@ class AgentFactory:
                 blackboard_contract=blackboard_contract,
                 memory_manager=memory_manager,
                 transient_retry_attempts=self.transient_retry_attempts,
-                enable_metrics=self.enable_metrics,
+                budget_config=budget_config,
+                token_usage_store=token_usage_store,
+                telemetry_config=self.telemetry_config,
                 debug=self.debug,
             )
 
@@ -473,7 +497,6 @@ class AgentFactory:
                 response_format=self.response_format,
                 chat_model=chat_model,
                 mcp_servers=mcp_servers,
-                enable_metrics=self.enable_metrics,
                 debug=self.debug,
             )
 

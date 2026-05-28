@@ -27,6 +27,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from automa_ai.common.base_agent import BaseAgent
+from automa_ai.telemetry import current_span_id, current_trace_id
 
 _subagent_context_id: ContextVar[str | None] = ContextVar(
     "subagent_context_id",
@@ -364,6 +365,15 @@ class RemoteAgent(BaseAgent):
         message_metadata = dict(metadata or {})
         if user_id is not None:
             message_metadata.setdefault("user_id", user_id)
+        # A2A metadata is the cross-process boundary for subagent calls. Carry
+        # only trace identifiers here; message/tool payloads stay in events and
+        # are sanitized by the recorder.
+        trace_id = current_trace_id()
+        span_id = current_span_id()
+        if trace_id is not None:
+            message_metadata.setdefault("telemetry_trace_id", trace_id)
+        if span_id is not None:
+            message_metadata.setdefault("telemetry_parent_span_id", span_id)
 
         a2a_message = new_text_message(
             text=message,
