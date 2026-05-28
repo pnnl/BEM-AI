@@ -61,7 +61,7 @@ class PlainRedisSaver(
         if redis_url is None and redis_client is None:
             raise ValueError("Either redis_url or redis_client must be provided.")
         # valkey setup
-        self._redis = redis_client or Redis.from_url(redis_url, ssl=True, decode_responses=False)
+        self._redis = redis_client or Redis.from_url(redis_url)
         self._owns_client = redis_client is None
         self._key_prefix = key_prefix.rstrip(":")
 
