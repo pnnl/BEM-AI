@@ -226,8 +226,16 @@ class TokenUsageStoreRegistry:
     @classmethod
     def register(cls, name: str, store_cls: type[TokenUsageStore]) -> None:
         """Register a token usage store class under a config backend name."""
+        if not isinstance(store_cls, type):
+            raise TypeError(
+                "TokenUsageStore must be registered with a class; "
+                f"got {store_cls!r} (type={type(store_cls).__name__})"
+            )
         if not issubclass(store_cls, TokenUsageStore):
-            raise TypeError("TokenUsageStore must subclass TokenUsageStore")
+            raise TypeError(
+                "TokenUsageStore must subclass TokenUsageStore; "
+                f"got {store_cls!r} (type={type(store_cls).__name__})"
+            )
         cls._stores[name] = store_cls
 
     @classmethod
@@ -272,5 +280,9 @@ def create_token_usage_store(
         return None
     if not isinstance(config, TokenUsageStoreConfig):
         config = TokenUsageStoreConfig.model_validate(config)
-    store_cls = TokenUsageStoreRegistry.get(config.backend)
+    try:
+        store_cls = TokenUsageStoreRegistry.get(config.backend)
+    except KeyError as exc:
+        message = exc.args[0] if exc.args else str(exc)
+        raise ValueError(message) from exc
     return store_cls.from_config(config)

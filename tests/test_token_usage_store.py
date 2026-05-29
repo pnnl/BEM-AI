@@ -154,8 +154,30 @@ def test_custom_token_usage_store_can_use_default_from_config():
 
 
 def test_token_usage_store_registry_rejects_non_store():
-    with pytest.raises(TypeError, match="TokenUsageStore must subclass"):
+    with pytest.raises(
+        TypeError,
+        match=r"TokenUsageStore must subclass TokenUsageStore; got <class 'object'>",
+    ):
         TokenUsageStoreRegistry.register("bad", object)
+
+
+def test_token_usage_store_registry_rejects_non_class():
+    store = DefaultConfigTokenUsageStore(table_name="token-ledger")
+
+    with pytest.raises(
+        TypeError,
+        match=r"TokenUsageStore must be registered with a class; got .*"
+        r"DefaultConfigTokenUsageStore.*type=DefaultConfigTokenUsageStore",
+    ):
+        TokenUsageStoreRegistry.register("bad", store)
+
+
+def test_create_token_usage_store_raises_value_error_for_unknown_backend():
+    with pytest.raises(
+        ValueError,
+        match="Unknown token usage store backend: missing. Known backends:",
+    ):
+        create_token_usage_store({"backend": "missing"})
 
 
 def test_sqlite_token_usage_store_requires_db_path():

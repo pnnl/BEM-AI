@@ -1,3 +1,5 @@
+import pickle
+
 import pytest
 from google.protobuf.json_format import MessageToDict
 
@@ -35,6 +37,10 @@ def _make_card(url: str) -> dict:
     }
 
 
+def _noop_agent_builder():
+    return None
+
+
 def test_base_url_path_parsed_from_no_scheme_url():
     card = _make_card("localhost:20000/a2a")
     server = A2AAgentServer(lambda: None, card)
@@ -50,13 +56,22 @@ def test_base_url_path_override_wins():
     server = A2AAgentServer(lambda: None, card, base_url_path="/permit")
     assert server.base_url_path == "/permit"
     card_data = MessageToDict(server.card, preserving_proto_field_name=False)
-    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:20000/permit/"
+    assert (
+        card_data["supportedInterfaces"][0]["url"] == "http://localhost:20000/permit/"
+    )
 
 
 def test_base_url_path_override_does_not_mutate_input_card():
     card = _make_card("http://localhost:20000/a2a")
     A2AAgentServer(lambda: None, card, base_url_path="/permit")
     assert card["supportedInterfaces"][0]["url"] == "http://localhost:20000/a2a"
+
+
+def test_default_executor_builder_is_picklable_for_spawn():
+    server = A2AAgentServer(_noop_agent_builder, _make_card("localhost:20000/a2a"))
+
+    pickle.dumps(server.executor_builder)
+    pickle.dumps(server)
 
 
 def test_server_run_closes_sync_agent(monkeypatch):
@@ -104,6 +119,7 @@ def test_close_agent_supports_async_close():
 
     assert calls == ["closed"]
 
+
 def test_health_check_default_response():
     card = _make_card("localhost:20000")
     server = A2AAgentServer(lambda: None, card)
@@ -121,4 +137,3 @@ def test_health_check_default_response():
         "status": "healthy",
         "agent": "Test Agent",
     }
-    
