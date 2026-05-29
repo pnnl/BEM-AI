@@ -42,9 +42,21 @@ class TokenUsageSummary:
 class TokenUsageStore(ABC):
     """Persistence boundary for token usage records.
 
-    A future DynamoDB implementation should implement this interface and keep the
-    same user/context/task identifiers, so budget enforcement remains unchanged.
+    Custom backends should implement this interface and keep the same
+    user/context/task identifiers, so budget enforcement remains unchanged.
     """
+
+    @classmethod
+    def from_config(
+        cls,
+        config: TokenUsageStoreConfig | dict[str, Any],
+    ) -> "TokenUsageStore":
+        """Build a store instance from framework config data."""
+        if isinstance(config, TokenUsageStoreConfig):
+            config = config.model_dump(exclude_none=True)
+        kwargs = dict(config)
+        kwargs.pop("backend", None)
+        return cls(**kwargs)
 
     @abstractmethod
     def write_usage(self, record: TokenUsageRecord) -> None:
@@ -87,6 +99,8 @@ class SQLiteTokenUsageStore(TokenUsageStore):
         """Build a SQLite store from YAML or direct config data."""
         if not isinstance(config, TokenUsageStoreConfig):
             config = TokenUsageStoreConfig.model_validate(config)
+        if config.db_path is None:
+            raise ValueError("db_path must be defined for SQLiteTokenUsageStore.")
         return cls(db_path=config.db_path)
 
     def __init__(self, db_path: str):
@@ -204,6 +218,55 @@ class SQLiteTokenUsageStore(TokenUsageStore):
         )
 
 
+class TokenUsageStoreRegistry:
+    """Registry for token usage persistence backends."""
+
+    _stores: dict[str, type[TokenUsageStore]] = {}
+
+    @classmethod
+    def register(cls, name: str, store_cls: type[TokenUsageStore]) -> None:
+        """Register a token usage store class under a config backend name."""
+        if not isinstance(store_cls, type):
+            raise TypeError(
+                "TokenUsageStore must be registered with a class; "
+                f"got {store_cls!r} (type={type(store_cls).__name__})"
+            )
+        if not issubclass(store_cls, TokenUsageStore):
+            raise TypeError(
+                "TokenUsageStore must subclass TokenUsageStore; "
+                f"got {store_cls!r} (type={type(store_cls).__name__})"
+            )
+        cls._stores[name] = store_cls
+
+    @classmethod
+    def get(cls, name: str) -> type[TokenUsageStore]:
+        """Return the registered store class for a backend name."""
+        try:
+            return cls._stores[name]
+        except KeyError as exc:
+            known = ", ".join(sorted(cls._stores)) or "<none>"
+            raise KeyError(
+                f"Unknown token usage store backend: {name}. "
+                f"Known backends: {known}"
+            ) from exc
+
+    @classmethod
+    def list(cls) -> list[str]:
+        """List registered token usage store backend names."""
+        return sorted(cls._stores)
+
+
+TokenUsageStoreRegistry.register("sqlite", SQLiteTokenUsageStore)
+
+
+def register_token_usage_store(
+    name: str,
+    store_cls: type[TokenUsageStore],
+) -> None:
+    """Register a project-provided token usage store backend."""
+    TokenUsageStoreRegistry.register(name, store_cls)
+
+
 def create_token_usage_store(
     config: TokenUsageStoreConfig | dict[str, Any] | None,
 ) -> TokenUsageStore | None:
@@ -217,6 +280,9 @@ def create_token_usage_store(
         return None
     if not isinstance(config, TokenUsageStoreConfig):
         config = TokenUsageStoreConfig.model_validate(config)
-    if config.backend == "sqlite":
-        return SQLiteTokenUsageStore.from_config(config)
-    raise ValueError(f"Unsupported token usage store backend: {config.backend}")
+    try:
+        store_cls = TokenUsageStoreRegistry.get(config.backend)
+    except KeyError as exc:
+        message = exc.args[0] if exc.args else str(exc)
+        raise ValueError(message) from exc
+    return store_cls.from_config(config)

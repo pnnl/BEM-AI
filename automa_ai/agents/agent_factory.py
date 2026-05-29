@@ -25,7 +25,11 @@ from automa_ai.blackboard.store import create_blackboard_store, BlackboardStoreC
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
-from automa_ai.common.utils import map_mcp_config_to_server_config, load_tool_plugins
+from automa_ai.common.utils import (
+    map_mcp_config_to_server_config,
+    load_token_usage_store_plugins,
+    load_tool_plugins,
+)
 from automa_ai.memory.manager import DefaultMemoryManager
 from automa_ai.skills import SkillManager, SkillsConfig
 from automa_ai.config import CheckpointerConfig
@@ -327,6 +331,7 @@ class AgentFactory:
         return ParseDict(deepcopy(self._card_data), AgentCard())
 
     def __call__(self) -> BaseAgent:
+        load_token_usage_store_plugins()
         load_tool_plugins()
         card = self.card
 

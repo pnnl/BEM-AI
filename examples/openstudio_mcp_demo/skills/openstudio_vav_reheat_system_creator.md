@@ -80,6 +80,41 @@ If defaults are approved, list assumptions using this exact format:
 Object:Name.parameter: assumed to be x
 ```
 
+## Mandatory Phased Workflow
+
+Do not create one giant VAV script as the first action. VAV reheat creation is a
+multi-object HVAC edit and must be handled as a phased workflow unless the user
+explicitly approves a single long script after seeing the risks.
+
+1. **Preflight inspection script**:
+   - load the model;
+   - list conditioned thermal zones and their spaces;
+   - list existing air loops and served zones;
+   - list hot-water and chilled-water plant loops;
+   - list candidate HVAC operation schedules and outdoor-air schedules;
+   - list existing thermostats, sizing objects, and relevant availability
+     managers when practical;
+   - report whether an air loop with the requested system name already exists.
+2. **Clarification gate**:
+   - ask the user to select zones, schedules, loop names, coil types, fan
+     pressure units, economizer option, and any defaults that are still missing;
+   - if defaults are approved, state assumptions using
+     `Object:Name.parameter: assumed to be x`.
+3. **Focused edit script**:
+   - create only the approved VAV air system and zone terminals;
+   - save to a copied output model;
+   - print the standard JSON result contract with created object names and
+     warnings.
+4. **Validation**:
+   - use a short validation script or MCP `model_validate` to confirm object
+     counts, served zones, loop connections, and output path.
+5. **Simulation handoff**:
+   - use MCP `sim_*` and `results_*`; do not simulate through `run_python`.
+
+If the edit script is expected to exceed 250 lines, split helper creation into
+smaller scripts or ask for explicit approval before executing one long script.
+The user must be able to inspect the full script before execution.
+
 ## Standards-Derived Execution Logic
 
 The VAV reheat creation sequence is:

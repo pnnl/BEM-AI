@@ -2,9 +2,18 @@ import pytest
 from unittest import mock
 from types import SimpleNamespace
 
-from automa_ai.common.utils import load_memory_store_plugins, load_tool_plugins
+from automa_ai.common.utils import (
+    load_memory_store_plugins,
+    load_token_usage_store_plugins,
+    load_tool_plugins,
+)
 from automa_ai.memory.manager import MemoryStoreRegistry
 from automa_ai.memory.memory_stores import BaseMemoryStore
+from automa_ai.token_management import TokenUsageRecord, TokenUsageStore
+from automa_ai.token_management.store import (
+    TokenUsageStoreRegistry,
+    TokenUsageSummary,
+)
 from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
 from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
 from pydantic import BaseModel
@@ -19,7 +28,9 @@ class DummyMemoryStore(BaseMemoryStore):
     def write_memory(self, entries):
         return None
 
-    def read_memories(self, query=None, session_id=None, user_id=None, memory_type=None, limit=10):
+    def read_memories(
+        self, query=None, session_id=None, user_id=None, memory_type=None, limit=10
+    ):
         return []
 
     def delete_memory(self, memory_id: str) -> bool:
@@ -52,6 +63,23 @@ def dummy_tool_builder(config: dict, deps: RuntimeDeps) -> BaseDefaultTool:
     return DummyTool()
 
 
+class DummyTokenUsageStore(TokenUsageStore):
+    @classmethod
+    def from_config(cls, config):
+        return cls()
+
+    def write_usage(self, record: TokenUsageRecord) -> None:
+        return None
+
+    def summarize_usage(
+        self,
+        *,
+        user_id: str | None = None,
+        context_id: str | None = None,
+    ) -> TokenUsageSummary:
+        return TokenUsageSummary()
+
+
 def test_load_memory_store_plugins_registers_store(monkeypatch):
     fake_ep = SimpleNamespace(name="dummy_store", load=lambda: DummyMemoryStore)
 
@@ -64,6 +92,24 @@ def test_load_memory_store_plugins_registers_store(monkeypatch):
 
         registered_cls = MemoryStoreRegistry.get("dummy_store")
         assert registered_cls is DummyMemoryStore
+
+
+def test_load_token_usage_store_plugins_registers_store(monkeypatch):
+    fake_ep = SimpleNamespace(name="dummy_usage", load=lambda: DummyTokenUsageStore)
+
+    with mock.patch("importlib.metadata.entry_points") as mock_eps:
+        mock_eps.return_value = {"automa_ai.token_usage_stores": [fake_ep]}
+
+        original_stores = dict(TokenUsageStoreRegistry._stores)
+        TokenUsageStoreRegistry._stores.clear()
+
+        try:
+            load_token_usage_store_plugins()
+
+            registered_cls = TokenUsageStoreRegistry.get("dummy_usage")
+            assert registered_cls is DummyTokenUsageStore
+        finally:
+            TokenUsageStoreRegistry._stores = original_stores
 
 
 def test_load_tool_plugins_registers_tool_builder(monkeypatch):

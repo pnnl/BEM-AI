@@ -288,6 +288,42 @@ async def test_stream_cancelled_during_setup_closes_span_as_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stream_generator_exit_closes_span_as_ok(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="partial output"), {}
+            await asyncio.sleep(10)
+
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+        }
+    )
+    agent.graph = DummyGraph()
+
+    stream = agent.stream("hello", "session-1", "task-1")
+    item = await stream.__anext__()
+    assert item["content"] == "partial output"
+    await stream.aclose()
+
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    span_end = [record for record in records if record["type"] == "span_end"][-1]
+    assert span_end["status"] == "ok"
+    assert "exception.type" not in span_end["attributes"]
+    assert any(record.get("name") == "stream.closed" for record in records)
+    assert current_trace_id() is None
+    assert current_span_id() is None
+
+
+@pytest.mark.asyncio
 async def test_emit_final_output_emits_data_for_json_artifact():
     agent = build_agent()
     output_queue: asyncio.Queue = asyncio.Queue()

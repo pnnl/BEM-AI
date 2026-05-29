@@ -7,8 +7,10 @@ from automa_ai.token_management.store import (
     SQLiteTokenUsageStore,
     TokenUsageRecord,
     TokenUsageStore,
+    TokenUsageStoreRegistry,
     TokenUsageSummary,
     create_token_usage_store,
+    register_token_usage_store,
 )
 
 __all__ = [
@@ -17,7 +19,9 @@ __all__ = [
     "TokenBudgetMiddleware",
     "TokenUsageRecord",
     "TokenUsageStore",
+    "TokenUsageStoreRegistry",
     "TokenUsageSummary",
     "build_token_budget_middlewares",
     "create_token_usage_store",
+    "register_token_usage_store",
 ]
