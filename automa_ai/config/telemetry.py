@@ -17,7 +17,7 @@ class TelemetryConfig(BaseModel):
     """
 
     enabled: bool = False
-    recorder: Literal["noop", "jsonl", "otel"] = "noop"
+    recorder: str = "noop"
     path: str | None = None
     content_mode: Literal["off", "metadata", "redacted", "raw"] = "metadata"
     max_content_chars: int = Field(default=4000, ge=0)
@@ -25,6 +25,8 @@ class TelemetryConfig(BaseModel):
     environment: str = "local"
     debug: bool = False
     attributes: dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict)
+    load_plugins: bool = False
 
     @field_validator("path")
     @classmethod
