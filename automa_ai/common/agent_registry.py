@@ -29,9 +29,14 @@ def _child_entrypoint(run_fn, logging_config):
     _init_child_logging(logging_config)
 
     # Load plugins BEFORE any agent is created
-    from automa_ai.common.utils import load_memory_store_plugins, load_tool_plugins
+    from automa_ai.common.utils import (
+        load_memory_store_plugins,
+        load_token_usage_store_plugins,
+        load_tool_plugins,
+    )
 
     load_memory_store_plugins()
+    load_token_usage_store_plugins()
     load_tool_plugins()
     run_fn()
 

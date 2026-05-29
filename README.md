@@ -1,8 +1,8 @@
 # AUTOMA-AI - Autonomous Multi-Agent Network
 
-**AUTOMA-AI is an integration-first framework for building production-oriented agent systems from interchangeable agents, tools, memory stores, checkpoints, and shared-state components.** It is designed for teams that need more than simple agent demos: persistent workflows, human checkpoints, distributed agents, and pluggable infrastructure.
+**AUTOMA-AI is an integration-first framework for building production-oriented agent systems from interchangeable agents, tools, memory stores, token usage stores, checkpoints, and shared-state components.** It is designed for teams that need more than simple agent demos: persistent workflows, human checkpoints, distributed agents, and pluggable infrastructure.
 
-AUTOMA-AI treats agent systems as **composable agent infrastructure** rather than a monolithic agent stack. Instead of requiring every component to be implemented as a framework-specific agent, AUTOMA-AI provides protocol-driven integration points and plugin-and-play interfaces so agents, tools, retrievers, memory stores, blackboards, checkpointers, and model providers can be independently developed, replaced, and deployed.
+AUTOMA-AI treats agent systems as **composable agent infrastructure** rather than a monolithic agent stack. Instead of requiring every component to be implemented as a framework-specific agent, AUTOMA-AI provides protocol-driven integration points and plugin-and-play interfaces so agents, tools, retrievers, memory stores, token usage stores, blackboards, checkpointers, and model providers can be independently developed, replaced, and deployed.
 
 > **Formerly BEM-AI:** The original building energy modeling application has moved to the example folder: [examples/sim_bem_network](examples/sim_bem_network).
 

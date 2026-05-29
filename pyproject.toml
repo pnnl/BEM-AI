@@ -73,6 +73,9 @@ build-backend = "hatchling.build"
 default_sqlite = "automa_ai.memory.sqlite_memory_store:SQLiteMemoryStore"
 default_chroma = "automa_ai.memory.chroma_memory_store:ChromaVectorMemoryStore"
 
+[project.entry-points."automa_ai.token_usage_stores"]
+sqlite = "automa_ai.token_management.store:SQLiteTokenUsageStore"
+
 [project.entry-points."automa_ai.tools"]
 web_search = "automa_ai.tools.web_search:build_web_search_tool"
 run_command = "automa_ai.tools.run_command:build_run_command_tool"

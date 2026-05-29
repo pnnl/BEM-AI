@@ -1,4 +1,53 @@
-from automa_ai.token_management import SQLiteTokenUsageStore, TokenUsageRecord
+import pytest
+
+from automa_ai.token_management import (
+    SQLiteTokenUsageStore,
+    TokenUsageRecord,
+    TokenUsageStore,
+    TokenUsageStoreRegistry,
+    TokenUsageSummary,
+    create_token_usage_store,
+    register_token_usage_store,
+)
+
+
+class DummyTokenUsageStore(TokenUsageStore):
+    def __init__(self, table_name: str):
+        self.table_name = table_name
+        self.records: list[TokenUsageRecord] = []
+
+    @classmethod
+    def from_config(cls, config):
+        if not isinstance(config, dict):
+            config = config.model_dump()
+        return cls(table_name=config["table_name"])
+
+    def write_usage(self, record: TokenUsageRecord) -> None:
+        self.records.append(record)
+
+    def summarize_usage(
+        self,
+        *,
+        user_id: str | None = None,
+        context_id: str | None = None,
+    ) -> TokenUsageSummary:
+        return TokenUsageSummary()
+
+
+class DefaultConfigTokenUsageStore(TokenUsageStore):
+    def __init__(self, table_name: str):
+        self.table_name = table_name
+
+    def write_usage(self, record: TokenUsageRecord) -> None:
+        return None
+
+    def summarize_usage(
+        self,
+        *,
+        user_id: str | None = None,
+        context_id: str | None = None,
+    ) -> TokenUsageSummary:
+        return TokenUsageSummary()
 
 
 def test_sqlite_token_usage_store_records_and_summarizes(tmp_path):
@@ -66,3 +115,49 @@ def test_sqlite_token_usage_store_serializes_non_json_metadata(tmp_path):
     )
 
     assert store.summarize_usage(context_id="session-1").total_tokens == 1
+
+
+def test_custom_token_usage_store_registry_builds_registered_store():
+    original_stores = dict(TokenUsageStoreRegistry._stores)
+    try:
+        register_token_usage_store("dummy", DummyTokenUsageStore)
+
+        store = create_token_usage_store(
+            {
+                "backend": "dummy",
+                "table_name": "token-ledger",
+            }
+        )
+
+        assert isinstance(store, DummyTokenUsageStore)
+        assert store.table_name == "token-ledger"
+    finally:
+        TokenUsageStoreRegistry._stores = original_stores
+
+
+def test_custom_token_usage_store_can_use_default_from_config():
+    original_stores = dict(TokenUsageStoreRegistry._stores)
+    try:
+        register_token_usage_store("default_config", DefaultConfigTokenUsageStore)
+
+        store = create_token_usage_store(
+            {
+                "backend": "default_config",
+                "table_name": "token-ledger",
+            }
+        )
+
+        assert isinstance(store, DefaultConfigTokenUsageStore)
+        assert store.table_name == "token-ledger"
+    finally:
+        TokenUsageStoreRegistry._stores = original_stores
+
+
+def test_token_usage_store_registry_rejects_non_store():
+    with pytest.raises(TypeError, match="TokenUsageStore must subclass"):
+        TokenUsageStoreRegistry.register("bad", object)
+
+
+def test_sqlite_token_usage_store_requires_db_path():
+    with pytest.raises(ValueError, match="db_path must be defined"):
+        create_token_usage_store({"backend": "sqlite"})

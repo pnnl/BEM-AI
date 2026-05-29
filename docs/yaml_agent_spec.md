@@ -527,9 +527,10 @@ model calls:
 - `summarize_when_tokens`: Enables LangChain summarization middleware when the
   message history reaches this approximate token count.
 - `keep_recent_messages`: Number of recent messages kept by summarization.
-- `store`: Optional token-usage persistence backend. SQLite is currently
-  implemented; the store interface is isolated so DynamoDB can be added without
-  changing agent middleware.
+- `store`: Optional token-usage persistence backend. `sqlite` is built in.
+  Custom backends can be registered with `register_token_usage_store(...)` or
+  exposed through the `automa_ai.token_usage_stores` package entry point group.
+  Backend-specific fields are passed through to the selected store.
 
 ```yaml
 budget:
@@ -545,6 +546,23 @@ budget:
   store:
     backend: sqlite
     db_path: ./token_usage.db
+```
+
+Custom token usage store packages can expose a `TokenUsageStore` subclass under
+the backend name used in YAML:
+
+```toml
+[project.entry-points."automa_ai.token_usage_stores"]
+dynamodb = "my_package.token_usage:DynamoDBTokenUsageStore"
+```
+
+```yaml
+budget:
+  max_session_tokens: 100000
+  store:
+    backend: dynamodb
+    table_name: automa-token-usage
+    region_name: us-west-2
 ```
 
 ### `telemetry`
