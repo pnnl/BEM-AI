@@ -28,3 +28,8 @@ class RunPythonToolConfig(BaseModel):
     )
     max_artifacts: int = Field(default=10, ge=0, le=100)
     max_artifact_bytes: int = Field(default=5_000_000, ge=1_000, le=100_000_000)
+    warn_script_lines: int | None = Field(default=120, ge=1)
+    warn_script_chars: int | None = Field(default=None, ge=1)
+    max_script_lines: int | None = Field(default=None, ge=1)
+    max_script_chars: int | None = Field(default=None, ge=1)
+    failure_experience_path: str | None = None

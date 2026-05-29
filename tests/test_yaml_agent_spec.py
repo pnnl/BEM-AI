@@ -344,6 +344,7 @@ tools:
     - type: run_python
       config:
         workspace_root: ./workspace
+        failure_experience_path: ./logs/python_script_failure_experience.jsonl
 """,
         encoding="utf-8",
     )
@@ -352,6 +353,9 @@ tools:
     tools = spec.to_factory_kwargs()["tools_config"]
 
     assert tools["tools"][0]["config"]["workspace_root"] == str(spec_dir / "workspace")
+    assert tools["tools"][0]["config"]["failure_experience_path"] == str(
+        spec_dir / "logs/python_script_failure_experience.jsonl"
+    )
 
 
 def test_yaml_agent_spec_rebases_yaml_agent_base_dir_from_spec_directory(

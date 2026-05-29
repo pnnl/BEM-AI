@@ -55,6 +55,8 @@ tools:
         timeout_s: 120
         workspace_root: ..
         max_artifacts: 20
+        warn_script_lines: 120
+        failure_experience_path: ../logs/python_script_failure_experience.jsonl
         allow_network: false
         blocked_imports:
           - subprocess
