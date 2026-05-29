@@ -64,6 +64,7 @@ telemetry_config = {
     "recorder": "jsonl",
     "path": str(base_dir / "logs" / "telemetry.jsonl"),
     "content_mode": "metadata",
+    "load_plugins": False,
 }
 
 
