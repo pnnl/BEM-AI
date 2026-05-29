@@ -15,6 +15,8 @@ from automa_ai.telemetry import (
     build_telemetry,
     current_span_id,
     current_trace_id,
+    list_telemetry_recorders,
+    register_telemetry_recorder,
     wrap_langchain_tool,
 )
 from automa_ai.telemetry.recorders import JsonlRecorder
@@ -159,51 +161,90 @@ def test_jsonl_recorder_close_rejects_late_records_without_hanging(tmp_path) -> 
         recorder.record({"type": "event", "name": "after-close"})
 
 
-def test_otel_recorder_exports_spans_and_events(monkeypatch) -> None:
-    from opentelemetry.sdk.trace.export import SpanExportResult
+def test_custom_recorder_registry_builds_registered_recorder(tmp_path) -> None:
+    class CapturingRecorder:
+        def __init__(self) -> None:
+            self.items = []
+            self.flushed = False
+            self.closed = False
 
-    class CapturingExporter:
-        def __init__(self):
-            self.spans = []
+        def record(self, item):
+            self.items.append(item)
 
-        def export(self, spans):
-            self.spans.extend(spans)
-            return SpanExportResult.SUCCESS
+        def flush(self):
+            self.flushed = True
 
-        def shutdown(self):
-            return None
+        def close(self):
+            self.closed = True
 
-        def force_flush(self, timeout_millis=30000):
-            return True
+    captured: dict[str, object] = {}
 
-    exporter = CapturingExporter()
-    monkeypatch.setattr(
-        "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter",
-        lambda: exporter,
+    def build_custom_recorder(config, base_attributes, base_dir):
+        assert config.options == {"target": "agentcore"}
+        assert base_attributes == {"project.id": "demo"}
+        assert base_dir == tmp_path
+        recorder = CapturingRecorder()
+        captured["recorder"] = recorder
+        return recorder
+
+    register_telemetry_recorder(
+        "test_custom_agentcore",
+        build_custom_recorder,
+        override=True,
     )
     telemetry = build_telemetry(
         {
             "enabled": True,
-            "recorder": "otel",
-            "service_name": "test-service",
-            "environment": "test",
-        }
+            "recorder": "test_custom_agentcore",
+            "options": {"target": "agentcore"},
+        },
+        base_attributes={"project.id": "demo"},
+        base_dir=tmp_path,
     )
 
-    with telemetry.span("agent.turn", kind="server", attributes={"agent.name": "demo"}):
+    with telemetry.span("agent.turn", attributes={"agent.name": "demo"}):
         telemetry.event("message", attributes={"content": "hello"})
 
     telemetry.flush()
     telemetry.close()
 
-    assert len(exporter.spans) == 1
-    span = exporter.spans[0]
-    assert span.name == "agent.turn"
-    assert span.resource.attributes["service.name"] == "test-service"
-    assert span.resource.attributes["deployment.environment"] == "test"
-    assert span.attributes["agent.name"] == "demo"
-    assert span.attributes["automa.duration_ms"] >= 0
-    assert [event.name for event in span.events] == ["message"]
+    recorder = captured["recorder"]
+    assert recorder.flushed is True
+    assert recorder.closed is True
+    assert [item["type"] for item in recorder.items] == [
+        "span_start",
+        "event",
+        "span_end",
+    ]
+    assert "test_custom_agentcore" in list_telemetry_recorders()
+
+
+def test_unknown_enabled_recorder_raises_clear_error() -> None:
+    with pytest.raises(ValueError, match="not registered"):
+        build_telemetry({"enabled": True, "recorder": "missing_recorder"})
+
+
+def test_disabled_unknown_recorder_uses_noop() -> None:
+    telemetry = build_telemetry({"enabled": False, "recorder": "missing_recorder"})
+
+    with telemetry.span("agent.turn"):
+        telemetry.event("message")
+
+    assert telemetry.enabled is False
+
+
+def test_recorder_registry_rejects_duplicate_without_override() -> None:
+    def build_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(base_dir / "telemetry.jsonl")
+
+    register_telemetry_recorder(
+        "test_duplicate_recorder",
+        build_recorder,
+        override=True,
+    )
+
+    with pytest.raises(ValueError, match="already registered"):
+        register_telemetry_recorder("test_duplicate_recorder", build_recorder)
 
 
 def test_span_start_failure_restores_context() -> None:

@@ -553,8 +553,8 @@ Optional object or string passed through to
 `AgentFactory(..., telemetry_config=...)`.
 
 Local JSONL telemetry records trace/span/event shaped data without requiring an
-external collector. Use `recorder: otel` to export through OpenTelemetry OTLP for
-AWS AgentCore observability:
+external collector. Projects can also register custom telemetry recorders and
+refer to them by name in `recorder`:
 
 ```yaml
 telemetry:
@@ -566,8 +566,8 @@ telemetry:
 ```
 
 Relative JSONL `path` values are resolved from the YAML file's directory.
-OpenTelemetry export uses the standard `OTEL_EXPORTER_OTLP_*` environment
-variables. See `docs/telemetry.md` for privacy modes and AWS AgentCore details.
+See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
+AgentCore adapter example.
 
 ## Troubleshooting
 
