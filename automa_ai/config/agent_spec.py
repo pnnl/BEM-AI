@@ -371,9 +371,9 @@ def _rebase_tools_config(
     """Return a copy of tools config with known built-in path fields rebased.
 
     The loader intentionally handles only path fields with known semantics.
-    Currently those are `run_python.config.workspace_root` and
-    `yaml_agent.config.base_dir`; arbitrary custom tool strings are left
-    untouched.
+    Currently those are `run_python.config.workspace_root`,
+    `run_python.config.failure_experience_path`, and `yaml_agent.config.base_dir`;
+    arbitrary custom tool strings are left untouched.
     """
     if tools is None:
         return None
@@ -391,6 +391,7 @@ def _rebase_tools_config(
             continue
         if entry.get("type") == "run_python":
             _rebase_mapping_path(config, "workspace_root", base_dir=base_dir)
+            _rebase_mapping_path(config, "failure_experience_path", base_dir=base_dir)
         elif entry.get("type") == "yaml_agent":
             _rebase_mapping_path(config, "base_dir", base_dir=base_dir)
 

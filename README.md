@@ -302,10 +302,9 @@ See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_dem
 
 ### Agent telemetry
 
-`LANGGRAPHCHAT` agents can emit local-first telemetry without requiring an
-external observability backend. The current recorder writes OpenTelemetry-shaped
-span/event records to JSONL, and the API is designed so a future optional
-OpenTelemetry/AWS AgentCore recorder can export the same data.
+`LANGGRAPHCHAT` agents can emit telemetry through a local JSONL recorder or a
+project-registered custom recorder. Installed recorder entry points are loaded
+only when telemetry config sets `load_plugins: true`.
 
 ```yaml
 telemetry:
@@ -317,7 +316,7 @@ telemetry:
 
 Then pass this to `AgentFactory(..., telemetry_config=telemetry)` or include it
 in a YAML agent spec. See `docs/telemetry.md` for the schema, privacy modes, and
-AgentCore direction.
+custom recorder registry used by integrations such as AWS AgentCore adapters.
 
 ### Checkpointer configuration
 
