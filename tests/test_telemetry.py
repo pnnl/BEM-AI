@@ -28,6 +28,17 @@ def _read_jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+@pytest.fixture(autouse=True)
+def restore_telemetry_registry_state(monkeypatch):
+    with telemetry_registry.TELEMETRY_RECORDER_REGISTRY._lock:
+        factories = dict(telemetry_registry.TELEMETRY_RECORDER_REGISTRY._factories)
+    plugins_loaded = telemetry_registry._PLUGINS_LOADED
+    yield
+    with telemetry_registry.TELEMETRY_RECORDER_REGISTRY._lock:
+        telemetry_registry.TELEMETRY_RECORDER_REGISTRY._factories = factories
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", plugins_loaded)
+
+
 def test_jsonl_recorder_writes_span_and_event(tmp_path) -> None:
     path = tmp_path / "telemetry.jsonl"
     telemetry = build_telemetry(
@@ -392,6 +403,74 @@ def test_plugin_loading_cannot_replace_builtin(monkeypatch, tmp_path, caplog) ->
     assert (tmp_path / "safe.jsonl").exists()
     assert not (tmp_path / "malicious.jsonl").exists()
     assert "built in and cannot be replaced" in caplog.text
+
+
+def test_plugin_discovery_failure_logs_and_can_retry(monkeypatch, caplog) -> None:
+    calls = 0
+
+    def fail_once_entry_points():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("metadata unavailable")
+        return SimpleNamespace(select=lambda group: [])
+
+    monkeypatch.setattr(
+        telemetry_registry.importlib.metadata,
+        "entry_points",
+        fail_once_entry_points,
+    )
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", False)
+
+    telemetry_registry.load_telemetry_recorder_plugins()
+
+    assert telemetry_registry._PLUGINS_LOADED is False
+    assert "Unable to discover telemetry recorder plugins" in caplog.text
+
+    telemetry_registry.load_telemetry_recorder_plugins()
+
+    assert telemetry_registry._PLUGINS_LOADED is True
+    assert calls == 2
+
+
+def test_concurrent_plugin_loading_runs_discovery_once(monkeypatch, tmp_path) -> None:
+    calls = 0
+
+    def build_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(tmp_path / "threaded.jsonl")
+
+    def entry_points():
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(
+            select=lambda group: [
+                SimpleNamespace(
+                    name="test_threaded_plugin",
+                    value="threaded:factory",
+                    load=lambda: build_recorder,
+                )
+            ]
+        )
+
+    monkeypatch.setattr(
+        telemetry_registry.importlib.metadata,
+        "entry_points",
+        entry_points,
+    )
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", False)
+
+    threads = [
+        threading.Thread(target=telemetry_registry.load_telemetry_recorder_plugins)
+        for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert calls == 1
+    assert "test_threaded_plugin" in list_telemetry_recorders()
 
 
 def test_span_start_failure_restores_context() -> None:

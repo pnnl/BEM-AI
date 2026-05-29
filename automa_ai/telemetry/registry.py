@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ TelemetryRecorderFactory = Callable[
 
 logger = logging.getLogger(__name__)
 _BUILTIN_RECORDER_NAMES = frozenset({"noop", "jsonl"})
+_PLUGIN_LOAD_LOCK = threading.Lock()
 
 
 class TelemetryRecorderRegistry:
@@ -30,6 +32,7 @@ class TelemetryRecorderRegistry:
 
     def __init__(self) -> None:
         self._factories: dict[str, TelemetryRecorderFactory] = {}
+        self._lock = threading.Lock()
 
     def register(
         self,
@@ -40,33 +43,36 @@ class TelemetryRecorderRegistry:
     ) -> None:
         """Register a recorder factory under a short config name."""
         normalized = _normalize_name(name)
-        if self._factories.get(normalized) is factory:
-            return
-        if normalized in _BUILTIN_RECORDER_NAMES and normalized in self._factories:
-            raise ValueError(
-                f"Telemetry recorder '{normalized}' is built in and cannot be replaced."
-            )
-        if not override and normalized in self._factories:
-            raise ValueError(
-                f"Telemetry recorder '{normalized}' is already registered."
-            )
-        self._factories[normalized] = factory
+        with self._lock:
+            if self._factories.get(normalized) is factory:
+                return
+            if normalized in _BUILTIN_RECORDER_NAMES and normalized in self._factories:
+                raise ValueError(
+                    f"Telemetry recorder '{normalized}' is built in and cannot be replaced."
+                )
+            if not override and normalized in self._factories:
+                raise ValueError(
+                    f"Telemetry recorder '{normalized}' is already registered."
+                )
+            self._factories[normalized] = factory
 
     def get(self, name: str) -> TelemetryRecorderFactory:
         """Return the factory for a registered recorder name."""
         normalized = _normalize_name(name)
-        try:
-            return self._factories[normalized]
-        except KeyError as exc:
-            known = ", ".join(sorted(self._factories)) or "<none>"
-            raise KeyError(
-                f"Telemetry recorder '{normalized}' is not registered. "
-                f"Known recorders: {known}"
-            ) from exc
+        with self._lock:
+            try:
+                return self._factories[normalized]
+            except KeyError as exc:
+                known = ", ".join(sorted(self._factories)) or "<none>"
+                raise KeyError(
+                    f"Telemetry recorder '{normalized}' is not registered. "
+                    f"Known recorders: {known}"
+                ) from exc
 
     def list(self) -> list[str]:
         """List registered recorder names for diagnostics and docs."""
-        return sorted(self._factories)
+        with self._lock:
+            return sorted(self._factories)
 
 
 def _normalize_name(name: str) -> str:
@@ -129,26 +135,33 @@ def load_telemetry_recorder_plugins() -> None:
     construction does not re-register the same recorder.
     """
     global _PLUGINS_LOADED
-    if _PLUGINS_LOADED:
-        return
-    try:
-        entry_points = importlib.metadata.entry_points().select(
-            group="automa_ai.telemetry_recorders"
-        )
-        for ep in entry_points:
-            try:
-                register_telemetry_recorder(ep.name, ep.load())
-                logger.info(
-                    "Loaded telemetry recorder plugin '%s' from %s.",
-                    ep.name,
-                    ep.value,
-                )
-            except Exception:
-                logger.warning(
-                    "Skipping telemetry recorder plugin '%s' from %s.",
-                    ep.name,
-                    ep.value,
-                    exc_info=True,
-                )
-    finally:
-        _PLUGINS_LOADED = True
+    with _PLUGIN_LOAD_LOCK:
+        if _PLUGINS_LOADED:
+            return
+        try:
+            entry_points = importlib.metadata.entry_points().select(
+                group="automa_ai.telemetry_recorders"
+            )
+        except Exception:
+            logger.warning(
+                "Unable to discover telemetry recorder plugins.", exc_info=True
+            )
+            return
+        try:
+            for ep in entry_points:
+                try:
+                    register_telemetry_recorder(ep.name, ep.load())
+                    logger.info(
+                        "Loaded telemetry recorder plugin '%s' from %s.",
+                        ep.name,
+                        ep.value,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Skipping telemetry recorder plugin '%s' from %s.",
+                        ep.name,
+                        ep.value,
+                        exc_info=True,
+                    )
+        finally:
+            _PLUGINS_LOADED = True
