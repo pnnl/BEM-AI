@@ -563,6 +563,7 @@ telemetry:
   path: ./logs/telemetry.jsonl
   content_mode: metadata
   max_content_chars: 4000
+  load_plugins: false
 ```
 
 Relative JSONL `path` values are resolved from the YAML file's directory.

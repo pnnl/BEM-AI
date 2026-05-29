@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,9 @@ TelemetryRecorderFactory = Callable[
     [TelemetryConfig, dict[str, Any], str | Path | None],
     TelemetryRecorder,
 ]
+
+logger = logging.getLogger(__name__)
+_BUILTIN_RECORDER_NAMES = frozenset({"noop", "jsonl"})
 
 
 class TelemetryRecorderRegistry:
@@ -36,6 +40,12 @@ class TelemetryRecorderRegistry:
     ) -> None:
         """Register a recorder factory under a short config name."""
         normalized = _normalize_name(name)
+        if self._factories.get(normalized) is factory:
+            return
+        if normalized in _BUILTIN_RECORDER_NAMES and normalized in self._factories:
+            raise ValueError(
+                f"Telemetry recorder '{normalized}' is built in and cannot be replaced."
+            )
         if not override and normalized in self._factories:
             raise ValueError(
                 f"Telemetry recorder '{normalized}' is already registered."
@@ -121,12 +131,24 @@ def load_telemetry_recorder_plugins() -> None:
     global _PLUGINS_LOADED
     if _PLUGINS_LOADED:
         return
-    eps = importlib.metadata.entry_points()
-    entry_points = (
-        eps.select(group="automa_ai.telemetry_recorders")
-        if hasattr(eps, "select")
-        else eps.get("automa_ai.telemetry_recorders", [])
-    )
-    for ep in entry_points:
-        register_telemetry_recorder(ep.name, ep.load())
-    _PLUGINS_LOADED = True
+    try:
+        entry_points = importlib.metadata.entry_points().select(
+            group="automa_ai.telemetry_recorders"
+        )
+        for ep in entry_points:
+            try:
+                register_telemetry_recorder(ep.name, ep.load())
+                logger.info(
+                    "Loaded telemetry recorder plugin '%s' from %s.",
+                    ep.name,
+                    ep.value,
+                )
+            except Exception:
+                logger.warning(
+                    "Skipping telemetry recorder plugin '%s' from %s.",
+                    ep.name,
+                    ep.value,
+                    exc_info=True,
+                )
+    finally:
+        _PLUGINS_LOADED = True

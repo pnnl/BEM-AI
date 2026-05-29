@@ -303,7 +303,8 @@ See `docs/tools.md`, `examples/web_search_demo.py`, and `examples/run_python_dem
 ### Agent telemetry
 
 `LANGGRAPHCHAT` agents can emit telemetry through a local JSONL recorder or a
-project-registered custom recorder.
+project-registered custom recorder. Installed recorder entry points are loaded
+only when telemetry config sets `load_plugins: true`.
 
 ```yaml
 telemetry:

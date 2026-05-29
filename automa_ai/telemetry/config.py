@@ -33,10 +33,11 @@ def build_telemetry(
             recorder=NoopRecorder(),
             base_attributes=base_attributes or {},
         )
-    load_telemetry_recorder_plugins()
+    if resolved.load_plugins:
+        load_telemetry_recorder_plugins()
     try:
         recorder_factory = get_telemetry_recorder_factory(resolved.recorder)
-    except KeyError as exc:
+    except (KeyError, ValueError) as exc:
         raise ValueError(str(exc)) from exc
     recorder = recorder_factory(
         resolved,

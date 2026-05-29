@@ -33,6 +33,7 @@ telemetry:
   attributes:
     project.id: demo
   options: {}
+  load_plugins: false
 ```
 
 The same object can be passed to `AgentFactory(..., telemetry_config=...)`.
@@ -45,6 +46,10 @@ The same object can be passed to `AgentFactory(..., telemetry_config=...)`.
 
 `options` is reserved for recorder-specific configuration. Built-in `jsonl` does
 not require it, but custom recorders can read it from `TelemetryConfig.options`.
+
+`load_plugins` controls whether AUTOMA-AI loads recorder factories from installed
+package entry points. It defaults to `false` so installed third-party packages
+cannot join the telemetry path implicitly.
 
 ## What Is Captured
 
@@ -67,8 +72,10 @@ Records have this stable AUTOMA shape before a recorder adapts them:
 {"type":"span_end","trace_id":"...","span_id":"...","name":"agent.turn","status":"ok","duration_ms":123.4,"attributes":{}}
 ```
 
-The facade sanitizes attributes before they reach the recorder. A custom recorder
-should still avoid adding raw secrets or unreviewed payloads.
+The facade sanitizes attributes before they reach the recorder. Your
+`record()` method receives items already redacted according to `content_mode`.
+Do not re-derive prompts, tool arguments, metadata, or other payloads from
+external state inside a recorder; that bypasses the central redaction policy.
 
 ## Custom Recorders
 
@@ -124,8 +131,8 @@ telemetry:
 ```
 
 Plugin packages can also expose factories through the
-`automa_ai.telemetry_recorders` entry point group. AUTOMA-AI loads those entry
-points before resolving an enabled recorder name.
+`automa_ai.telemetry_recorders` entry point group. AUTOMA-AI only loads those
+entry points when telemetry config sets `load_plugins: true`.
 
 ```toml
 [project.entry-points."automa_ai.telemetry_recorders"]
@@ -134,6 +141,11 @@ my_backend = "my_project.telemetry:build_my_recorder"
 
 Unknown enabled recorder names fail fast with a clear error. Disabled telemetry
 always uses `noop`.
+
+The built-in recorder names `noop` and `jsonl` are reserved and cannot be
+replaced, even with `override=True`. Entry-point plugin loading logs each loaded
+recorder and logs a warning for plugins that fail to load or attempt invalid
+registration.
 
 ## AgentCore Adapter Example
 

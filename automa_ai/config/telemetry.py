@@ -26,6 +26,7 @@ class TelemetryConfig(BaseModel):
     debug: bool = False
     attributes: dict[str, Any] = Field(default_factory=dict)
     options: dict[str, Any] = Field(default_factory=dict)
+    load_plugins: bool = False
 
     @field_validator("path")
     @classmethod

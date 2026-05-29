@@ -4,6 +4,7 @@ import json
 import asyncio
 import contextvars
 import threading
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -19,6 +20,7 @@ from automa_ai.telemetry import (
     register_telemetry_recorder,
     wrap_langchain_tool,
 )
+from automa_ai.telemetry import registry as telemetry_registry
 from automa_ai.telemetry.recorders import JsonlRecorder
 
 
@@ -237,6 +239,9 @@ def test_recorder_registry_rejects_duplicate_without_override() -> None:
     def build_recorder(config, base_attributes, base_dir):
         return JsonlRecorder(base_dir / "telemetry.jsonl")
 
+    def build_other_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(base_dir / "other-telemetry.jsonl")
+
     register_telemetry_recorder(
         "test_duplicate_recorder",
         build_recorder,
@@ -244,7 +249,149 @@ def test_recorder_registry_rejects_duplicate_without_override() -> None:
     )
 
     with pytest.raises(ValueError, match="already registered"):
-        register_telemetry_recorder("test_duplicate_recorder", build_recorder)
+        register_telemetry_recorder("test_duplicate_recorder", build_other_recorder)
+
+
+def test_recorder_registry_allows_same_factory_reregistration() -> None:
+    def build_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(base_dir / "telemetry.jsonl")
+
+    register_telemetry_recorder(
+        "test_same_factory_recorder",
+        build_recorder,
+        override=True,
+    )
+    register_telemetry_recorder("test_same_factory_recorder", build_recorder)
+
+
+def test_recorder_registry_protects_builtin_names() -> None:
+    def build_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(base_dir / "telemetry.jsonl")
+
+    with pytest.raises(ValueError, match="built in"):
+        register_telemetry_recorder("jsonl", build_recorder, override=True)
+
+
+def test_plugin_loading_requires_explicit_opt_in(monkeypatch, tmp_path) -> None:
+    loaded = False
+
+    def plugin_factory(config, base_attributes, base_dir):
+        return JsonlRecorder(tmp_path / "plugin.jsonl")
+
+    def load_plugin():
+        nonlocal loaded
+        loaded = True
+        return plugin_factory
+
+    entry_points = SimpleNamespace(
+        select=lambda group: [
+            SimpleNamespace(
+                name="test_unrequested_plugin",
+                value="pkg:factory",
+                load=load_plugin,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        telemetry_registry.importlib.metadata,
+        "entry_points",
+        lambda: entry_points,
+    )
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", False)
+
+    telemetry = build_telemetry(
+        {"enabled": True, "recorder": "jsonl", "path": str(tmp_path / "local.jsonl")}
+    )
+
+    with telemetry.span("agent.turn"):
+        pass
+
+    assert loaded is False
+    assert "test_unrequested_plugin" not in list_telemetry_recorders()
+
+
+def test_plugin_loading_skips_bad_plugins_and_marks_loaded(
+    monkeypatch, tmp_path, caplog
+) -> None:
+    class BadEntryPoint:
+        name = "test_bad_plugin"
+        value = "bad:factory"
+
+        def load(self):
+            raise RuntimeError("broken plugin")
+
+    class GoodEntryPoint:
+        name = "test_good_plugin"
+        value = "good:factory"
+
+        def load(self):
+            def build_recorder(config, base_attributes, base_dir):
+                return JsonlRecorder(tmp_path / "good.jsonl")
+
+            return build_recorder
+
+    entry_points = SimpleNamespace(
+        select=lambda group: [BadEntryPoint(), GoodEntryPoint()]
+    )
+    monkeypatch.setattr(
+        telemetry_registry.importlib.metadata,
+        "entry_points",
+        lambda: entry_points,
+    )
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", False)
+
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "test_good_plugin",
+            "load_plugins": True,
+        }
+    )
+
+    with telemetry.span("agent.turn"):
+        pass
+
+    assert telemetry_registry._PLUGINS_LOADED is True
+    assert "test_good_plugin" in list_telemetry_recorders()
+    assert "Skipping telemetry recorder plugin 'test_bad_plugin'" in caplog.text
+
+
+def test_plugin_loading_cannot_replace_builtin(monkeypatch, tmp_path, caplog) -> None:
+    def build_recorder(config, base_attributes, base_dir):
+        return JsonlRecorder(tmp_path / "malicious.jsonl")
+
+    entry_points = SimpleNamespace(
+        select=lambda group: [
+            SimpleNamespace(
+                name="jsonl",
+                value="malicious:factory",
+                load=lambda: build_recorder,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        telemetry_registry.importlib.metadata,
+        "entry_points",
+        lambda: entry_points,
+    )
+    monkeypatch.setattr(telemetry_registry, "_PLUGINS_LOADED", False)
+
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "jsonl",
+            "load_plugins": True,
+            "path": str(tmp_path / "safe.jsonl"),
+        }
+    )
+
+    with telemetry.span("agent.turn"):
+        pass
+    telemetry.flush()
+
+    assert (tmp_path / "safe.jsonl").exists()
+    assert not (tmp_path / "malicious.jsonl").exists()
+    assert "built in and cannot be replaced" in caplog.text
 
 
 def test_span_start_failure_restores_context() -> None:
