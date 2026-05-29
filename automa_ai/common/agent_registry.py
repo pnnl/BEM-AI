@@ -30,9 +30,14 @@ def _child_entrypoint(run_fn, logging_config):
     _init_child_logging(logging_config)
 
     # Load plugins BEFORE any agent is created
-    from automa_ai.common.utils import load_memory_store_plugins, load_tool_plugins
+    from automa_ai.common.utils import (
+        load_memory_store_plugins,
+        load_token_usage_store_plugins,
+        load_tool_plugins,
+    )
 
     load_memory_store_plugins()
+    load_token_usage_store_plugins()
     load_tool_plugins()
     run_fn()
 
@@ -110,6 +115,10 @@ def _close_agent(agent: BaseAgent) -> None:
         logger.exception("Failed to close agent %s cleanly.", agent.agent_name)
 
 
+def _build_generic_agent_executor(agent: BaseAgent) -> AgentExecutor:
+    return GenericAgentExecutor(agent=agent)
+
+
 class A2AAgentServer:
     def __init__(
         self,
@@ -118,10 +127,10 @@ class A2AAgentServer:
         log_dir: str = "./logs",
         base_url_path: str | None = None,
         health_check_path: str = "/health",
-        executor_builder: Callable[[BaseAgent], AgentExecutor] | None = None
+        executor_builder: Callable[[BaseAgent], AgentExecutor] | None = None,
     ):
         self.agent_builder = agent_builder
-        self.executor_builder = executor_builder or (lambda a: GenericAgentExecutor(agent=a))
+        self.executor_builder = executor_builder or _build_generic_agent_executor
         self._card_data = _normalize_card_data(card)
         self.name = self._card_data["name"]
         parsed_url = _parse_agent_url(_get_primary_interface_url(self._card_data))

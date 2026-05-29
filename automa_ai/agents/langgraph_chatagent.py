@@ -734,7 +734,21 @@ class GenericLangGraphChatAgent(BaseAgent):
                 yield item
         except BaseException as exc:
             try:
-                span_scope.__exit__(type(exc), exc, exc.__traceback__)
+                if isinstance(exc, GeneratorExit):
+                    self.telemetry.event(
+                        "stream.closed",
+                        attributes={
+                            "stream.close.reason": "generator_exit",
+                            **self._event_identity_attributes(
+                                session_id=context_id,
+                                task_id=task_id,
+                                user_id=user_id,
+                            ),
+                        },
+                    )
+                    span_scope.__exit__(None, None, None)
+                else:
+                    span_scope.__exit__(type(exc), exc, exc.__traceback__)
             finally:
                 span_closed = True
             raise

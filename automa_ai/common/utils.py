@@ -6,6 +6,7 @@ from functools import wraps
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.memory_stores import MemoryStoreRegistry
+from automa_ai.token_management.store import TokenUsageStoreRegistry
 from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
 
 import importlib.metadata
@@ -22,6 +23,12 @@ def load_memory_store_plugins():
     for ep in _iter_entry_points("automa_ai.memory_stores"):
         store_cls = ep.load()
         MemoryStoreRegistry.register(ep.name, store_cls)
+
+
+def load_token_usage_store_plugins():
+    for ep in _iter_entry_points("automa_ai.token_usage_stores"):
+        store_cls = ep.load()
+        TokenUsageStoreRegistry.register(ep.name, store_cls)
 
 
 def load_tool_plugins():
@@ -67,6 +74,7 @@ def map_server_config_to_mcp_connection(server_config: ServerConfig) -> dict:
         if server_config.sse_read_timeout is not None:
             connection["sse_read_timeout"] = server_config.sse_read_timeout
     return connection
+
 
 def map_to_url(hostname, port, protocol="http"):
     """
@@ -118,7 +126,7 @@ def deprecated(message: str):
                 warnings.warn(
                     f"{obj.__name__} is deprecated: {message}",
                     DeprecationWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
                 return orig_init(self, *args, **kwargs)
 

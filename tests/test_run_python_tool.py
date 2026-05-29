@@ -30,6 +30,72 @@ async def test_run_python_happy_path_arithmetic() -> None:
     assert result["success"] is True
     assert result["exit_code"] == 0
     assert result["stdout"].strip() == "55"
+    assert result["meta"]["script"]["line_count"] == 1
+    assert result["meta"]["script"]["char_count"] == len(
+        "print(sum(i*i for i in range(6)))"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_python_records_failure_experience(tmp_path) -> None:
+    log_path = tmp_path / "python_script_failure_experience.jsonl"
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate(
+            {
+                "workspace_root": str(tmp_path),
+                "failure_experience_path": str(log_path),
+            }
+        )
+    )
+
+    result = await tool.invoke({"code": "raise RuntimeError('bad sdk call')"})
+
+    assert result["success"] is False
+    records = [
+        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 1
+    assert records[0]["stage"] == "runtime"
+    assert records[0]["script"]["code"] == "raise RuntimeError('bad sdk call')"
+    assert "bad sdk call" in records[0]["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_run_python_warns_for_long_script(tmp_path) -> None:
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate(
+            {"workspace_root": str(tmp_path), "warn_script_lines": 2}
+        )
+    )
+
+    result = await tool.invoke({"code": "x = 1\ny = 2\nprint(x + y)"})
+
+    assert result["success"] is True
+    assert result["meta"]["script"]["line_count"] == 3
+    assert any("Script is long" in w for w in result["meta"]["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_run_python_blocks_configured_script_length_limit(tmp_path) -> None:
+    log_path = tmp_path / "python_script_failure_experience.jsonl"
+    tool = RunPythonTool(
+        RunPythonToolConfig.model_validate(
+            {
+                "workspace_root": str(tmp_path),
+                "max_script_lines": 2,
+                "failure_experience_path": str(log_path),
+            }
+        )
+    )
+
+    result = await tool.invoke({"code": "x = 1\ny = 2\nprint(x + y)"})
+
+    assert result["success"] is False
+    assert "max_script_lines" in result["stderr"]
+    records = [
+        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert records[0]["stage"] == "script_length_limit"
 
 
 @pytest.mark.asyncio
@@ -243,7 +309,9 @@ async def test_run_python_disables_artifact_collection_when_max_artifacts_zero(
 
 
 @pytest.mark.asyncio
-async def test_run_python_returns_only_generated_outputs_without_expected(tmp_path) -> None:
+async def test_run_python_returns_only_generated_outputs_without_expected(
+    tmp_path,
+) -> None:
     input_path = tmp_path / "input.txt"
     input_path.write_text("seed", encoding="utf-8")
 

@@ -105,7 +105,9 @@ Disallowed uses:
    - output model path for edits.
 8. For edits, never overwrite the original model unless the user explicitly asks.
    Write a new `.osm` under `outputs/` or another user-approved path.
-9. Prepare one bounded Python script for `run_python`.
+9. Prepare a bounded Python script for `run_python`, or split the task into
+   multiple scripts when the scope is complex. Use the script-length rules
+   below.
 10. Summarize like a senior building energy modeler:
    - what was inspected or changed;
    - affected object counts and names when practical;
@@ -184,6 +186,40 @@ draft or execute the script until required names, numeric values, units,
 referenced model objects, and assignment targets are known. If missing, ask the
 user. If defaults are approved, list each assumption as
 `Object:Name.parameter: assumed to be x`.
+
+## Script Length And Multi-Step Rules
+
+Prefer small, inspectable scripts. The `run_python` tool records script length
+metadata and logs failed executions for later experience review, but the agent
+must still keep scripts reviewable.
+
+- For scripts up to 120 lines, a single script is acceptable when the task is
+  scoped and clear.
+- For scripts over 120 lines, provide a section map before execution and make
+  sure the full script is visible to the user as a fenced `python` block or text
+  artifact.
+- For scripts over 250 lines, do not execute as one script unless the user
+  explicitly approves a single long script. Split the work into phases instead.
+
+Use multi-step scripting for complex model edits, especially HVAC creation,
+multi-object schedule edits, construction library changes, and workflows that
+need user choices. The default phases are:
+
+1. **Preflight inspection**: read the model and report candidate zones,
+   schedules, loops, systems, constructions, or target objects.
+2. **Clarification gate**: ask the user to select missing objects, units,
+   defaults, and assumptions.
+3. **Focused edit script**: make one scoped copy/edit/save operation.
+4. **Validation script or MCP validation**: verify object counts, assignments,
+   warnings, and output model path.
+5. **Simulation handoff**: use MCP `sim_*` and `results_*` tools when simulation
+   or result retrieval is requested.
+
+When a `run_python` execution fails, do not immediately retry from memory. Read
+the error, identify the failed SDK call or assumption, check loaded wiki context
+or SDK docs for the relevant class/method, then draft a shorter corrected script
+or debugging script. After three failed attempts, stop and ask the user to
+review the script and failure summary.
 
 ## Required Script Result Contract
 

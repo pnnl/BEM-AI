@@ -8,10 +8,10 @@ from pydantic import BaseModel, ConfigDict, model_validator
 class TokenUsageStoreConfig(BaseModel):
     """Persistence configuration for token usage accounting."""
 
-    backend: Literal["sqlite"] = "sqlite"
-    db_path: str
+    backend: str = "sqlite"
+    db_path: str | None = None
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
 
 
 class TokenBudgetConfig(BaseModel):

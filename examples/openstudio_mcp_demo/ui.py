@@ -1,7 +1,9 @@
 import asyncio
 import html
+import json
 import os
 import re
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,7 @@ env_path = base_dir / ".env"
 load_dotenv(dotenv_path=env_path)
 
 A2A_SERVER_URL = os.getenv("CHATBOT_SERVER_URL", "http://localhost:9999")
+TELEMETRY_LOG_PATH = base_dir / "logs" / "telemetry.jsonl"
 LOAD_SKILL_STATUS_RE = re.compile(
     r"\btool\s+load_skill\s+responded:\s*", re.IGNORECASE
 )
@@ -76,6 +79,107 @@ STATUS_PANEL_CSS = """
     letter-spacing: 0.03em;
     margin: 0.4rem 0 0.25rem;
     text-transform: uppercase;
+}
+.openstudio-telemetry-panel {
+    height: calc(100vh - 7rem);
+    overflow-y: auto;
+    padding-right: 0.4rem;
+}
+.openstudio-telemetry-title {
+    color: #111827;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0.25rem 0 0.15rem;
+}
+.openstudio-telemetry-caption {
+    color: #6b7280;
+    font-size: 0.76rem;
+    margin-bottom: 0.6rem;
+    overflow-wrap: anywhere;
+}
+.openstudio-telemetry-empty {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    color: #6b7280;
+    font-size: 0.84rem;
+    padding: 0.7rem;
+}
+.openstudio-trace {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    margin: 0 0 0.55rem;
+    overflow: hidden;
+}
+.openstudio-trace > summary {
+    background: #f3f4f6;
+    color: #111827;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 650;
+    padding: 0.45rem 0.55rem;
+}
+.openstudio-span {
+    border-left: 2px solid #9ca3af;
+    margin: 0.45rem 0 0.45rem 0.55rem;
+    padding-left: 0.45rem;
+}
+.openstudio-span > summary {
+    color: #1f2937;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.openstudio-span-error {
+    border-left-color: #dc2626;
+}
+.openstudio-event {
+    border-left: 2px solid #d1d5db;
+    color: #374151;
+    font-size: 0.75rem;
+    margin: 0.35rem 0 0.35rem 0.4rem;
+    padding-left: 0.45rem;
+}
+.openstudio-telemetry-attrs {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    margin: 0.3rem 0;
+    padding: 0.35rem 0.45rem;
+}
+.openstudio-telemetry-row {
+    border-top: 1px solid #eef0f3;
+    display: grid;
+    gap: 0.35rem;
+    grid-template-columns: minmax(5.5rem, 36%) 1fr;
+    padding: 0.18rem 0;
+}
+.openstudio-telemetry-row:first-child {
+    border-top: 0;
+}
+.openstudio-telemetry-key {
+    color: #6b7280;
+    font-size: 0.68rem;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+}
+.openstudio-telemetry-value {
+    color: #374151;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.openstudio-telemetry-message {
+    background: #ffffff;
+    border-left: 2px solid #9ca3af;
+    margin: 0.3rem 0;
+    padding: 0.3rem 0.45rem;
+}
+.openstudio-telemetry-meta {
+    color: #6b7280;
+    font-size: 0.7rem;
+    margin: 0.15rem 0;
 }
 </style>
 """
@@ -279,13 +383,406 @@ def _render_artifact(
                 st.json(data_artifact)
 
 
+def _read_recent_telemetry_records(
+    path: Path,
+    *,
+    max_records: int = 500,
+) -> list[dict[str, Any]]:
+    """Read recent JSONL telemetry records from disk without owning the writer."""
+    if not path.exists():
+        return []
+
+    records: deque[dict[str, Any]] = deque(maxlen=max_records)
+    with path.open("r", encoding="utf-8") as file:
+        for line in file:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                item = json.loads(text)
+            except json.JSONDecodeError:
+                # The JSONL recorder writes full lines, but tolerate a partial
+                # line if the UI reads while another process is writing.
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+    return list(records)
+
+
+def _select_telemetry_records_for_context(
+    records: list[dict[str, Any]],
+    context_id: str | None,
+) -> list[dict[str, Any]]:
+    """Return all records for the active session's traces when possible."""
+    if not context_id:
+        return records
+
+    trace_ids = {
+        record.get("trace_id")
+        for record in records
+        if record.get("trace_id")
+        and isinstance(record.get("attributes"), dict)
+        and record["attributes"].get("session.id") == context_id
+    }
+    if not trace_ids:
+        return records
+    return [record for record in records if record.get("trace_id") in trace_ids]
+
+
+def _group_telemetry_by_trace(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build trace/span/event trees from JSONL span_start/event/span_end records."""
+    traces: dict[str, dict[str, Any]] = {}
+    trace_order: list[str] = []
+
+    for index, record in enumerate(records):
+        trace_id = str(record.get("trace_id") or "untraced")
+        if trace_id not in traces:
+            traces[trace_id] = {
+                "trace_id": trace_id,
+                "spans": {},
+                "roots": [],
+                "events": [],
+                "last_index": index,
+            }
+            trace_order.append(trace_id)
+        trace = traces[trace_id]
+        trace["last_index"] = index
+
+        record_type = record.get("type")
+        span_id = record.get("span_id")
+        if record_type in {"span_start", "span_end"}:
+            node = _ensure_telemetry_span_node(trace, record)
+            if record_type == "span_start":
+                node["start"] = record
+                node["name"] = record.get("name") or node["name"]
+                node["kind"] = record.get("kind") or node["kind"]
+                node["timestamp"] = record.get("timestamp") or node["timestamp"]
+                node["parent_span_id"] = record.get("parent_span_id")
+            else:
+                node["end"] = record
+                node["status"] = record.get("status")
+                node["duration_ms"] = record.get("duration_ms")
+        elif record_type == "event":
+            if span_id:
+                node = _ensure_telemetry_span_node(trace, record)
+                node["events"].append(record)
+            else:
+                trace["events"].append(record)
+
+    for trace in traces.values():
+        _link_telemetry_span_tree(trace)
+
+    return [traces[trace_id] for trace_id in trace_order]
+
+
+def _ensure_telemetry_span_node(
+    trace: dict[str, Any],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Create a span node once, then merge later start/end/event records into it."""
+    span_id = str(record.get("span_id") or "missing-span")
+    spans = trace["spans"]
+    if span_id not in spans:
+        spans[span_id] = {
+            "span_id": span_id,
+            "parent_span_id": record.get("parent_span_id"),
+            "name": record.get("name") or "unknown span",
+            "kind": record.get("kind"),
+            "timestamp": record.get("timestamp"),
+            "status": None,
+            "duration_ms": None,
+            "start": None,
+            "end": None,
+            "events": [],
+            "children": [],
+        }
+    return spans[span_id]
+
+
+def _link_telemetry_span_tree(trace: dict[str, Any]) -> None:
+    """Link spans by parent id after all records are read, preserving file order."""
+    for node in trace["spans"].values():
+        node["children"] = []
+    roots = []
+    for node in trace["spans"].values():
+        parent_id = node.get("parent_span_id")
+        parent = trace["spans"].get(str(parent_id)) if parent_id else None
+        if parent is not None and parent is not node:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    trace["roots"] = roots
+
+
+TELEMETRY_PRIMARY_KEYS = (
+    "message.role",
+    "message.content",
+    "artifact.content",
+    "tool.name",
+    "tool.arguments",
+    "tool.result",
+    "stream.close.reason",
+    "exception.type",
+    "exception.message",
+    "session.id",
+    "task.id",
+    "user.id",
+    "agent.name",
+)
+TELEMETRY_LOW_SIGNAL_KEYS = {
+    "agent.description",
+    "agent.runtime",
+    "deployment.environment",
+    "service.name",
+}
+
+
+def _stringify_telemetry_value(value: Any, *, max_chars: int = 420) -> str:
+    """Summarize telemetry values without falling back to raw JSON blocks."""
+    if value is None:
+        return "none"
+    if isinstance(value, dict):
+        if set(value) >= {"length", "sha256"}:
+            digest = str(value.get("sha256") or "")
+            length = value.get("length")
+            return f"metadata only ({length} chars, sha256 {digest[:12]}...)"
+        if "content" in value and len(value) == 1:
+            return _truncate_telemetry_text(str(value["content"]), max_chars=max_chars)
+        pairs = []
+        for key in sorted(value):
+            summary = _stringify_telemetry_value(value[key], max_chars=120)
+            pairs.append(f"{key}: {summary}")
+        return _truncate_telemetry_text("; ".join(pairs), max_chars=max_chars)
+    if isinstance(value, list):
+        if not value:
+            return "none"
+        sample = ", ".join(
+            _stringify_telemetry_value(item, max_chars=80) for item in value[:3]
+        )
+        suffix = "" if len(value) <= 3 else f", +{len(value) - 3} more"
+        return _truncate_telemetry_text(
+            f"{len(value)} item(s): {sample}{suffix}", max_chars=max_chars
+        )
+
+    return _truncate_telemetry_text(str(value), max_chars=max_chars)
+
+
+def _truncate_telemetry_text(text: str, *, max_chars: int) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3]}..."
+
+
+def _ordered_telemetry_attributes(attrs: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Put human-important fields first and hide noisy defaults unless needed."""
+    ordered_keys = [key for key in TELEMETRY_PRIMARY_KEYS if key in attrs]
+    remaining_keys = sorted(
+        key
+        for key in attrs
+        if key not in ordered_keys and key not in TELEMETRY_LOW_SIGNAL_KEYS
+    )
+    if not ordered_keys and not remaining_keys:
+        remaining_keys = sorted(attrs)
+    return [(key, attrs[key]) for key in ordered_keys + remaining_keys]
+
+
+def _render_telemetry_attributes(attrs: dict[str, Any]) -> str:
+    if not attrs:
+        return ""
+
+    rows = []
+    for key, value in _ordered_telemetry_attributes(attrs):
+        rows.append(
+            '<div class="openstudio-telemetry-row">'
+            f'<div class="openstudio-telemetry-key">{html.escape(key)}</div>'
+            f'<div class="openstudio-telemetry-value">{html.escape(_stringify_telemetry_value(value))}</div>'
+            "</div>"
+        )
+    return '<div class="openstudio-telemetry-attrs">' + "\n".join(rows) + "</div>"
+
+
+def _render_telemetry_message_summary(attrs: dict[str, Any]) -> str:
+    """Render message events as a readable summary before the full attributes."""
+    if "message.role" not in attrs and "message.content" not in attrs:
+        return ""
+
+    role = html.escape(str(attrs.get("message.role") or "message"))
+    content = html.escape(_stringify_telemetry_value(attrs.get("message.content")))
+    return (
+        '<div class="openstudio-telemetry-message">'
+        f'<div class="openstudio-telemetry-key">Message · {role}</div>'
+        f'<div class="openstudio-telemetry-value">{content}</div>'
+        "</div>"
+    )
+
+
+def _format_duration_ms(value: Any) -> str:
+    if value is None:
+        return "open"
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if duration >= 1000:
+        return f"{duration / 1000:.1f}s"
+    return f"{duration:.0f}ms"
+
+
+def _render_telemetry_html(traces: list[dict[str, Any]]) -> str:
+    trace_html = []
+    visible_traces = traces[-8:]
+    latest_index = len(visible_traces) - 1
+    for index, trace in enumerate(visible_traces):
+        trace_id = trace["trace_id"]
+        roots = trace.get("roots", [])
+        events = trace.get("events", [])
+        trace_open = index == latest_index
+        open_attr = " open" if trace_open else ""
+        trace_html.append(
+            f'<details class="openstudio-trace"{open_attr}>'
+            f"<summary>Trace {html.escape(trace_id[:12])} · "
+            f"{len(roots)} root span(s)</summary>"
+        )
+        for node in roots:
+            trace_html.append(
+                _render_telemetry_span_node(
+                    node,
+                    depth=0,
+                    expand_root=trace_open,
+                )
+            )
+        for event in events:
+            trace_html.append(_render_telemetry_event(event))
+        trace_html.append("</details>")
+    return "\n".join(trace_html)
+
+
+def _render_telemetry_span_node(
+    node: dict[str, Any],
+    *,
+    depth: int,
+    expand_root: bool,
+) -> str:
+    status = node.get("status") or "open"
+    status_label = "error" if status == "error" else status
+    css_class = (
+        "openstudio-span openstudio-span-error"
+        if status == "error"
+        else "openstudio-span"
+    )
+    expanded = " open" if depth == 0 and expand_root else ""
+    name = html.escape(str(node.get("name") or "unknown span"))
+    kind = html.escape(str(node.get("kind") or ""))
+    span_id = html.escape(str(node.get("span_id") or "")[:8])
+    duration = html.escape(_format_duration_ms(node.get("duration_ms")))
+
+    parts = [
+        f'<details class="{css_class}"{expanded}>',
+        (
+            f"<summary>{name} · {html.escape(status_label)} · {duration} "
+            f'<span class="openstudio-telemetry-meta">#{span_id} {kind}</span></summary>'
+        ),
+    ]
+
+    start = node.get("start") or {}
+    end = node.get("end") or {}
+    attrs = start.get("attributes") or {}
+    end_attrs = end.get("attributes") or {}
+    if attrs:
+        parts.append('<div class="openstudio-telemetry-meta">Start</div>')
+        parts.append(_render_telemetry_attributes(attrs))
+    if end_attrs:
+        parts.append('<div class="openstudio-telemetry-meta">End</div>')
+        parts.append(_render_telemetry_attributes(end_attrs))
+
+    for event in node.get("events", []):
+        parts.append(_render_telemetry_event(event))
+    for child in node.get("children", []):
+        parts.append(
+            _render_telemetry_span_node(
+                child,
+                depth=depth + 1,
+                expand_root=False,
+            )
+        )
+
+    parts.append("</details>")
+    return "\n".join(parts)
+
+
+def _render_telemetry_event(event: dict[str, Any]) -> str:
+    name = html.escape(str(event.get("name") or "event"))
+    timestamp = html.escape(str(event.get("timestamp") or ""))
+    attrs = event.get("attributes") or {}
+    return (
+        '<div class="openstudio-event">'
+        f"<strong>{name}</strong>"
+        f'<div class="openstudio-telemetry-meta">{timestamp}</div>'
+        f"{_render_telemetry_message_summary(attrs)}"
+        f"{_render_telemetry_attributes(attrs)}"
+        "</div>"
+    )
+
+
+def _render_telemetry_panel(
+    placeholder,
+    *,
+    context_id: str | None,
+    log_path: Path = TELEMETRY_LOG_PATH,
+) -> None:
+    records = _read_recent_telemetry_records(log_path)
+    selected_records = _select_telemetry_records_for_context(records, context_id)
+    traces = _group_telemetry_by_trace(selected_records)
+
+    body = ""
+    if not records:
+        body = (
+            '<div class="openstudio-telemetry-empty">'
+            "No telemetry records yet. Start a task to populate the JSONL log."
+            "</div>"
+        )
+    elif not traces:
+        body = (
+            '<div class="openstudio-telemetry-empty">'
+            "Telemetry records are present, but no trace tree could be built."
+            "</div>"
+        )
+    else:
+        body = _render_telemetry_html(traces)
+
+    placeholder.markdown(
+        (
+            '<div class="openstudio-telemetry-panel">'
+            '<div class="openstudio-telemetry-title">Telemetry</div>'
+            '<div class="openstudio-telemetry-caption">'
+            f"{html.escape(str(log_path))}<br>"
+            f"{len(selected_records)} recent record(s)"
+            "</div>"
+            f"{body}"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
-    st.set_page_config(page_title="OpenStudio MCP Demo", page_icon="🏗️", layout="centered")
+    st.set_page_config(page_title="OpenStudio MCP Demo", page_icon="🏗️", layout="wide")
     st.markdown(STATUS_PANEL_CSS, unsafe_allow_html=True)
-    st.title("🏗️ OpenStudio AI Demo")
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
+
+    with st.sidebar:
+        telemetry_placeholder = st.empty()
+        _render_telemetry_panel(
+            telemetry_placeholder,
+            context_id=st.session_state.get("context_id"),
+        )
+
+    st.title("🏗️ OpenStudio AI Demo")
 
     for msg in st.session_state["messages"]:
         with st.chat_message(msg["role"]):
@@ -311,7 +808,8 @@ def main() -> None:
             else:
                 st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ask for an HVAC sizing workflow..."):
+    prompt = st.chat_input("Ask for an HVAC sizing workflow...")
+    if prompt:
         st.session_state["messages"].append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -326,12 +824,18 @@ def main() -> None:
 
             async def process_stream():
                 nonlocal response_text, status_text, status_state, data_artifacts
-                async for chunk in send_message_async(prompt, st.session_state.get("context_id")):
+                async for chunk in send_message_async(
+                    prompt, st.session_state.get("context_id")
+                ):
                     print(chunk)
                     event = _parse_stream_chunk(chunk)
                     context_id = event.get("context_id")
                     if context_id:
                         st.session_state["context_id"] = context_id
+                        _render_telemetry_panel(
+                            telemetry_placeholder,
+                            context_id=context_id,
+                        )
 
                     text_part = event.get("text")
                     event_data = event.get("data") or []
@@ -349,6 +853,10 @@ def main() -> None:
                             state=status_state,
                             streaming=True,
                         )
+                        _render_telemetry_panel(
+                            telemetry_placeholder,
+                            context_id=st.session_state.get("context_id"),
+                        )
                         continue
 
                     if event.get("kind") == "artifact-update":
@@ -361,6 +869,10 @@ def main() -> None:
                             response_text,
                             streaming=True,
                             data_artifacts=data_artifacts,
+                        )
+                        _render_telemetry_panel(
+                            telemetry_placeholder,
+                            context_id=st.session_state.get("context_id"),
                         )
 
             asyncio.run(process_stream())
@@ -375,6 +887,10 @@ def main() -> None:
                 response_text,
                 streaming=False,
                 data_artifacts=data_artifacts,
+            )
+            _render_telemetry_panel(
+                telemetry_placeholder,
+                context_id=st.session_state.get("context_id"),
             )
 
         st.session_state["messages"].append(

@@ -153,6 +153,10 @@ The spec points to:
 - `knowledge/openstudio_sdk_wiki/` as dynamically loadable SDK example packs.
 - The `openstudio_mcp` MCP client connection.
 - A built-in `run_python` tool rooted at the example directory.
+- `logs/telemetry.jsonl` for local JSONL agent telemetry. The demo uses the
+  built-in recorder only and does not load telemetry recorder plugins.
+- `logs/python_script_failure_experience.jsonl` for failed Python script
+  executions that can be reviewed by a separate learning/summarization process.
 - The A2A 1.0 card shape with `supportedInterfaces`.
 
 `agent.py` applies environment-specific overrides from `.env` at startup:
@@ -170,6 +174,9 @@ The spec points to:
   - `python3 examples/openstudio_mcp_demo/agent.py`
 - Optional Streamlit UI:
   - `streamlit run examples/openstudio_mcp_demo/ui.py`
+  - The UI includes a right-side telemetry panel that reads
+    `logs/telemetry.jsonl` and renders recent spans/events as an expandable
+    trace tree.
 - Combined launcher:
   - `bash examples/openstudio_mcp_demo/run_all.sh`
 

@@ -161,6 +161,27 @@ budget:
     )
 
 
+def test_yaml_agent_spec_accepts_custom_token_usage_store_config() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+budget:
+  store:
+    backend: dynamodb
+    table_name: automa-token-usage
+    region_name: us-west-2
+"""
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["budget_config"]["store"] == {
+        "backend": "dynamodb",
+        "table_name": "automa-token-usage",
+        "region_name": "us-west-2",
+    }
+
+
 def test_yaml_agent_spec_loads_subagent_from_spec_path(tmp_path: Path) -> None:
     subagent_path = tmp_path / "math_agent.yaml"
     subagent_path.write_text(
@@ -344,6 +365,7 @@ tools:
     - type: run_python
       config:
         workspace_root: ./workspace
+        failure_experience_path: ./logs/python_script_failure_experience.jsonl
 """,
         encoding="utf-8",
     )
@@ -352,6 +374,9 @@ tools:
     tools = spec.to_factory_kwargs()["tools_config"]
 
     assert tools["tools"][0]["config"]["workspace_root"] == str(spec_dir / "workspace")
+    assert tools["tools"][0]["config"]["failure_experience_path"] == str(
+        spec_dir / "logs/python_script_failure_experience.jsonl"
+    )
 
 
 def test_yaml_agent_spec_rebases_yaml_agent_base_dir_from_spec_directory(
