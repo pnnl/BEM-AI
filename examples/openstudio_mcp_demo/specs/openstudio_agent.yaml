@@ -44,6 +44,7 @@ telemetry:
   recorder: jsonl
   path: ../logs/telemetry.jsonl
   content_mode: metadata
+  load_plugins: false
 
 tools:
   tools:

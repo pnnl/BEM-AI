@@ -15,6 +15,7 @@ from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
 from a2a.utils.constants import DEFAULT_RPC_URL
+from a2a.server.agent_execution import AgentExecutor
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
@@ -117,8 +118,10 @@ class A2AAgentServer:
         log_dir: str = "./logs",
         base_url_path: str | None = None,
         health_check_path: str = "/health",
+        executor_builder: Callable[[BaseAgent], AgentExecutor] | None = None
     ):
         self.agent_builder = agent_builder
+        self.executor_builder = executor_builder or (lambda a: GenericAgentExecutor(agent=a))
         self._card_data = _normalize_card_data(card)
         self.name = self._card_data["name"]
         parsed_url = _parse_agent_url(_get_primary_interface_url(self._card_data))
@@ -158,7 +161,7 @@ class A2AAgentServer:
             card = self.card
             # Create client and request handler
             request_handler = DefaultRequestHandler(
-                agent_executor=GenericAgentExecutor(agent=self._agent),
+                agent_executor=self.executor_builder(self._agent),
                 task_store=InMemoryTaskStore(),
                 agent_card=card,
             )
