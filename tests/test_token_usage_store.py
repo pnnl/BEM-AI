@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -158,6 +159,20 @@ def test_sqlite_token_usage_store_summarizes_time_window(tmp_path):
 
     assert summary.total_tokens == 20
     assert summary.num_calls == 1
+
+
+def test_sqlite_token_usage_store_creates_time_window_indexes(tmp_path):
+    store = SQLiteTokenUsageStore(db_path=str(tmp_path / "usage.db"))
+
+    with sqlite3.connect(store.db_path) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+
+    index_names = {row[0] for row in rows}
+    assert "idx_token_usage_user_created_at" in index_names
+    assert "idx_token_usage_context_created_at" in index_names
+    assert "idx_token_usage_created_at" in index_names
 
 
 def test_custom_token_usage_store_registry_builds_registered_store():

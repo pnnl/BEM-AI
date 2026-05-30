@@ -149,6 +149,18 @@ class SQLiteTokenUsageStore(TokenUsageStore):
                 "CREATE INDEX IF NOT EXISTS idx_token_usage_context_id "
                 "ON token_usage(context_id)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_token_usage_user_created_at "
+                "ON token_usage(user_id, created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_token_usage_context_created_at "
+                "ON token_usage(context_id, created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_token_usage_created_at "
+                "ON token_usage(created_at)"
+            )
             conn.commit()
 
     def write_usage(self, record: TokenUsageRecord) -> None:

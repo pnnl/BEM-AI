@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -319,24 +319,25 @@ class TokenBudgetMiddleware(AgentMiddleware):
 
         now = datetime.now(tz)
         if window.period == "rolling":
-            assert window.rolling_seconds is not None
+            if window.rolling_seconds is None or window.rolling_seconds <= 0:
+                raise ValueError(
+                    "rolling_seconds must be greater than 0 for rolling token windows"
+                )
             end_time = now
             start_time = now - timedelta(seconds=window.rolling_seconds)
         elif window.period == "calendar_day":
-            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_time = start_time + timedelta(days=1)
+            start_date = now.date()
+            end_date = start_date + timedelta(days=1)
+            start_time = datetime.combine(start_date, time.min, tzinfo=tz)
+            end_time = datetime.combine(end_date, time.min, tzinfo=tz)
         elif window.period == "calendar_month":
-            start_time = now.replace(
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0,
-            )
-            if start_time.month == 12:
-                end_time = start_time.replace(year=start_time.year + 1, month=1)
+            start_date = now.date().replace(day=1)
+            if start_date.month == 12:
+                end_date = start_date.replace(year=start_date.year + 1, month=1)
             else:
-                end_time = start_time.replace(month=start_time.month + 1)
+                end_date = start_date.replace(month=start_date.month + 1)
+            start_time = datetime.combine(start_date, time.min, tzinfo=tz)
+            end_time = datetime.combine(end_date, time.min, tzinfo=tz)
         else:
             raise ValueError(f"Unsupported token budget window period: {window.period}")
 

@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
-from automa_ai.config.token_budget import TokenBudgetConfig
+from automa_ai.config.token_budget import TokenBudgetConfig, TokenBudgetWindowConfig
 import automa_ai.token_management.middleware as middleware_module
 from automa_ai.token_management import (
     SQLiteTokenUsageStore,
@@ -102,6 +103,51 @@ def test_token_budget_config_rejects_unknown_window_period():
             max_user_tokens=100,
             user_token_window={"period": "weekly"},
         )
+
+
+def test_token_budget_middleware_calendar_day_window_uses_local_midnights(
+    monkeypatch,
+):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 3, 8, 12, tzinfo=tz)
+
+    monkeypatch.setattr(middleware_module, "datetime", FixedDateTime)
+
+    start_time, end_time = TokenBudgetMiddleware._usage_window(
+        TokenBudgetWindowConfig(
+            period="calendar_day",
+            timezone="America/Los_Angeles",
+        )
+    )
+
+    local_tz = ZoneInfo("America/Los_Angeles")
+    assert start_time.astimezone(local_tz) == datetime(
+        2026,
+        3,
+        8,
+        0,
+        tzinfo=local_tz,
+    )
+    assert end_time.astimezone(local_tz) == datetime(
+        2026,
+        3,
+        9,
+        0,
+        tzinfo=local_tz,
+    )
+
+
+def test_token_budget_middleware_rolling_window_validates_seconds():
+    window = TokenBudgetWindowConfig.model_construct(
+        period="rolling",
+        timezone="UTC",
+        rolling_seconds=None,
+    )
+
+    with pytest.raises(ValueError, match="rolling_seconds must be greater than 0"):
+        TokenBudgetMiddleware._usage_window(window)
 
 
 def test_token_budget_middleware_trims_messages_and_sets_output_limit():
