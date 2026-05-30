@@ -313,7 +313,8 @@ class TokenBudgetMiddleware(AgentMiddleware):
             tz = ZoneInfo(window.timezone)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(
-                f"Unknown token budget timezone: {window.timezone}"
+                f"Unknown token budget timezone: {window.timezone!r}. "
+                "Use an IANA timezone name such as 'UTC', 'America/Los_Angeles', or 'Europe/London'."
             ) from exc
 
         now = datetime.now(tz)
