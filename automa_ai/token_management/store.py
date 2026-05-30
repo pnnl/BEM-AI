@@ -73,6 +73,8 @@ class TokenUsageStore(ABC):
         *,
         user_id: str | None = None,
         context_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> TokenUsageSummary:
         """Return aggregate usage for the requested user and/or context."""
         raise NotImplementedError
@@ -82,12 +84,16 @@ class TokenUsageStore(ABC):
         *,
         user_id: str | None = None,
         context_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> TokenUsageSummary:
         """Async wrapper for aggregate usage reads."""
         return await asyncio.to_thread(
             self.summarize_usage,
             user_id=user_id,
             context_id=context_id,
+            start_time=start_time,
+            end_time=end_time,
         )
 
 
@@ -147,6 +153,7 @@ class SQLiteTokenUsageStore(TokenUsageStore):
 
     def write_usage(self, record: TokenUsageRecord) -> None:
         """Insert one token usage record."""
+        created_at = _normalize_datetime(record.created_at).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -175,7 +182,7 @@ class SQLiteTokenUsageStore(TokenUsageStore):
                     record.input_tokens,
                     record.output_tokens,
                     record.total_tokens,
-                    record.created_at.isoformat(),
+                    created_at,
                     json.dumps(record.metadata, default=str),
                 ),
             )
@@ -186,6 +193,8 @@ class SQLiteTokenUsageStore(TokenUsageStore):
         *,
         user_id: str | None = None,
         context_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> TokenUsageSummary:
         """Aggregate token usage with optional user/session filters."""
         sql = """
@@ -204,6 +213,12 @@ class SQLiteTokenUsageStore(TokenUsageStore):
         if context_id is not None:
             conditions.append("context_id = ?")
             params.append(context_id)
+        if start_time is not None:
+            conditions.append("created_at >= ?")
+            params.append(_normalize_datetime(start_time).isoformat())
+        if end_time is not None:
+            conditions.append("created_at < ?")
+            params.append(_normalize_datetime(end_time).isoformat())
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 
@@ -216,6 +231,12 @@ class SQLiteTokenUsageStore(TokenUsageStore):
             total_tokens=int(row[2] or 0),
             num_calls=int(row[3] or 0),
         )
+
+
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class TokenUsageStoreRegistry:

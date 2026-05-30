@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
@@ -9,6 +11,7 @@ from automa_ai.token_management import (
     TokenBudgetExceededError,
     TokenBudgetMiddleware,
     TokenUsageRecord,
+    TokenUsageSummary,
 )
 
 
@@ -38,6 +41,14 @@ class FailingUsageStore:
         raise AssertionError("asummarize_usage should not be called")
 
 
+class LegacySummaryUsageStore:
+    def write_usage(self, record):
+        return None
+
+    def summarize_usage(self, *, user_id=None, context_id=None):
+        return TokenUsageSummary()
+
+
 @pytest.mark.parametrize(
     "field_name",
     [
@@ -53,6 +64,44 @@ class FailingUsageStore:
 def test_token_budget_config_rejects_zero_for_optional_limits(field_name):
     with pytest.raises(ValueError, match=f"{field_name} must be greater than 0"):
         TokenBudgetConfig(**{field_name: 0})
+
+
+def test_token_budget_config_validates_rolling_window_seconds():
+    with pytest.raises(ValueError, match="rolling_seconds must be greater than 0"):
+        TokenBudgetConfig(
+            max_user_tokens=100,
+            user_token_window={"period": "rolling"},
+        )
+
+
+def test_token_budget_config_rejects_unknown_window_timezone():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Unknown token budget timezone: 'Not/AZone'. " "Use an IANA timezone name"
+        ),
+    ):
+        TokenBudgetConfig(
+            max_user_tokens=100,
+            user_token_window={
+                "period": "calendar_month",
+                "timezone": "Not/AZone",
+            },
+        )
+
+
+def test_token_budget_config_rejects_unknown_window_period():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Unsupported token budget window period: 'weekly'. "
+            "Use one of: calendar_day, calendar_month, lifetime, rolling."
+        ),
+    ):
+        TokenBudgetConfig(
+            max_user_tokens=100,
+            user_token_window={"period": "weekly"},
+        )
 
 
 def test_token_budget_middleware_trims_messages_and_sets_output_limit():
@@ -107,6 +156,145 @@ def test_token_budget_middleware_blocks_exhausted_session(tmp_path):
     )
 
     with pytest.raises(TokenBudgetExceededError, match="Session token budget exceeded"):
+        middleware.wrap_model_call(
+            request,
+            lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),
+        )
+
+
+def test_token_budget_middleware_omits_window_kwargs_for_lifetime_budget():
+    middleware = TokenBudgetMiddleware(
+        budget=TokenBudgetConfig(max_session_tokens=10),
+        usage_store=LegacySummaryUsageStore(),
+        agent_name="planner",
+    )
+    request = ModelRequest(
+        model=None,
+        messages=[HumanMessage(content="hello")],
+        runtime=DummyRuntime(),
+    )
+
+    response = middleware.wrap_model_call(
+        request,
+        lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),
+    )
+
+    assert response.result[0].content == "ok"
+
+
+def test_token_budget_middleware_applies_session_calendar_day_window(tmp_path):
+    store = SQLiteTokenUsageStore(db_path=str(tmp_path / "usage.db"))
+    store.write_usage(
+        TokenUsageRecord(
+            agent_name="planner",
+            model="gpt-test",
+            model_provider="openai",
+            user_id="user-1",
+            context_id="session-1",
+            task_id="task-old",
+            total_tokens=10,
+            created_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+    )
+    middleware = TokenBudgetMiddleware(
+        budget=TokenBudgetConfig(
+            max_session_tokens=10,
+            session_token_window={
+                "period": "calendar_day",
+                "timezone": "UTC",
+            },
+        ),
+        usage_store=store,
+        agent_name="planner",
+    )
+    request = ModelRequest(
+        model=None,
+        messages=[HumanMessage(content="hello")],
+        runtime=DummyRuntime(),
+    )
+
+    response = middleware.wrap_model_call(
+        request,
+        lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),
+    )
+
+    assert response.result[0].content == "ok"
+
+    store.write_usage(
+        TokenUsageRecord(
+            agent_name="planner",
+            model="gpt-test",
+            model_provider="openai",
+            user_id="user-1",
+            context_id="session-1",
+            task_id="task-current",
+            total_tokens=10,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+    with pytest.raises(TokenBudgetExceededError, match="Session token budget exceeded"):
+        middleware.wrap_model_call(
+            request,
+            lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),
+        )
+
+
+def test_token_budget_middleware_applies_user_calendar_month_window(tmp_path):
+    store = SQLiteTokenUsageStore(db_path=str(tmp_path / "usage.db"))
+    now = datetime.now(timezone.utc)
+    previous_month = 12 if now.month == 1 else now.month - 1
+    previous_year = now.year - 1 if now.month == 1 else now.year
+    store.write_usage(
+        TokenUsageRecord(
+            agent_name="planner",
+            model="gpt-test",
+            model_provider="openai",
+            user_id="user-1",
+            context_id="session-1",
+            task_id="task-old",
+            total_tokens=10,
+            created_at=datetime(previous_year, previous_month, 1, tzinfo=timezone.utc),
+        )
+    )
+    middleware = TokenBudgetMiddleware(
+        budget=TokenBudgetConfig(
+            max_user_tokens=10,
+            user_token_window={
+                "period": "calendar_month",
+                "timezone": "UTC",
+            },
+        ),
+        usage_store=store,
+        agent_name="planner",
+    )
+    request = ModelRequest(
+        model=None,
+        messages=[HumanMessage(content="hello")],
+        runtime=DummyRuntime(),
+    )
+
+    response = middleware.wrap_model_call(
+        request,
+        lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),
+    )
+
+    assert response.result[0].content == "ok"
+
+    store.write_usage(
+        TokenUsageRecord(
+            agent_name="planner",
+            model="gpt-test",
+            model_provider="openai",
+            user_id="user-1",
+            context_id="session-1",
+            task_id="task-current",
+            total_tokens=10,
+            created_at=now,
+        )
+    )
+
+    with pytest.raises(TokenBudgetExceededError, match="User token budget exceeded"):
         middleware.wrap_model_call(
             request,
             lambda scoped_request: ModelResponse(result=[AIMessage(content="ok")]),

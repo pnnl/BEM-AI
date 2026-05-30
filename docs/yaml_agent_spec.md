@@ -523,7 +523,9 @@ model calls:
 - `max_model_calls_per_turn`: Maximum model calls allowed during one agent run.
 - `max_tool_calls_per_turn`: Maximum tool calls allowed during one agent run.
 - `max_session_tokens`: Maximum persisted total tokens for one AUTOMA context.
+- `session_token_window`: Optional time window for `max_session_tokens`.
 - `max_user_tokens`: Maximum persisted total tokens for one user.
+- `user_token_window`: Optional time window for `max_user_tokens`.
 - `summarize_when_tokens`: Enables LangChain summarization middleware when the
   message history reaches this approximate token count.
 - `keep_recent_messages`: Number of recent messages kept by summarization.
@@ -540,7 +542,13 @@ budget:
   max_model_calls_per_turn: 6
   max_tool_calls_per_turn: 10
   max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: America/Los_Angeles
   max_user_tokens: 500000
+  user_token_window:
+    period: calendar_month
+    timezone: America/Los_Angeles
   summarize_when_tokens: 10000
   keep_recent_messages: 20
   store:
@@ -563,6 +571,30 @@ budget:
     backend: dynamodb
     table_name: automa-token-usage
     region_name: us-west-2
+```
+
+Token windows are append-only filters over the usage ledger; usage rows are not
+deleted or reset. Supported `period` values are:
+
+- `lifetime`: Default behavior. Count all persisted usage for the scope.
+- `calendar_day`: Count usage from the current local day in `timezone`.
+- `calendar_month`: Count usage from the current local month in `timezone`.
+- `rolling`: Count usage from the last `rolling_seconds`.
+
+`timezone` must be an IANA timezone name, such as `UTC`,
+`America/Los_Angeles`, or `Europe/London`.
+
+```yaml
+budget:
+  max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: UTC
+  max_user_tokens: 500000
+  user_token_window:
+    period: rolling
+    rolling_seconds: 2592000
+    timezone: UTC
 ```
 
 ### `telemetry`

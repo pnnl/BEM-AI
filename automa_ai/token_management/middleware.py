@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -17,7 +19,7 @@ from langchain_core.messages.utils import (
 )
 from langgraph.config import get_config
 
-from automa_ai.config.token_budget import TokenBudgetConfig
+from automa_ai.config.token_budget import TokenBudgetConfig, TokenBudgetWindowConfig
 from automa_ai.token_management.store import TokenUsageRecord, TokenUsageStore
 
 logger = logging.getLogger(__name__)
@@ -116,16 +118,26 @@ class TokenBudgetMiddleware(AgentMiddleware):
             return
         scope = self._scope_from_request(request)
         if self.budget.max_session_tokens is not None and scope["context_id"]:
-            summary = self.usage_store.summarize_usage(
+            start_time, end_time = self._usage_window(self.budget.session_token_window)
+            kwargs = self._summary_kwargs(
                 context_id=scope["context_id"],
+                start_time=start_time,
+                end_time=end_time,
             )
+            summary = self.usage_store.summarize_usage(**kwargs)
             if summary.total_tokens >= self.budget.max_session_tokens:
                 raise TokenBudgetExceededError(
                     f"Session token budget exceeded: {summary.total_tokens}/"
                     f"{self.budget.max_session_tokens} tokens used."
                 )
         if self.budget.max_user_tokens is not None and scope["user_id"]:
-            summary = self.usage_store.summarize_usage(user_id=scope["user_id"])
+            start_time, end_time = self._usage_window(self.budget.user_token_window)
+            kwargs = self._summary_kwargs(
+                user_id=scope["user_id"],
+                start_time=start_time,
+                end_time=end_time,
+            )
+            summary = self.usage_store.summarize_usage(**kwargs)
             if summary.total_tokens >= self.budget.max_user_tokens:
                 raise TokenBudgetExceededError(
                     f"User token budget exceeded: {summary.total_tokens}/"
@@ -138,16 +150,26 @@ class TokenBudgetMiddleware(AgentMiddleware):
             return
         scope = self._scope_from_request(request)
         if self.budget.max_session_tokens is not None and scope["context_id"]:
-            summary = await self.usage_store.asummarize_usage(
+            start_time, end_time = self._usage_window(self.budget.session_token_window)
+            kwargs = self._summary_kwargs(
                 context_id=scope["context_id"],
+                start_time=start_time,
+                end_time=end_time,
             )
+            summary = await self.usage_store.asummarize_usage(**kwargs)
             if summary.total_tokens >= self.budget.max_session_tokens:
                 raise TokenBudgetExceededError(
                     f"Session token budget exceeded: {summary.total_tokens}/"
                     f"{self.budget.max_session_tokens} tokens used."
                 )
         if self.budget.max_user_tokens is not None and scope["user_id"]:
-            summary = await self.usage_store.asummarize_usage(user_id=scope["user_id"])
+            start_time, end_time = self._usage_window(self.budget.user_token_window)
+            kwargs = self._summary_kwargs(
+                user_id=scope["user_id"],
+                start_time=start_time,
+                end_time=end_time,
+            )
+            summary = await self.usage_store.asummarize_usage(**kwargs)
             if summary.total_tokens >= self.budget.max_user_tokens:
                 raise TokenBudgetExceededError(
                     f"User token budget exceeded: {summary.total_tokens}/"
@@ -259,6 +281,65 @@ class TokenBudgetMiddleware(AgentMiddleware):
             "context_id": context_id,
             "task_id": configurable.get("task_id"),
         }
+
+    @staticmethod
+    def _summary_kwargs(
+        *,
+        user_id: str | None = None,
+        context_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        if user_id is not None:
+            kwargs["user_id"] = user_id
+        if context_id is not None:
+            kwargs["context_id"] = context_id
+        if start_time is not None:
+            kwargs["start_time"] = start_time
+        if end_time is not None:
+            kwargs["end_time"] = end_time
+        return kwargs
+
+    @staticmethod
+    def _usage_window(
+        window: TokenBudgetWindowConfig | None,
+    ) -> tuple[datetime | None, datetime | None]:
+        """Return UTC window boundaries for persisted budget checks."""
+        if window is None or window.period == "lifetime":
+            return None, None
+
+        try:
+            tz = ZoneInfo(window.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(
+                f"Unknown token budget timezone: {window.timezone}"
+            ) from exc
+
+        now = datetime.now(tz)
+        if window.period == "rolling":
+            assert window.rolling_seconds is not None
+            end_time = now
+            start_time = now - timedelta(seconds=window.rolling_seconds)
+        elif window.period == "calendar_day":
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_time = start_time + timedelta(days=1)
+        elif window.period == "calendar_month":
+            start_time = now.replace(
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            if start_time.month == 12:
+                end_time = start_time.replace(year=start_time.year + 1, month=1)
+            else:
+                end_time = start_time.replace(month=start_time.month + 1)
+        else:
+            raise ValueError(f"Unsupported token budget window period: {window.period}")
+
+        return start_time.astimezone(timezone.utc), end_time.astimezone(timezone.utc)
 
     @staticmethod
     def _config_from_request(request: ModelRequest) -> dict[str, Any]:
