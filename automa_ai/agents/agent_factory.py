@@ -183,7 +183,18 @@ def _build_checkpointer(
         return checkpointer, None
 
     if resolved.type == "redis_plain":
-        checkpointer = PlainRedisSaver(redis_url=resolved.redis_url)
+        # PlainRedisSaver owns hot-session cache lifecycle; durable resume state
+        # should live in the application layer, not in Redis checkpoints.
+        checkpointer = PlainRedisSaver(
+            redis_url=resolved.redis_url,
+            checkpoint_ttl_seconds=resolved.checkpoint_ttl_seconds,
+            max_checkpoints_per_thread=resolved.max_checkpoints_per_thread,
+            refresh_ttl_on_read=resolved.refresh_ttl_on_read,
+            socket_timeout=resolved.socket_timeout,
+            socket_connect_timeout=resolved.socket_connect_timeout,
+            health_check_interval=resolved.health_check_interval,
+            retry_on_timeout=resolved.retry_on_timeout,
+        )
         try:
             checkpointer.setup()
         except Exception:

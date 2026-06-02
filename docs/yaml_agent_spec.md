@@ -503,7 +503,46 @@ Redis examples:
 checkpointer:
   type: redis_plain
   redis_url: redis://localhost:6379
+  # redis_plain does not support ElastiCache cluster mode enabled.
+  # Use a single-shard Redis/Valkey target, such as cluster mode disabled
+  # with replicas.
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
 ```
+
+`redis_plain` uses Redis as a bounded hot-session cache. The supported
+plain-Redis-only fields are:
+
+- `checkpoint_ttl_seconds`: Idle TTL applied to checkpoint keys. Defaults to
+  `21600` seconds.
+- `max_checkpoints_per_thread`: Resume-friendly retention cap counted by
+  distinct LangGraph `metadata["step"]` groups. Defaults to `15`. This is not a
+  strict byte or raw checkpoint-record cap.
+- `refresh_ttl_on_read`: Refresh checkpoint TTLs during reads and list calls.
+  Defaults to `true`.
+- `socket_timeout`: Redis socket read/write timeout in seconds. Defaults to
+  `5.0`.
+- `socket_connect_timeout`: Redis connection timeout in seconds. Defaults to
+  `5.0`.
+- `health_check_interval`: Redis connection-pool health check interval in
+  seconds. Defaults to `30`.
+- `retry_on_timeout`: Ask redis-py to retry timeout errors. Defaults to `true`.
+
+For ElastiCache with in-transit encryption, use `rediss://...`. Keep AUTH
+tokens in deployment secrets rather than committed YAML. Advanced TLS CA or IAM
+auth flows should use a prebuilt Redis client in application code instead of
+only `redis_url`.
+
+`redis_plain` does not support Redis Cluster mode or ElastiCache cluster mode
+enabled. It touches multiple keys while expiring, pruning, and deleting a
+thread's checkpoints. Without Redis hash tags those keys can be assigned to
+different hash slots and raise `CROSSSLOT` errors. Deploy it on a single-shard
+Redis/Valkey target, such as ElastiCache cluster mode disabled with replicas.
 
 ### `budget`
 
