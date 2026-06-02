@@ -261,8 +261,19 @@ class PlainRedisSaver(
                 raise
             # Older PlainRedisSaver versions used a SET at this key. Convert it
             # lazily so deployments can upgrade without an external migration.
+            # Read members before deleting the SET; otherwise older threads stay
+            # resumable by direct thread_id but disappear from list(None).
+            try:
+                existing_members = self._redis.smembers(self._threads_key())
+            except ResponseError:
+                existing_members = []
+            mapping = {
+                _decode_redis_str(raw_thread_id): now
+                for raw_thread_id in existing_members
+            }
+            mapping[thread_id] = now
             self._redis.delete(self._threads_key())
-            self._redis.zadd(self._threads_key(), {thread_id: now})
+            self._redis.zadd(self._threads_key(), mapping)
 
         if self._checkpoint_ttl_seconds:
             self._redis.zremrangebyscore(
@@ -654,11 +665,17 @@ class PlainRedisSaver(
                 checkpoint_ids = self._redis.zrevrange(
                     self._checkpoint_index_key(thread_id, checkpoint_ns or ""), 0, -1
                 )
+                # Checkpoint ordering now comes from the Redis ZSET score, not
+                # the checkpoint id. Treat ``before`` as a cursor in that ordered
+                # stream and start yielding only after the cursor is encountered.
+                passed_before = before_checkpoint_id is None
                 for raw_checkpoint_id in checkpoint_ids:
                     checkpoint_id = _decode_redis_str(raw_checkpoint_id)
-                    if config_checkpoint_id and checkpoint_id != config_checkpoint_id:
+                    if not passed_before:
+                        if checkpoint_id == before_checkpoint_id:
+                            passed_before = True
                         continue
-                    if before_checkpoint_id and checkpoint_id >= before_checkpoint_id:
+                    if config_checkpoint_id and checkpoint_id != config_checkpoint_id:
                         continue
 
                     item = self._get_checkpoint_tuple(

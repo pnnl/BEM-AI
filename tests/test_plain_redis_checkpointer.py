@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from langgraph.checkpoint.base import empty_checkpoint
+from redis.exceptions import ResponseError
 
 from automa_ai.checkpoint import plain_redis
 from automa_ai.checkpoint.defaults import DEFAULT_REDIS_MAX_CHECKPOINTS_PER_THREAD
@@ -44,6 +45,10 @@ class FakeRedis:
         return [data.get(field) for field in fields]
 
     def zadd(self, key: str, mapping: dict[object, float]) -> int:
+        if key in self.sets:
+            raise ResponseError(
+                "WRONGTYPE Operation against a key holding the wrong kind of value"
+            )
         self.zsets[key].update(mapping)
         return len(mapping)
 
@@ -90,6 +95,10 @@ class FakeRedis:
         return len(values)
 
     def smembers(self, key: str) -> set[object]:
+        if key in self.zsets:
+            raise ResponseError(
+                "WRONGTYPE Operation against a key holding the wrong kind of value"
+            )
         return set(self.sets.get(key, set()))
 
     def srem(self, key: str, *values: object) -> int:
@@ -193,6 +202,44 @@ def test_plain_redis_saver_round_trip_and_latest_lookup() -> None:
     assert saver.get_tuple({"configurable": {"thread_id": "thread-1"}}) is None
 
 
+def test_plain_redis_saver_list_before_uses_zset_order_not_checkpoint_id() -> None:
+    client = FakeRedis()
+    saver = PlainRedisSaver(
+        redis_client=client,
+        max_checkpoints_per_thread=DEFAULT_REDIS_MAX_CHECKPOINTS_PER_THREAD,
+    )
+    config = {"configurable": {"thread_id": "thread-1", "checkpoint_ns": ""}}
+
+    for checkpoint_id, value, step in [
+        ("z-old", "old", 0),
+        ("m-before", "before", 1),
+        ("a-new", "new", 2),
+    ]:
+        checkpoint = _build_checkpoint(value=value, version_seed=checkpoint_id)
+        checkpoint["id"] = checkpoint_id
+        config = saver.put(
+            config,
+            checkpoint,
+            {"source": "loop", "step": step},
+            checkpoint["channel_versions"],
+        )
+
+    listed = list(
+        saver.list(
+            {"configurable": {"thread_id": "thread-1"}},
+            before={
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "m-before",
+                }
+            },
+        )
+    )
+
+    assert [item.checkpoint["id"] for item in listed] == ["z-old"]
+
+
 def test_plain_redis_saver_sets_ttl_and_prunes_old_checkpoint_steps() -> None:
     client = FakeRedis()
     saver = PlainRedisSaver(
@@ -236,6 +283,23 @@ def test_plain_redis_saver_thread_index_prunes_idle_members() -> None:
 
     assert "dead-thread" not in client.zsets[threads_key]
     assert "active-thread" in client.zsets[threads_key]
+
+
+def test_plain_redis_saver_preserves_legacy_thread_set_members(monkeypatch) -> None:
+    client = FakeRedis()
+    saver = PlainRedisSaver(redis_client=client, checkpoint_ttl_seconds=60)
+    threads_key = saver._threads_key()
+    client.sets[threads_key].update({b"old-thread", "other-thread"})
+    monkeypatch.setattr(plain_redis.time, "time", lambda: 100.0)
+
+    saver._record_thread_activity("active-thread")
+
+    assert threads_key not in client.sets
+    assert client.zsets[threads_key] == {
+        "old-thread": 100.0,
+        "other-thread": 100.0,
+        "active-thread": 100.0,
+    }
 
 
 def test_plain_redis_saver_put_writes_refreshes_checkpoint_and_blob_ttls() -> None:
