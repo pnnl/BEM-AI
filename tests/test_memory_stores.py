@@ -1,6 +1,9 @@
 from types import SimpleNamespace
+from typing import Optional
 
 from automa_ai.memory.chroma_memory_store import ChromaVectorMemoryStore
+from automa_ai.memory.manager import DefaultMemoryManager
+from automa_ai.memory.memory_stores import BaseMemoryStore, MemoryStoreRegistry
 from automa_ai.memory.memory_types import MemoryEntry, MemoryType
 from automa_ai.memory.sqlite_memory_store import SQLiteMemoryStore
 
@@ -79,3 +82,54 @@ def test_sqlite_filters_and_deletes_by_record_id(tmp_path) -> None:
     assert store.delete_memory(memories[0].record_id) is True
     remaining = store.read_memories(session_id="session-1", limit=10)
     assert [memory.content for memory in remaining] == ["other memory"]
+
+
+def test_memory_manager_accepts_yaml_memory_type_strings() -> None:
+    class FakeMemoryStore(BaseMemoryStore):
+        def __init__(self, config: dict) -> None:
+            self.config = config
+
+        @classmethod
+        def from_config(cls, config: dict) -> BaseMemoryStore:
+            return cls(config)
+
+        def write_memory(self, entries: list[MemoryEntry]) -> None:
+            pass
+
+        def read_memories(
+            self,
+            query: Optional[str] = None,
+            *,
+            limit: int = 10,
+            **kwargs,
+        ) -> list[MemoryEntry]:
+            return []
+
+        def delete_memory(self, record_id: str) -> bool:
+            return True
+
+        def clear_memories(self, memory_type: Optional[MemoryType] = None) -> None:
+            pass
+
+    MemoryStoreRegistry.register("test_yaml_short_memory", FakeMemoryStore)
+    MemoryStoreRegistry.register("test_yaml_long_memory", FakeMemoryStore)
+
+    manager = DefaultMemoryManager.from_config(
+        {
+            "stores": [
+                {
+                    "name": "test_yaml_short_memory",
+                    "memory_type": "short_term",
+                    "store_config": {"db_path": "short.sqlite"},
+                },
+                {
+                    "name": "test_yaml_long_memory",
+                    "memory_type": "long_term",
+                    "store_config": {"db_path": "long_chroma"},
+                },
+            ]
+        }
+    )
+
+    assert manager.short_term_store.config == {"db_path": "short.sqlite"}
+    assert manager.long_term_store.config == {"db_path": "long_chroma"}

@@ -71,13 +71,17 @@ class DefaultMemoryManager:
 
         for store in stores:
             memory_type = store.get("memory_type")
+            if not isinstance(memory_type, MemoryType):
+                try:
+                    memory_type = MemoryType(memory_type)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Memory type must be one of the MemoryType"
+                    ) from exc
             store_name = store.get("name")
 
             if not store_name:
                 raise ValueError("Missing store name.")
-
-            if not isinstance(memory_type, MemoryType):
-                raise ValueError("Memory type must be one of the MemoryType")
 
             store_cls = MemoryStoreRegistry.get(store_name)
 
