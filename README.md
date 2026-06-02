@@ -325,7 +325,7 @@ The default backend is in-memory. Redis is opt-in and requires a connection URL.
 
 There are two Redis backends:
 
-- `redis_plain`: Uses only core Redis commands. Choose this for standard Redis-compatible deployments, including typical Amazon ElastiCache deployments that do not expose RediSearch and RedisJSON.
+- `redis_plain`: Uses only core Redis commands. Choose this for standard single-shard Redis-compatible deployments, including Amazon ElastiCache Redis/Valkey with cluster mode disabled.
 - `redis_stack`: Uses LangGraph's Redis saver and requires both RediSearch and RedisJSON support. Choose this only when your Redis deployment supports commands such as `FT._LIST` and `JSON.GET`.
 
 Use `type: default` to force the in-memory saver explicitly.
@@ -336,10 +336,42 @@ Use `type: default` to force the in-memory saver explicitly.
 checkpointer:
   type: redis_plain
   redis_url: redis://localhost:6379
+  # redis_plain does not support ElastiCache cluster mode enabled.
+  # Use a single-shard Redis/Valkey target, such as cluster mode disabled
+  # with replicas.
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
 ```
 
 `redis_plain` is intended for deployments where you want Redis-backed checkpoint persistence without Redis module dependencies.
-This is the safest choice for plain ElastiCache Redis/Valkey deployments.
+This is the safest choice for plain ElastiCache Redis/Valkey deployments when cluster mode is disabled.
+
+`redis_plain` does not support Redis Cluster mode or ElastiCache cluster mode
+enabled. It runs multi-key lifecycle operations over checkpoint records, writes,
+index keys, and blob keys that belong to one logical thread. Without a
+hash-tagged key layout, those keys can land in different Redis Cluster hash
+slots and trigger `CROSSSLOT` errors. Use a single-shard deployment with
+replicas for this hot checkpoint cache.
+
+`redis_plain` stores hot LangGraph checkpoint state, not durable application
+memory. Idle keys receive `checkpoint_ttl_seconds`; active reads refresh TTLs
+when `refresh_ttl_on_read` is enabled. `max_checkpoints_per_thread` is a
+resume-friendly safety cap counted by distinct LangGraph `metadata["step"]`
+groups, not a strict byte or raw-record cap. Use Redis/Valkey TTLs and
+`maxmemory-policy` as the primary memory controls, with this cap as protection
+for sessions that never go idle.
+
+Production Redis clients should use bounded socket waits. AUTOMA-AI defaults
+to `socket_timeout: 5.0`, `socket_connect_timeout: 5.0`,
+`health_check_interval: 30`, and `retry_on_timeout: true`. For ElastiCache with
+in-transit encryption, use `rediss://...`. If your deployment requires custom
+TLS CA settings, IAM auth, or another advanced credential flow, inject a
+prebuilt Redis client rather than relying only on `redis_url`.
 
 #### `redis_stack`
 
@@ -360,7 +392,7 @@ If either command is unavailable, startup fails with a clear error and tells you
 
 #### Choosing the backend
 
-- Choose `redis_plain` when your deployment target is standard Redis or ElastiCache and you do not specifically need Redis Stack modules.
+- Choose `redis_plain` when your deployment target is standard Redis or ElastiCache cluster mode disabled and you do not specifically need Redis Stack modules.
 - Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
 - Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
 

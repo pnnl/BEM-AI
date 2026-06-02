@@ -503,7 +503,46 @@ Redis examples:
 checkpointer:
   type: redis_plain
   redis_url: redis://localhost:6379
+  # redis_plain does not support ElastiCache cluster mode enabled.
+  # Use a single-shard Redis/Valkey target, such as cluster mode disabled
+  # with replicas.
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
 ```
+
+`redis_plain` uses Redis as a bounded hot-session cache. The supported
+plain-Redis-only fields are:
+
+- `checkpoint_ttl_seconds`: Idle TTL applied to checkpoint keys. Defaults to
+  `21600` seconds.
+- `max_checkpoints_per_thread`: Resume-friendly retention cap counted by
+  distinct LangGraph `metadata["step"]` groups. Defaults to `15`. This is not a
+  strict byte or raw checkpoint-record cap.
+- `refresh_ttl_on_read`: Refresh checkpoint TTLs during reads and list calls.
+  Defaults to `true`.
+- `socket_timeout`: Redis socket read/write timeout in seconds. Defaults to
+  `5.0`.
+- `socket_connect_timeout`: Redis connection timeout in seconds. Defaults to
+  `5.0`.
+- `health_check_interval`: Redis connection-pool health check interval in
+  seconds. Defaults to `30`.
+- `retry_on_timeout`: Ask redis-py to retry timeout errors. Defaults to `true`.
+
+For ElastiCache with in-transit encryption, use `rediss://...`. Keep AUTH
+tokens in deployment secrets rather than committed YAML. Advanced TLS CA or IAM
+auth flows should use a prebuilt Redis client in application code instead of
+only `redis_url`.
+
+`redis_plain` does not support Redis Cluster mode or ElastiCache cluster mode
+enabled. It touches multiple keys while expiring, pruning, and deleting a
+thread's checkpoints. Without Redis hash tags those keys can be assigned to
+different hash slots and raise `CROSSSLOT` errors. Deploy it on a single-shard
+Redis/Valkey target, such as ElastiCache cluster mode disabled with replicas.
 
 ### `budget`
 
@@ -523,7 +562,9 @@ model calls:
 - `max_model_calls_per_turn`: Maximum model calls allowed during one agent run.
 - `max_tool_calls_per_turn`: Maximum tool calls allowed during one agent run.
 - `max_session_tokens`: Maximum persisted total tokens for one AUTOMA context.
+- `session_token_window`: Optional time window for `max_session_tokens`.
 - `max_user_tokens`: Maximum persisted total tokens for one user.
+- `user_token_window`: Optional time window for `max_user_tokens`.
 - `summarize_when_tokens`: Enables LangChain summarization middleware when the
   message history reaches this approximate token count.
 - `keep_recent_messages`: Number of recent messages kept by summarization.
@@ -540,7 +581,13 @@ budget:
   max_model_calls_per_turn: 6
   max_tool_calls_per_turn: 10
   max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: America/Los_Angeles
   max_user_tokens: 500000
+  user_token_window:
+    period: calendar_month
+    timezone: America/Los_Angeles
   summarize_when_tokens: 10000
   keep_recent_messages: 20
   store:
@@ -563,6 +610,30 @@ budget:
     backend: dynamodb
     table_name: automa-token-usage
     region_name: us-west-2
+```
+
+Token windows are append-only filters over the usage ledger; usage rows are not
+deleted or reset. Supported `period` values are:
+
+- `lifetime`: Default behavior. Count all persisted usage for the scope.
+- `calendar_day`: Count usage from the current local day in `timezone`.
+- `calendar_month`: Count usage from the current local month in `timezone`.
+- `rolling`: Count usage from the last `rolling_seconds`.
+
+`timezone` must be an IANA timezone name, such as `UTC`,
+`America/Los_Angeles`, or `Europe/London`.
+
+```yaml
+budget:
+  max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: UTC
+  max_user_tokens: 500000
+  user_token_window:
+    period: rolling
+    rolling_seconds: 2592000
+    timezone: UTC
 ```
 
 ### `telemetry`

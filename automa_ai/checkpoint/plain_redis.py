@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import random
+import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from typing import Any
@@ -21,6 +22,20 @@ from langgraph.checkpoint.base import (
     get_checkpoint_metadata,
 )
 from redis import Redis
+from redis.exceptions import ResponseError
+
+from automa_ai.checkpoint.defaults import (
+    DEFAULT_REDIS_CHECKPOINT_TTL_SECONDS,
+    DEFAULT_REDIS_HEALTH_CHECK_INTERVAL,
+    DEFAULT_REDIS_MAX_CHECKPOINTS_PER_THREAD,
+    DEFAULT_REDIS_REFRESH_TTL_ON_READ,
+    DEFAULT_REDIS_RETRY_ON_TIMEOUT,
+    DEFAULT_REDIS_SOCKET_CONNECT_TIMEOUT,
+    DEFAULT_REDIS_SOCKET_TIMEOUT,
+)
+
+_BLOB_KEYS_FIELD = "blob_keys"
+_RETENTION_STEP_FIELD = "retention_step"
 
 
 def _quote_key_part(value: str | int | float) -> str:
@@ -47,7 +62,26 @@ def _decode_typed(data: dict[str, Any]) -> tuple[str, bytes]:
 class PlainRedisSaver(
     BaseCheckpointSaver[str], AbstractContextManager, AbstractAsyncContextManager
 ):
-    """Redis checkpointer that relies only on core Redis commands."""
+    """Redis checkpointer that relies only on core Redis commands.
+
+    This saver is intentionally a bounded hot-session cache. When
+    ``max_checkpoints_per_thread`` is enabled, pruning keeps the newest logical
+    LangGraph step groups based on checkpoint metadata rather than counting raw
+    checkpoint records. Applications that need arbitrary historical replay
+    should raise that retention value or disable pruning.
+
+    Step-group retention is not a strict record-count or byte-count cap: a very
+    busy graph step can still retain many checkpoint records inside the retained
+    step window. TTL and Redis maxmemory policy remain the primary memory
+    controls; step pruning is a resume-friendly backstop for active sessions.
+
+    Redis Cluster mode is intentionally not supported. Checkpoint lifecycle
+    operations touch the checkpoint record, pending writes, index keys, and blob
+    keys for one logical thread. In cluster-mode-enabled Redis those keys can
+    land in different hash slots and raise CROSSSLOT errors. Deploy this saver
+    on a single-shard Redis/Valkey target, such as ElastiCache cluster mode
+    disabled with replicas.
+    """
 
     def __init__(
         self,
@@ -56,14 +90,59 @@ class PlainRedisSaver(
         redis_client: Redis | None = None,
         serde: SerializerProtocol | None = None,
         key_prefix: str = "automa_ai:checkpoint",
+        checkpoint_ttl_seconds: int | None = DEFAULT_REDIS_CHECKPOINT_TTL_SECONDS,
+        max_checkpoints_per_thread: int | None = (
+            DEFAULT_REDIS_MAX_CHECKPOINTS_PER_THREAD
+        ),
+        refresh_ttl_on_read: bool = DEFAULT_REDIS_REFRESH_TTL_ON_READ,
+        socket_timeout: float | None = DEFAULT_REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout: float | None = DEFAULT_REDIS_SOCKET_CONNECT_TIMEOUT,
+        health_check_interval: int | None = DEFAULT_REDIS_HEALTH_CHECK_INTERVAL,
+        retry_on_timeout: bool = DEFAULT_REDIS_RETRY_ON_TIMEOUT,
     ) -> None:
         super().__init__(serde=serde)
         if redis_url is None and redis_client is None:
             raise ValueError("Either redis_url or redis_client must be provided.")
-        # valkey setup
-        self._redis = redis_client or Redis.from_url(redis_url)
+        self._redis = redis_client or self._build_redis_client(
+            redis_url=redis_url,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=socket_connect_timeout,
+            health_check_interval=health_check_interval,
+            retry_on_timeout=retry_on_timeout,
+        )
         self._owns_client = redis_client is None
         self._key_prefix = key_prefix.rstrip(":")
+        self._checkpoint_ttl_seconds = checkpoint_ttl_seconds
+        self._max_checkpoint_steps_per_thread = max_checkpoints_per_thread
+        self._refresh_ttl_on_read = refresh_ttl_on_read
+
+    @staticmethod
+    def _build_redis_client(
+        *,
+        redis_url: str,
+        socket_timeout: float | None,
+        socket_connect_timeout: float | None,
+        health_check_interval: int | None,
+        retry_on_timeout: bool,
+    ) -> Redis:
+        """Create a Redis client with production-safe connection defaults.
+
+        Long-running agent services should not wait indefinitely on stalled
+        Redis sockets, and health checks help refresh pooled connections after
+        ElastiCache failovers. Advanced TLS/IAM/client customization should use
+        the ``redis_client`` injection path instead of ``redis_url``.
+
+        Use this helper only for non-clustered Redis clients. Redis Cluster
+        would need a different key layout with hash tags so all per-thread keys
+        are assigned to the same hash slot.
+        """
+        return Redis.from_url(
+            redis_url,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=socket_connect_timeout,
+            health_check_interval=health_check_interval,
+            retry_on_timeout=retry_on_timeout,
+        )
 
     def __enter__(self) -> "PlainRedisSaver":
         return self
@@ -88,6 +167,12 @@ class PlainRedisSaver(
 
     def _threads_key(self) -> str:
         return f"{self._key_prefix}:threads"
+
+    def _checkpoint_sequence_key(self, thread_id: str, checkpoint_ns: str) -> str:
+        return (
+            f"{self._key_prefix}:thread:{_quote_key_part(thread_id)}"
+            f":ns:{_quote_key_part(checkpoint_ns)}:checkpoint_seq"
+        )
 
     def _namespaces_key(self, thread_id: str) -> str:
         return f"{self._key_prefix}:thread:{_quote_key_part(thread_id)}:namespaces"
@@ -123,6 +208,300 @@ class PlainRedisSaver(
             f":ns:{_quote_key_part(checkpoint_ns)}"
             f":blob:{_quote_key_part(channel)}:{_quote_key_part(version)}"
         )
+
+    def _expire_keys(self, *keys: str) -> None:
+        """Apply the idle-session TTL to Redis keys that were just used.
+
+        The pipeline may include several keys for one thread. This is fine for a
+        single-shard Redis deployment, but it is one reason ``redis_plain`` does
+        not support Redis Cluster mode without a future hash-tagged key layout.
+        """
+        if not self._checkpoint_ttl_seconds or not keys:
+            return
+        pipe = self._redis.pipeline()
+        for key in keys:
+            pipe.expire(key, self._checkpoint_ttl_seconds)
+        pipe.execute()
+
+    def _checkpoint_blob_keys(
+        self, thread_id: str, checkpoint_ns: str, checkpoint: Checkpoint
+    ) -> list[str]:
+        """Return blob keys referenced by a checkpoint's channel versions.
+
+        LangGraph stores checkpoint metadata separately from channel payloads.
+        The ``channel_versions`` map is the authoritative list of payload blobs
+        a checkpoint needs in order to be rehydrated.
+        """
+        return [
+            self._blob_key(thread_id, checkpoint_ns, channel, version)
+            for channel, version in checkpoint.get("channel_versions", {}).items()
+        ]
+
+    def _touch_thread_indexes(self, thread_id: str, checkpoint_ns: str) -> None:
+        """Refresh TTLs for the index keys that let us find a thread later."""
+        self._record_thread_activity(thread_id)
+        self._expire_keys(
+            self._namespaces_key(thread_id),
+            self._checkpoint_index_key(thread_id, checkpoint_ns),
+            self._checkpoint_sequence_key(thread_id, checkpoint_ns),
+        )
+
+    def _record_thread_activity(self, thread_id: str) -> None:
+        """Record the thread in a bounded global index.
+
+        Redis cannot expire individual SET members. A sorted set lets us prune
+        inactive thread ids by score on later activity, so the global index does
+        not grow forever while the service is busy.
+        """
+        now = time.time()
+        try:
+            self._redis.zadd(self._threads_key(), {thread_id: now})
+        except ResponseError as exc:
+            if "WRONGTYPE" not in str(exc):
+                raise
+            # Older PlainRedisSaver versions used a SET at this key. Convert it
+            # lazily so deployments can upgrade without an external migration.
+            # Read members before deleting the SET; otherwise older threads stay
+            # resumable by direct thread_id but disappear from list(None).
+            try:
+                existing_members = self._redis.smembers(self._threads_key())
+            except ResponseError:
+                existing_members = []
+            mapping = {
+                _decode_redis_str(raw_thread_id): now
+                for raw_thread_id in existing_members
+            }
+            mapping[thread_id] = now
+            self._redis.delete(self._threads_key())
+            self._redis.zadd(self._threads_key(), mapping)
+
+        if self._checkpoint_ttl_seconds:
+            self._redis.zremrangebyscore(
+                self._threads_key(), "-inf", now - self._checkpoint_ttl_seconds
+            )
+
+    def _thread_ids(self) -> list[str]:
+        """Return known thread ids and migrate the old SET index if present."""
+        try:
+            raw_thread_ids = self._redis.zrange(self._threads_key(), 0, -1)
+        except ResponseError as exc:
+            if "WRONGTYPE" not in str(exc):
+                raise
+            raw_thread_ids = self._redis.smembers(self._threads_key())
+            self._redis.delete(self._threads_key())
+            for raw_thread_id in raw_thread_ids:
+                self._record_thread_activity(_decode_redis_str(raw_thread_id))
+        return sorted(_decode_redis_str(item) for item in raw_thread_ids)
+
+    def _touch_checkpoint(
+        self,
+        thread_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
+        checkpoint: Checkpoint | None = None,
+        blob_keys: list[str] | None = None,
+    ) -> None:
+        """Refresh TTLs for one checkpoint and the indexes that point to it.
+
+        Passing ``checkpoint`` also refreshes the payload blobs referenced by
+        that checkpoint. Passing ``blob_keys`` lets pruning refresh retained
+        records without deserializing checkpoint payloads.
+        """
+        keys = [
+            self._checkpoint_key(thread_id, checkpoint_ns, checkpoint_id),
+            self._writes_key(thread_id, checkpoint_ns, checkpoint_id),
+        ]
+        if checkpoint is not None:
+            keys.extend(self._checkpoint_blob_keys(thread_id, checkpoint_ns, checkpoint))
+        elif blob_keys is not None:
+            keys.extend(blob_keys)
+
+        self._expire_keys(*keys)
+        self._touch_thread_indexes(thread_id, checkpoint_ns)
+
+    def _load_checkpoint_sidecar(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> tuple[str, list[str]] | None:
+        """Load pruning sidecar fields without deserializing checkpoint payloads.
+
+        New records store their retention step and blob key list as small hash
+        fields. Older records may not have them; for those, fall back to the
+        serialized checkpoint once and let normal writes/pruning eventually age
+        them out.
+        """
+        raw_step, raw_blob_keys = self._redis.hmget(
+            self._checkpoint_key(thread_id, checkpoint_ns, checkpoint_id),
+            _RETENTION_STEP_FIELD,
+            _BLOB_KEYS_FIELD,
+        )
+        if raw_step is not None and raw_blob_keys is not None:
+            return (
+                _decode_redis_str(raw_step),
+                json.loads(_decode_redis_str(raw_blob_keys)),
+            )
+
+        record = self._load_checkpoint_record_without_blobs(
+            thread_id, checkpoint_ns, checkpoint_id
+        )
+        if record is None:
+            return None
+        checkpoint, metadata = record
+        return (
+            self._checkpoint_step_key(checkpoint_id, metadata),
+            self._checkpoint_blob_keys(thread_id, checkpoint_ns, checkpoint),
+        )
+
+    def _load_checkpoint_without_blobs(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> Checkpoint | None:
+        """Load checkpoint metadata without hydrating channel payload blobs.
+
+        Pruning only needs the ``channel_versions`` references. Avoiding full
+        blob deserialization keeps cleanup cheaper and prevents missing stale
+        blobs from making retention decisions fail.
+        """
+        record = self._load_checkpoint_record_without_blobs(
+            thread_id, checkpoint_ns, checkpoint_id
+        )
+        if record is None:
+            return None
+        checkpoint, _ = record
+        return checkpoint
+
+    def _load_checkpoint_record_without_blobs(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> tuple[Checkpoint, CheckpointMetadata] | None:
+        """Load checkpoint and metadata without channel payload blobs."""
+        raw = self._redis.hgetall(
+            self._checkpoint_key(thread_id, checkpoint_ns, checkpoint_id)
+        )
+        if not raw:
+            return None
+
+        checkpoint = self.serde.loads_typed(
+            (
+                _decode_redis_str(
+                    raw.get(b"checkpoint_type", raw.get("checkpoint_type"))
+                ),
+                raw.get(b"checkpoint_payload", raw.get("checkpoint_payload", b"")),
+            )
+        )
+        metadata = self.serde.loads_typed(
+            (
+                _decode_redis_str(raw.get(b"metadata_type", raw.get("metadata_type"))),
+                raw.get(b"metadata_payload", raw.get("metadata_payload", b"")),
+            )
+        )
+        return checkpoint, metadata
+
+    @staticmethod
+    def _checkpoint_step_key(
+        checkpoint_id: str, metadata: CheckpointMetadata
+    ) -> str:
+        """Return the logical retention group for a checkpoint.
+
+        LangGraph metadata carries ``step`` across the checkpoints produced
+        inside one logical graph step/user turn. When that metadata is absent,
+        fall back to the checkpoint id so pruning degrades to raw checkpoint
+        retention for unknown checkpoint formats.
+        """
+        step = metadata.get("step")
+        if step is None:
+            return f"checkpoint:{checkpoint_id}"
+        return json.dumps(step, sort_keys=True, separators=(",", ":"))
+
+    def _prune_checkpoints(self, thread_id: str, checkpoint_ns: str) -> None:
+        """Keep newest logical step groups for a thread and delete older records.
+
+        This bounds Redis growth per active session. Blob deletion is handled
+        with extra care because newer checkpoints can still reference channel
+        payloads first written by older checkpoints. Pruning also bounds
+        LangGraph time-travel/replay to the retained checkpoint window.
+
+        This is not a strict record-count cap. All checkpoints in a retained
+        step are kept, so a pathological single step can still produce many
+        retained records until TTL or Redis eviction handles them.
+
+        The delete step can remove checkpoint, writes, and blob keys together.
+        That multi-key lifecycle is deliberate for simple single-shard Redis and
+        is not compatible with ElastiCache cluster mode enabled.
+        """
+        if not self._max_checkpoint_steps_per_thread:
+            return
+
+        index_key = self._checkpoint_index_key(thread_id, checkpoint_ns)
+        # Scores are Redis sequence values, so zrevrange returns newest
+        # checkpoints first without depending on wall-clock behavior.
+        checkpoint_ids = [
+            _decode_redis_str(raw_checkpoint_id)
+            for raw_checkpoint_id in self._redis.zrevrange(index_key, 0, -1)
+        ]
+
+        sidecars_by_id: dict[str, tuple[str, list[str]] | None] = {}
+        retained_step_keys: set[str] = set()
+        retained_ids: list[str] = []
+        stale_ids: list[str] = []
+
+        for checkpoint_id in checkpoint_ids:
+            sidecar = self._load_checkpoint_sidecar(
+                thread_id, checkpoint_ns, checkpoint_id
+            )
+            sidecars_by_id[checkpoint_id] = sidecar
+            if sidecar is None:
+                stale_ids.append(checkpoint_id)
+                continue
+
+            step_key, _ = sidecar
+            if step_key not in retained_step_keys:
+                if (
+                    len(retained_step_keys)
+                    >= self._max_checkpoint_steps_per_thread
+                ):
+                    stale_ids.append(checkpoint_id)
+                    continue
+                retained_step_keys.add(step_key)
+            retained_ids.append(checkpoint_id)
+
+        if not stale_ids:
+            return
+
+        # Compute retained blob references before deleting stale checkpoint records.
+        # This is what prevents pruning from corrupting the latest checkpoint.
+        retained_blob_keys: set[str] = set()
+        for checkpoint_id in retained_ids:
+            sidecar = sidecars_by_id.get(checkpoint_id)
+            if sidecar is None:
+                continue
+            _, blob_keys = sidecar
+            retained_blob_keys.update(blob_keys)
+            self._touch_checkpoint(
+                thread_id, checkpoint_ns, checkpoint_id, blob_keys=blob_keys
+            )
+
+        stale_blob_keys: set[str] = set()
+        keys_to_delete: list[str] = []
+        for checkpoint_id in stale_ids:
+            sidecar = sidecars_by_id.get(checkpoint_id)
+            if sidecar is not None:
+                _, blob_keys = sidecar
+                # LangGraph checkpoints may point at channel versions written by
+                # older checkpoints. Delete a blob only when no retained checkpoint
+                # still references that exact channel/version key.
+                stale_blob_keys.update(blob_keys)
+
+            keys_to_delete.extend(
+                [
+                    self._checkpoint_key(thread_id, checkpoint_ns, checkpoint_id),
+                    self._writes_key(thread_id, checkpoint_ns, checkpoint_id),
+                ]
+            )
+
+        # Set subtraction keeps any blob that is shared with retained checkpoints.
+        blob_keys_to_delete = stale_blob_keys - retained_blob_keys
+        all_keys_to_delete = keys_to_delete + list(blob_keys_to_delete)
+        if all_keys_to_delete:
+            self._redis.delete(*all_keys_to_delete)
+        self._redis.zrem(index_key, *stale_ids)
 
     def _load_blobs(
         self, thread_id: str, checkpoint_ns: str, versions: ChannelVersions
@@ -236,11 +615,20 @@ class PlainRedisSaver(
             if not latest:
                 return None
             checkpoint_id = _decode_redis_str(latest[0])
-            return self._get_checkpoint_tuple(thread_id, checkpoint_ns, checkpoint_id)
+            result = self._get_checkpoint_tuple(thread_id, checkpoint_ns, checkpoint_id)
+            if result is not None and self._refresh_ttl_on_read:
+                self._touch_checkpoint(
+                    thread_id, checkpoint_ns, checkpoint_id, result.checkpoint
+                )
+            return result
 
         result = self._get_checkpoint_tuple(thread_id, checkpoint_ns, checkpoint_id)
         if result is None:
             return None
+        if self._refresh_ttl_on_read:
+            self._touch_checkpoint(
+                thread_id, checkpoint_ns, checkpoint_id, result.checkpoint
+            )
         return result._replace(config=config)
 
     def list(
@@ -254,10 +642,7 @@ class PlainRedisSaver(
         thread_ids = (
             [config["configurable"]["thread_id"]]
             if config
-            else sorted(
-                _decode_redis_str(item)
-                for item in self._redis.smembers(self._threads_key())
-            )
+            else self._thread_ids()
         )
         config_checkpoint_ns = (
             config["configurable"].get("checkpoint_ns") if config else None
@@ -280,11 +665,17 @@ class PlainRedisSaver(
                 checkpoint_ids = self._redis.zrevrange(
                     self._checkpoint_index_key(thread_id, checkpoint_ns or ""), 0, -1
                 )
+                # Checkpoint ordering now comes from the Redis ZSET score, not
+                # the checkpoint id. Treat ``before`` as a cursor in that ordered
+                # stream and start yielding only after the cursor is encountered.
+                passed_before = before_checkpoint_id is None
                 for raw_checkpoint_id in checkpoint_ids:
                     checkpoint_id = _decode_redis_str(raw_checkpoint_id)
-                    if config_checkpoint_id and checkpoint_id != config_checkpoint_id:
+                    if not passed_before:
+                        if checkpoint_id == before_checkpoint_id:
+                            passed_before = True
                         continue
-                    if before_checkpoint_id and checkpoint_id >= before_checkpoint_id:
+                    if config_checkpoint_id and checkpoint_id != config_checkpoint_id:
                         continue
 
                     item = self._get_checkpoint_tuple(
@@ -297,6 +688,13 @@ class PlainRedisSaver(
                         for query_key, query_value in filter.items()
                     ):
                         continue
+                    if self._refresh_ttl_on_read:
+                        self._touch_checkpoint(
+                            thread_id,
+                            checkpoint_ns or "",
+                            checkpoint_id,
+                            item.checkpoint,
+                        )
 
                     yield item
 
@@ -316,6 +714,9 @@ class PlainRedisSaver(
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
         values = checkpoint_copy.pop("channel_values")
+        checkpoint_order = self._redis.incr(
+            self._checkpoint_sequence_key(thread_id, checkpoint_ns)
+        )
 
         for channel, version in new_versions.items():
             blob_key = self._blob_key(thread_id, checkpoint_ns, channel, version)
@@ -333,9 +734,9 @@ class PlainRedisSaver(
                 self._redis.hset(blob_key, mapping={"empty": "1"})
 
         checkpoint_type, checkpoint_payload = self.serde.dumps_typed(checkpoint_copy)
-        metadata_type, metadata_payload = self.serde.dumps_typed(
-            get_checkpoint_metadata(config, metadata)
-        )
+        checkpoint_metadata = get_checkpoint_metadata(config, metadata)
+        metadata_type, metadata_payload = self.serde.dumps_typed(checkpoint_metadata)
+        blob_keys = self._checkpoint_blob_keys(thread_id, checkpoint_ns, checkpoint)
         self._redis.hset(
             self._checkpoint_key(thread_id, checkpoint_ns, checkpoint["id"]),
             mapping={
@@ -344,14 +745,21 @@ class PlainRedisSaver(
                 "metadata_type": metadata_type,
                 "metadata_payload": metadata_payload,
                 "parent_checkpoint_id": config["configurable"].get("checkpoint_id", ""),
+                _RETENTION_STEP_FIELD: self._checkpoint_step_key(
+                    checkpoint["id"], checkpoint_metadata
+                ),
+                _BLOB_KEYS_FIELD: json.dumps(blob_keys),
             },
         )
         self._redis.zadd(
             self._checkpoint_index_key(thread_id, checkpoint_ns),
-            {checkpoint["id"]: 0},
+            {checkpoint["id"]: checkpoint_order},
         )
-        self._redis.sadd(self._threads_key(), thread_id)
         self._redis.sadd(self._namespaces_key(thread_id), checkpoint_ns)
+        self._touch_checkpoint(
+            thread_id, checkpoint_ns, checkpoint["id"], blob_keys=blob_keys
+        )
+        self._prune_checkpoints(thread_id, checkpoint_ns)
 
         return {
             "configurable": {
@@ -392,6 +800,14 @@ class PlainRedisSaver(
                 }
             )
             self._redis.hset(writes_key, field, serialized)
+        checkpoint = self._load_checkpoint_without_blobs(
+            thread_id, checkpoint_ns, checkpoint_id
+        )
+        if checkpoint is None:
+            self._expire_keys(writes_key)
+            self._touch_thread_indexes(thread_id, checkpoint_ns)
+            return
+        self._touch_checkpoint(thread_id, checkpoint_ns, checkpoint_id, checkpoint)
 
     def delete_thread(self, thread_id: str) -> None:
         namespaces = [
@@ -420,8 +836,14 @@ class PlainRedisSaver(
                     self._checkpoint_key(thread_id, checkpoint_ns, checkpoint_id)
                 )
             self._redis.delete(index_key)
+            self._redis.delete(self._checkpoint_sequence_key(thread_id, checkpoint_ns))
         self._redis.delete(self._namespaces_key(thread_id))
-        self._redis.srem(self._threads_key(), thread_id)
+        try:
+            self._redis.zrem(self._threads_key(), thread_id)
+        except ResponseError as exc:
+            if "WRONGTYPE" not in str(exc):
+                raise
+            self._redis.srem(self._threads_key(), thread_id)
 
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         return self.get_tuple(config)
