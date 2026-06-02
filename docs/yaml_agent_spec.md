@@ -40,6 +40,20 @@ model:
 runtime:
   agent_type: langgraph-chat
   debug: false
+
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
 ```
 
 Create `run_agent.py`:
@@ -211,8 +225,38 @@ skills:
     hvac_sizing:
       path: ./skills/hvac_sizing.md
 
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+
 checkpointer:
-  type: default
+  type: redis_plain
+  redis_url: redis://localhost:6379
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
+
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+  max_content_chars: 4000
+  load_plugins: false
 
 budget:
   max_input_tokens: 12000
@@ -465,7 +509,29 @@ retriever:
 
 Optional object passed through to `AgentFactory(..., memory_config=...)`.
 
-The exact fields depend on the registered memory manager and store provider.
+The built-in memory store entry points include `default_sqlite` for SQLite and
+`default_chroma` for ChromaDB. Use SQLite for short-term memory and ChromaDB for
+long-term memory:
+
+```yaml
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+```
+
+Relative `store_config.db_path` values are resolved from the YAML file's
+directory. Custom memory stores can be registered through the
+`automa_ai.memory_stores` entry point group and referenced by `name`.
 
 ### `blackboard`
 

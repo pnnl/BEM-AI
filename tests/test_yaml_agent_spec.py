@@ -191,6 +191,33 @@ budget:
     )
 
 
+def test_yaml_agent_spec_rebases_memory_store_db_paths(tmp_path: Path) -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+memory:
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+""",
+        base_dir=tmp_path,
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    stores = kwargs["memory_config"]["stores"]
+    assert stores[0]["store_config"]["db_path"] == str(
+        tmp_path / "short_term_memory.sqlite"
+    )
+    assert stores[1]["store_config"]["db_path"] == str(tmp_path / "long_term_chroma")
+
+
 def test_yaml_agent_spec_accepts_custom_token_usage_store_config() -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()

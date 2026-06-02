@@ -27,6 +27,7 @@ from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
 from automa_ai.common.utils import (
     map_mcp_config_to_server_config,
+    load_memory_store_plugins,
     load_token_usage_store_plugins,
     load_tool_plugins,
 )
@@ -369,6 +370,7 @@ class AgentFactory:
         # Resolve memories
         memory_manager = None
         if self.memory_config:
+            load_memory_store_plugins()
             memory_manager = DefaultMemoryManager.from_config(self.memory_config)
 
         skill_manager = None

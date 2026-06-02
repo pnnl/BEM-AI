@@ -252,7 +252,9 @@ class YamlAgentSpec(BaseModel):
                 for item in self.subagents
             ]
             or None,
-            "memory_config": self.memory,
+            "memory_config": _rebase_memory_config(
+                self.memory, base_dir=self._base_dir
+            ),
             "skills_config": _rebase_skills_config(
                 self.skills, base_dir=self._base_dir
             ),
@@ -434,6 +436,28 @@ def _rebase_budget_config(
     store = resolved.get("store")
     if isinstance(store, dict) and store.get("backend", "sqlite") == "sqlite":
         _rebase_mapping_path(store, "db_path", base_dir=base_dir)
+
+    return resolved
+
+
+def _rebase_memory_config(
+    memory: dict[str, Any] | None,
+    *,
+    base_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a copy of memory config with local store paths rebased."""
+    if memory is None:
+        return None
+
+    resolved = deepcopy(memory)
+    stores = resolved.get("stores")
+    if isinstance(stores, list):
+        for store in stores:
+            if not isinstance(store, dict):
+                continue
+            store_config = store.get("store_config")
+            if isinstance(store_config, dict):
+                _rebase_mapping_path(store_config, "db_path", base_dir=base_dir)
 
     return resolved
 
