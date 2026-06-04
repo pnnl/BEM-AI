@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.telemetry import (
@@ -24,6 +23,11 @@ from automa_ai.telemetry import (
 from automa_ai.telemetry import otel as otel_module
 from automa_ai.telemetry import registry as telemetry_registry
 from automa_ai.telemetry.recorders import JsonlRecorder
+
+otel_exporter = pytest.importorskip(
+    "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+)
+InMemorySpanExporter = otel_exporter.InMemorySpanExporter
 
 
 def _read_jsonl(path):
