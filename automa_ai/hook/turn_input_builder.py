@@ -148,5 +148,14 @@ class TurnInputBuilder:
             )
 
     async def on_turn_error(self, turn: TurnRequest, error: BaseException) -> None:
-        """Dispatch a turn failure to lifecycle hooks."""
-        await self.hook_runner.on_turn_error(turn, error)
+        """Dispatch a turn failure to lifecycle hooks.
+
+        Error hooks are best-effort and must not mask the original exception.
+        """
+        try:
+            await self.hook_runner.on_turn_error(turn, error)
+        except Exception:
+            logger.exception(
+                "on_turn_error hook failed for session %s; preserving original error.",
+                turn.context_id,
+            )

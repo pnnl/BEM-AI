@@ -869,7 +869,23 @@ class GenericLangGraphChatAgent(BaseAgent):
                 # print(f"Yielding from {item.get('source')}: {item.get('content', '')[:50]}...")
                 yield item
             if turn is not None:
-                await self.turn_input_builder.after_turn(turn, stream_result.result())
+                if stream_result.done():
+                    await self.turn_input_builder.after_turn(
+                        turn,
+                        stream_result.result(),
+                    )
+                else:
+                    # The forwarder can exit via BaseException, such as
+                    # cancellation from graph.astream(), before it can produce
+                    # a final result. Do not fabricate a successful TurnResult.
+                    self.telemetry.event(
+                        "stream.incomplete",
+                        attributes=self._event_identity_attributes(
+                            session_id=context_id,
+                            task_id=task_id,
+                            user_id=user_id,
+                        ),
+                    )
         except BaseException as exc:
             if turn is not None and isinstance(exc, Exception):
                 await self.turn_input_builder.on_turn_error(turn, exc)
@@ -895,6 +911,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         finally:
             for task in forwarder_tasks:
                 task.cancel()
+            await asyncio.gather(*forwarder_tasks, return_exceptions=True)
             # Signal memory writer shutdown and await completion
             if self.memory_manager:
                 await self._memory_write_queue.put(None)

@@ -472,6 +472,42 @@ async def test_stream_after_turn_receives_compact_final_result():
 
 
 @pytest.mark.asyncio
+async def test_stream_incomplete_forwarder_skips_after_turn_and_emits_telemetry(
+    tmp_path,
+):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            raise asyncio.CancelledError()
+            yield
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items == []
+    assert hook.result is None
+    assert hook.error is None
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(record.get("name") == "stream.incomplete" for record in records)
+
+
+@pytest.mark.asyncio
 async def test_stream_context_provider_failure_marks_turn_result_degraded():
     class DummyGraph:
         async def astream(self, inputs, config, stream_mode="messages"):
