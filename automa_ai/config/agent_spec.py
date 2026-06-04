@@ -167,6 +167,7 @@ class YamlAgentSpec(BaseModel):
     checkpointer: dict[str, Any] | str | None = None
     budget: dict[str, Any] | None = None
     telemetry: dict[str, Any] | str | None = None
+    hooks: dict[str, Any] | None = None
 
     _base_dir: Path = Path.cwd()
 
@@ -269,6 +270,7 @@ class YamlAgentSpec(BaseModel):
             "telemetry_config": _rebase_telemetry_config(
                 self.telemetry, base_dir=self._base_dir
             ),
+            "hook_config": deepcopy(self.hooks),
             "model_base_url": self.model.base_url,
             "api_key": self.model.api_key,
             "api_version": self.model.api_version,

@@ -725,6 +725,43 @@ Relative JSONL `path` values are resolved from the YAML file's directory.
 See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
 AgentCore adapter example.
 
+### `hooks`
+
+Optional object passed through to `AgentFactory(..., hook_config=...)`.
+
+Hooks configure the turn input pipeline for `GenericAgentType.LANGGRAPHCHAT`.
+By default, AUTOMA-AI still includes the built-in retrieval and memory context
+providers when those agent features are configured. Custom context providers are
+appended after those defaults. Set `include_default_context: false` to fully
+replace the context pipeline.
+
+Each custom component uses an import path in `module:ClassName` form. The class
+may expose `from_config(config)` or accept the `config` mapping as keyword
+arguments.
+
+```yaml
+hooks:
+  include_default_context: true
+  turn_hooks:
+    - impl: ce_backend.resume:ResumeAwareTurnHook
+      config:
+        table_name: permit-session-manifest
+  context_providers:
+    - impl: ce_backend.resume:ResumeContextProvider
+      config:
+        redis_url: redis://localhost:6379
+  input_assembler:
+    impl: ce_backend.context:PermitInputAssembler
+    config:
+      max_context_chars: 12000
+```
+
+Use `turn_hooks` for lifecycle behavior that may mutate the `TurnRequest`, such
+as request normalization or resume detection. Use `context_providers` for
+context engineering blocks such as durable resume state, user profile, or
+domain state. Use `input_assembler` only when the default system-context plus
+user-message shape is not enough.
+
 ## Troubleshooting
 
 `agent_card.supportedInterfaces must contain at least one interface.`

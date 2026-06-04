@@ -337,3 +337,64 @@ def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> Non
 
     assert captured["checkpointer"] is sentinel
     assert captured["checkpointer_cleanup"] is sentinel_cleanup
+
+
+def test_agent_factory_builds_turn_input_builder_from_hook_config(monkeypatch) -> None:
+    sentinel_builder = object()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(agent_factory, "load_tool_plugins", lambda: None)
+    monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args: object())
+    monkeypatch.setattr(
+        agent_factory,
+        "_build_checkpointer",
+        lambda config: (object(), None),
+    )
+
+    def fake_build_turn_input_builder_from_config(config, **kwargs):
+        captured["hook_config"] = config
+        captured["builder_kwargs"] = kwargs
+        return sentinel_builder
+
+    monkeypatch.setattr(
+        agent_factory,
+        "build_turn_input_builder_from_config",
+        fake_build_turn_input_builder_from_config,
+    )
+
+    class DummyLangGraphChatAgent:
+        def __init__(self, **kwargs) -> None:
+            captured["agent_kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        agent_factory, "GenericLangGraphChatAgent", DummyLangGraphChatAgent
+    )
+
+    factory = agent_factory.AgentFactory(
+        card={
+            "name": "agent",
+            "description": "desc",
+            "version": "1.0.0",
+            "defaultInputModes": ["text"],
+            "defaultOutputModes": ["text"],
+            "capabilities": {"streaming": True},
+            "supportedInterfaces": [
+                {
+                    "url": "localhost:10000",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "1.0",
+                }
+            ],
+            "skills": [],
+        },
+        instructions="test",
+        model_name="model",
+        agent_type=GenericAgentType.LANGGRAPHCHAT,
+        chat_model=GenericLLM.LITELLAMA,
+        hook_config={"turn_hooks": []},
+    )
+
+    factory()
+
+    assert captured["hook_config"] == {"turn_hooks": []}
+    assert captured["agent_kwargs"]["turn_input_builder"] is sentinel_builder

@@ -185,9 +185,13 @@ async def test_invoke_records_agent_turn_telemetry(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_build_stream_inputs_includes_context_and_memory():
+async def test_turn_input_builder_includes_context_and_memory():
     agent = build_agent(retriever=DummyRetriever(), memory_manager=DummyMemoryManager())
-    inputs = await agent._build_stream_inputs("hello", "session-1")
+    turn_inputs = await agent.turn_input_builder.build_inputs(
+        query="hello",
+        context_id="session-1",
+    )
+    inputs = turn_inputs.inputs
 
     system_content = inputs["messages"][0]["content"]
     assert "retrieved context" in system_content
@@ -269,7 +273,7 @@ async def test_stream_cancelled_during_setup_closes_span_as_error(tmp_path):
     async def raise_cancelled(*args, **kwargs):
         raise asyncio.CancelledError()
 
-    agent._build_stream_inputs = raise_cancelled
+    agent.turn_input_builder.build_inputs = raise_cancelled
 
     with pytest.raises(asyncio.CancelledError):
         async for _ in agent.stream("hello", "session-1", "task-1"):
