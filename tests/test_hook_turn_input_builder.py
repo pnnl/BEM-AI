@@ -53,6 +53,16 @@ class FailingAfterHook:
         raise AssertionError("after_turn failure should not call on_turn_error")
 
 
+class FailingErrorHook:
+    async def on_turn_error(self, turn: TurnRequest, error: BaseException):
+        raise RuntimeError("error hook failed")
+
+
+class CancellingErrorHook:
+    async def on_turn_error(self, turn: TurnRequest, error: BaseException):
+        raise asyncio.CancelledError()
+
+
 class StaticContextProvider:
     async def collect(self, turn: TurnRequest):
         return ContextBlock(
@@ -123,6 +133,27 @@ async def test_turn_input_builder_reports_before_turn_failures_to_error_hooks():
         await builder.build_inputs(query="hello", context_id="session-1")
 
     assert recorder.error == ("hello", "RuntimeError")
+
+
+@pytest.mark.asyncio
+async def test_turn_input_builder_error_hook_failure_preserves_original_error():
+    builder = TurnInputBuilder.default(
+        hook_runner=HookRunner([FailingBeforeHook(), FailingErrorHook()]),
+    )
+
+    with pytest.raises(RuntimeError, match="before failed"):
+        await builder.build_inputs(query="hello", context_id="session-1")
+
+
+@pytest.mark.asyncio
+async def test_turn_input_builder_error_hook_cancellation_propagates():
+    builder = TurnInputBuilder.default(
+        hook_runner=HookRunner([CancellingErrorHook()]),
+    )
+    turn = TurnRequest(query="hello", context_id="session-1")
+
+    with pytest.raises(asyncio.CancelledError):
+        await builder.on_turn_error(turn, RuntimeError("bad"))
 
 
 @pytest.mark.asyncio

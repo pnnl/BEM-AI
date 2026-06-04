@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.telemetry import (
@@ -20,6 +21,7 @@ from automa_ai.telemetry import (
     register_telemetry_recorder,
     wrap_langchain_tool,
 )
+from automa_ai.telemetry import otel as otel_module
 from automa_ai.telemetry import registry as telemetry_registry
 from automa_ai.telemetry.recorders import JsonlRecorder
 
@@ -232,6 +234,47 @@ def test_custom_recorder_registry_builds_registered_recorder(tmp_path) -> None:
     assert "test_custom_agentcore" in list_telemetry_recorders()
 
 
+def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "service_name": "test-service",
+            "environment": "test",
+            "options": {"processor": "simple"},
+        }
+    )
+
+    with pytest.raises(RuntimeError):
+        with telemetry.span("agent.turn", kind="server"):
+            telemetry.event("message", attributes={"content": "hello"})
+            with telemetry.span("tool.call", attributes={"tool.name": "demo_tool"}):
+                raise RuntimeError("tool failed")
+
+    telemetry.flush()
+    spans = exporter.get_finished_spans()
+    by_name = {span.name: span for span in spans}
+
+    assert set(by_name) == {"agent.turn", "tool.call"}
+    assert by_name["agent.turn"].kind.name == "SERVER"
+    assert by_name["tool.call"].parent.span_id == by_name["agent.turn"].context.span_id
+    assert by_name["tool.call"].status.status_code.name == "ERROR"
+    assert by_name["tool.call"].attributes["tool.name"] == "demo_tool"
+    assert by_name["agent.turn"].events[0].name == "message"
+    assert by_name["agent.turn"].events[0].attributes["content"] == (
+        '{"length": 5, "sha256": '
+        '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e730'
+        '43362938b9824"}'
+    )
+    assert by_name["agent.turn"].resource.attributes["service.name"] == "test-service"
+
+
 def test_unknown_enabled_recorder_raises_clear_error() -> None:
     with pytest.raises(ValueError, match="not registered"):
         build_telemetry({"enabled": True, "recorder": "missing_recorder"})
@@ -280,7 +323,7 @@ def test_recorder_registry_protects_builtin_names() -> None:
         return JsonlRecorder(base_dir / "telemetry.jsonl")
 
     with pytest.raises(ValueError, match="built in"):
-        register_telemetry_recorder("jsonl", build_recorder, override=True)
+        register_telemetry_recorder("otel", build_recorder, override=True)
 
 
 def test_plugin_loading_requires_explicit_opt_in(monkeypatch, tmp_path) -> None:
