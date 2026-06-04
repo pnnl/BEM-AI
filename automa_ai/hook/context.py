@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from dataclasses import dataclass
+import inspect
+from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from automa_ai.hook.turn import TurnRequest
 from automa_ai.memory.memory_types import MemoryType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -20,9 +23,28 @@ class ContextBlock:
     metadata: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class ContextCollection:
+    """Context blocks plus diagnostics for providers that failed open."""
+
+    blocks: list[ContextBlock]
+    missing_providers: list[str] = field(default_factory=list)
+
+    @property
+    def degraded(self) -> bool:
+        """Return true when at least one provider failed during collection."""
+        return bool(self.missing_providers)
+
+
 class ContextProvider(Protocol):
     async def collect(self, turn: TurnRequest) -> ContextBlock | list[ContextBlock] | None:
         ...
+
+
+ContextProviderErrorHandler = Callable[
+    [ContextProvider, Exception, TurnRequest],
+    Awaitable[None] | None,
+]
 
 
 class ContextPipeline:
@@ -33,12 +55,51 @@ class ContextPipeline:
 
     @classmethod
     def empty(cls) -> "ContextPipeline":
+        """Return a pipeline with no context providers."""
         return cls()
 
-    async def collect(self, turn: TurnRequest) -> list[ContextBlock]:
+    async def collect(
+        self,
+        turn: TurnRequest,
+        *,
+        on_provider_error: ContextProviderErrorHandler | None = None,
+    ) -> ContextCollection:
+        """Collect context blocks and record failed optional providers.
+
+        Provider failures are intentionally degraded here: one broken retrieval
+        or memory source should not abort the whole turn when callers have
+        chosen fail-open context semantics.
+        """
         collected: list[tuple[int, ContextBlock]] = []
+        missing_providers: list[str] = []
         for index, provider in enumerate(self._providers):
-            result = await provider.collect(turn)
+            try:
+                result = await provider.collect(turn)
+            except Exception as exc:
+                provider_name = provider.__class__.__name__
+                missing_providers.append(provider_name)
+                logger.warning(
+                    "Context provider %s failed for session %s; continuing "
+                    "without that context block.",
+                    provider_name,
+                    turn.context_id,
+                    exc_info=True,
+                )
+                if on_provider_error is not None:
+                    try:
+                        # Reporting degraded context is best effort; the
+                        # original provider failure should not become fatal
+                        # because telemetry or a callback failed too.
+                        maybe_awaitable = on_provider_error(provider, exc, turn)
+                        if inspect.isawaitable(maybe_awaitable):
+                            await maybe_awaitable
+                    except Exception:
+                        logger.warning(
+                            "Context provider error handler failed for %s.",
+                            provider_name,
+                            exc_info=True,
+                        )
+                continue
             if result is None:
                 continue
             blocks = result if isinstance(result, list) else [result]
@@ -46,7 +107,10 @@ class ContextPipeline:
                 if block.content.strip():
                     collected.append((index, block))
         collected.sort(key=lambda item: (-item[1].priority, item[0]))
-        return [block for _, block in collected]
+        return ContextCollection(
+            blocks=[block for _, block in collected],
+            missing_providers=missing_providers,
+        )
 
 
 class RetrieverContextProvider:
@@ -66,6 +130,7 @@ class RetrieverContextProvider:
         self.debug = debug
 
     async def collect(self, turn: TurnRequest) -> ContextBlock | None:
+        """Retrieve knowledge-base context for the current query."""
         context = await self.retriever.asimilarity_search(turn.query)
         if not context:
             return None
@@ -102,6 +167,7 @@ class MemoryContextProvider:
         self.debug = debug
 
     async def collect(self, turn: TurnRequest) -> ContextBlock | None:
+        """Retrieve prior conversation memory for the current turn."""
         memory_list = await self.memory_manager.retrieve_memories(
             turn.query,
             session_id=turn.context_id,

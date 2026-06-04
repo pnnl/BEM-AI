@@ -16,6 +16,7 @@ from automa_ai.hook.turn_input_builder import TurnInputBuilder
 
 
 def _import_from_path(path: str) -> Any:
+    """Import a configured component from a ``module:attribute`` string."""
     if ":" not in path:
         raise ValueError(
             f"Invalid hook impl '{path}'. Expected format 'module:ClassName'."
@@ -31,6 +32,7 @@ def _import_from_path(path: str) -> Any:
 
 
 def _build_component(spec: Any, *, label: str) -> Any:
+    """Instantiate one configured hook, context provider, or input assembler."""
     if not isinstance(spec, dict):
         return spec
 
@@ -58,7 +60,14 @@ def build_turn_input_builder_from_config(
     logger: logging.Logger | None = None,
     debug: bool = False,
 ) -> TurnInputBuilder:
-    """Build a turn input builder from runtime objects and optional config."""
+    """Build a turn input builder from runtime objects and optional config.
+
+    Direct Python callers can pass concrete ``HookRunner``, ``ContextPipeline``,
+    ``InputAssembler``, or ``TurnInputBuilder`` objects. YAML callers pass a
+    plain config mapping, so this function bridges that mapping into the same
+    runtime objects while preserving the built-in retriever and memory providers
+    unless explicitly disabled.
+    """
 
     if config is None:
         return TurnInputBuilder.default(

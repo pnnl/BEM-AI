@@ -16,6 +16,7 @@ class InputAssembler:
         turn: TurnRequest,
         context_blocks: Iterable[ContextBlock],
     ) -> dict[str, Any]:
+        """Render context blocks and the user query into LangGraph inputs."""
         messages: list[dict[str, str]] = []
         system_context = "\n\n".join(
             block.content for block in context_blocks if block.role == "system"

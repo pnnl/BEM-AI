@@ -14,6 +14,7 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_START,
     ARTIFACT_END,
 )
+from automa_ai.hook import ContextPipeline, HookRunner, TurnResult
 from automa_ai.telemetry import current_span_id, current_trace_id
 from automa_ai.token_management import TokenBudgetExceededError
 
@@ -40,11 +41,41 @@ class DummyMemoryManager:
         return None
 
 
+class RecordingAfterTurnHook:
+    def __init__(self) -> None:
+        self.result = None
+        self.error = None
+
+    async def after_turn(self, turn, result):
+        self.result = result
+
+    async def on_turn_error(self, turn, error):
+        self.error = type(error).__name__
+
+
+class FailingAfterTurnHook:
+    def __init__(self) -> None:
+        self.error = None
+
+    async def after_turn(self, turn, result):
+        raise RuntimeError("after failed")
+
+    async def on_turn_error(self, turn, error):
+        self.error = type(error).__name__
+
+
+class FailingContextProvider:
+    async def collect(self, turn):
+        raise RuntimeError("context failed")
+
+
 def build_agent(
     *,
     retriever=None,
     memory_manager=None,
     telemetry_config=None,
+    hook_runner=None,
+    context_pipeline=None,
 ) -> GenericLangGraphChatAgent:
     return GenericLangGraphChatAgent(
         agent_name="test-agent",
@@ -55,6 +86,8 @@ def build_agent(
         retriever=retriever,
         memory_manager=memory_manager,
         telemetry_config=telemetry_config,
+        hook_runner=hook_runner,
+        context_pipeline=context_pipeline,
     )
 
 
@@ -129,6 +162,94 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
             "automa_context_id": "session-1",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_invoke_after_turn_receives_common_turn_result():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"messages": [AIMessageChunk(content="invoke output")]}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    await agent.invoke("hello", "session-1")
+
+    assert isinstance(hook.result, TurnResult)
+    assert hook.result.mode == "invoke"
+    assert hook.result.content == "invoke output"
+    assert hook.result.raw_response["messages"][0].content == "invoke output"
+
+
+@pytest.mark.asyncio
+async def test_invoke_after_turn_failure_preserves_response():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"ok": True}
+
+    hook = FailingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke("hello", "session-1")
+
+    assert result == {"ok": True}
+    assert hook.error is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_context_provider_failure_degrades_with_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"messages": [AIMessageChunk(content="ok")]}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        context_pipeline=ContextPipeline([FailingContextProvider()]),
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke("hello", "session-1")
+
+    assert result["messages"][0].content == "ok"
+    assert hook.result.degraded is True
+    assert hook.result.missing_providers == ["FailingContextProvider"]
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(
+        record for record in records if record.get("name") == "context_provider.failed"
+    )
+    assert event["attributes"]["context.provider"] == "FailingContextProvider"
+    assert event["attributes"]["exception.type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_invoke_does_not_run_error_hook_on_cancellation():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            raise asyncio.CancelledError()
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    with pytest.raises(asyncio.CancelledError):
+        await agent.invoke("hello", "session-1")
+
+    assert hook.error is None
 
 
 @pytest.mark.asyncio
@@ -325,6 +446,65 @@ async def test_stream_generator_exit_closes_span_as_ok(tmp_path):
     assert any(record.get("name") == "stream.closed" for record in records)
     assert current_trace_id() is None
     assert current_span_id() is None
+
+
+@pytest.mark.asyncio
+async def test_stream_after_turn_receives_compact_final_result():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(content="world"), {}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello world"
+    assert isinstance(hook.result, TurnResult)
+    assert hook.result.mode == "stream"
+    assert hook.result.content == "hello world"
+    assert hook.result.artifact_content == ""
+    assert hook.result.status == "completed"
+    assert hook.result.degraded is False
+    assert hook.result.missing_providers == []
+
+
+@pytest.mark.asyncio
+async def test_stream_context_provider_failure_marks_turn_result_degraded():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello"), {}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        context_pipeline=ContextPipeline([FailingContextProvider()]),
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello"
+    assert hook.result.degraded is True
+    assert hook.result.missing_providers == ["FailingContextProvider"]
+
+
+@pytest.mark.asyncio
+async def test_stream_after_turn_failure_does_not_emit_error():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello"), {}
+
+    hook = FailingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello"
+    assert hook.error is None
 
 
 @pytest.mark.asyncio

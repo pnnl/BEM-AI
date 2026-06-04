@@ -756,11 +756,32 @@ hooks:
       max_context_chars: 12000
 ```
 
-Use `turn_hooks` for lifecycle behavior that may mutate the `TurnRequest`, such
-as request normalization or resume detection. Use `context_providers` for
-context engineering blocks such as durable resume state, user profile, or
-domain state. Use `input_assembler` only when the default system-context plus
-user-message shape is not enough.
+Use `turn_hooks` for lifecycle behavior that may mutate request content or
+metadata, such as request normalization or resume detection. `before_turn` hooks
+must not mutate `context_id`; the runtime rejects that because the context id is
+the checkpoint, blackboard, and session identity for the turn. Use
+`context_providers` for context engineering blocks such as durable resume state,
+user profile, or domain state. Use `input_assembler` only when the default
+system-context plus user-message shape is not enough. `after_turn` hooks receive
+a stable `TurnResult` object for both `invoke()` and `stream()`, with `mode`,
+`status`, `content`, `artifact_content`, `degraded`, `missing_providers`, and
+optional path-specific details such as `raw_response` or `final_output`.
+
+For LangGraph chat agents, runtime setup happens in this order:
+
+1. Ensure the session blackboard exists and initialize the graph.
+2. Run `before_turn` hooks.
+3. Reject the turn if a hook changed `context_id`.
+4. Run context providers and assemble inputs.
+5. Invoke or stream the graph.
+
+Individual context-provider failures are degraded: the provider failure is
+logged at warning level, emitted as a telemetry event named
+`context_provider.failed`, and the turn continues without that context block.
+The final `TurnResult` is marked with `degraded: true` and the failed provider
+names in `missing_providers` so callers and evals can distinguish a full-context
+answer from one generated with missing retrieval or memory context. `before_turn`
+and input assembly failures still abort the turn and trigger `on_turn_error`.
 
 ## Troubleshooting
 
