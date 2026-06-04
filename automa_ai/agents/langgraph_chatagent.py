@@ -5,7 +5,12 @@ import logging
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, ToolMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessageChunk,
+    BaseMessage,
+    ToolMessage,
+    HumanMessage,
+)
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
@@ -32,7 +37,7 @@ from automa_ai.common.utils import map_server_config_to_mcp_connection
 from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
-from automa_ai.memory.memory_types import MemoryEntry, MemoryType
+from automa_ai.memory.memory_types import MemoryType
 from automa_ai.prompts.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
 from automa_ai.skills.tools import build_load_skill_tool
@@ -42,6 +47,14 @@ from automa_ai.tools import build_langchain_tools
 from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
 from automa_ai.config.token_budget import TokenBudgetConfig
+from automa_ai.hook import (
+    ContextPipeline,
+    HookRunner,
+    InputAssembler,
+    TurnInputBuilder,
+    TurnInputs,
+    TurnResult,
+)
 from automa_ai.telemetry import build_telemetry, wrap_langchain_tool
 from automa_ai.telemetry.context import (
     current_trace_id,
@@ -97,6 +110,10 @@ class GenericLangGraphChatAgent(BaseAgent):
         budget_config: TokenBudgetConfig | None = None,
         token_usage_store: TokenUsageStore | None = None,
         telemetry_config: TelemetryConfig | dict[str, Any] | str | None = None,
+        hook_runner: HookRunner | None = None,
+        context_pipeline: ContextPipeline | None = None,
+        input_assembler: InputAssembler | None = None,
+        turn_input_builder: TurnInputBuilder | None = None,
         debug: bool = False,
     ):
 
@@ -119,6 +136,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
         self._checkpointer_cleanup = checkpointer_cleanup
         self._checkpointer_closed = False
+        self._telemetry_closed = False
         self.blackboard_store = blackboard_store
         self.blackboard_schema_name = blackboard_schema_name
         self.blackboard_schema_version = blackboard_schema_version
@@ -127,6 +145,15 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
+        self.turn_input_builder = turn_input_builder or TurnInputBuilder.default(
+            retriever=retriever,
+            memory_manager=memory_manager,
+            hook_runner=hook_runner,
+            context_pipeline=context_pipeline,
+            input_assembler=input_assembler,
+            logger=logger,
+            debug=debug,
+        )
         self.telemetry = build_telemetry(
             telemetry_config,
             base_attributes={
@@ -138,8 +165,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.debug = debug
         self.subagents = subagents
 
-        # register close mechanism when shutdown if checkpointer has a cleanup function.
-        if self._checkpointer_cleanup is not None:
+        # Register close mechanisms for standalone scripts. A2AAgentServer also
+        # calls aclose() during normal server teardown.
+        if self._checkpointer_cleanup is not None or self.telemetry.enabled:
             atexit.register(self.close)
 
         # Memory queue - object scope
@@ -147,13 +175,23 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._memory_writer_task: asyncio.Task | None = None
 
     def _checkpoint_thread_id(self, session_id: str) -> str:
-        if AgentCoreMemorySaver is not None and isinstance(self.checkpointer, AgentCoreMemorySaver):
+        if AgentCoreMemorySaver is not None and isinstance(
+            self.checkpointer, AgentCoreMemorySaver
+        ):
             return session_id
         return f"{self.agent_name}:{session_id}"
 
     def close(self) -> None:
         # Close agent behavior.
-        # checkpointer close.
+        self._close_checkpointer()
+        self._close_telemetry()
+
+    async def aclose(self) -> None:
+        """Async-safe agent teardown for server shutdown paths."""
+        self._close_checkpointer()
+        await self._aclose_telemetry()
+
+    def _close_checkpointer(self) -> None:
         if self._checkpointer_closed:
             return
         if self._checkpointer_cleanup is not None:
@@ -162,6 +200,19 @@ class GenericLangGraphChatAgent(BaseAgent):
             except Exception:
                 logger.exception("Failed to close checkpointer cleanly.")
         self._checkpointer_closed = True
+
+    def _close_telemetry(self) -> None:
+        if self._telemetry_closed:
+            return
+        self.telemetry.close()
+        self._telemetry_closed = True
+
+    async def _aclose_telemetry(self) -> None:
+        if self._telemetry_closed:
+            return
+        await self.telemetry.aflush()
+        await self.telemetry.aclose()
+        self._telemetry_closed = True
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
@@ -351,6 +402,27 @@ class GenericLangGraphChatAgent(BaseAgent):
             attributes["user.id"] = user_id
         return attributes
 
+    async def _emit_context_provider_error(
+        self,
+        provider: Any,
+        error: Exception,
+        turn: Any,
+    ) -> None:
+        """Record degraded context-provider failures in telemetry."""
+        self.telemetry.event(
+            "context_provider.failed",
+            attributes={
+                "context.provider": provider.__class__.__name__,
+                "exception.type": type(error).__name__,
+                "exception.message": str(error),
+                **self._event_identity_attributes(
+                    session_id=turn.context_id,
+                    task_id=turn.task_id,
+                    user_id=turn.user_id,
+                ),
+            },
+        )
+
     async def invoke(
         self,
         query,
@@ -359,7 +431,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Any:
-        config = self._build_runnable_config(context_id, user_id, task_id)
+        metadata = metadata or {}
         # queue for tool/subagent streaming
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
 
@@ -370,9 +442,6 @@ class GenericLangGraphChatAgent(BaseAgent):
             """
             await subagent_event_queue.put(e)
 
-        self._ensure_blackboard(context_id)
-        if not self.graph:
-            await self.init_graph(emit_subagent_event)
         telemetry_token = self._activate_incoming_telemetry_context(metadata)
         try:
             async with self.telemetry.span(
@@ -385,35 +454,64 @@ class GenericLangGraphChatAgent(BaseAgent):
                     mode="invoke",
                 ),
             ):
+                self._ensure_blackboard(context_id)
+                if not self.graph:
+                    await self.init_graph(emit_subagent_event)
+                turn_inputs = await self.turn_input_builder.build_inputs(
+                    query=query,
+                    context_id=context_id,
+                    task_id=task_id,
+                    user_id=user_id,
+                    metadata=metadata,
+                    context_error_handler=self._emit_context_provider_error,
+                )
+                turn = turn_inputs.turn
+                inputs = turn_inputs.inputs
+                config = self._build_runnable_config(
+                    turn.context_id,
+                    turn.user_id,
+                    turn.task_id,
+                )
                 self.telemetry.event(
                     "message",
                     attributes={
                         "message.role": "user",
-                        "message.content": query,
+                        "message.content": turn.query,
                         **self._event_identity_attributes(
-                            session_id=context_id,
-                            task_id=task_id,
-                            user_id=user_id,
+                            session_id=turn.context_id,
+                            task_id=turn.task_id,
+                            user_id=turn.user_id,
                         ),
-                    }
+                    },
                 )
-                context_token = set_subagent_context_id(context_id)
+                context_token = set_subagent_context_id(turn.context_id)
                 emitter_token = set_subagent_emitter(emit_subagent_event)
                 try:
-                    response = await self.graph.ainvoke(
-                        {"messages": [("user", query)]}, config
+                    response = await self.graph.ainvoke(inputs, config)
+                    await self.turn_input_builder.after_turn(
+                        turn,
+                        self._build_invoke_turn_result(response, turn_inputs),
+                    )
+                    self._emit_model_usage_telemetry(
+                        self._response_messages(response),
+                        session_id=turn.context_id,
+                        task_id=turn.task_id,
+                        user_id=turn.user_id,
                     )
                     self.telemetry.event(
                         "agent.response",
                         attributes={
                             "response.type": type(response).__name__,
                             **self._event_identity_attributes(
-                                session_id=context_id,
-                                task_id=task_id,
-                                user_id=user_id,
+                                session_id=turn.context_id,
+                                task_id=turn.task_id,
+                                user_id=turn.user_id,
                             ),
                         },
                     )
+                except Exception as exc:
+                    await self.turn_input_builder.on_turn_error(turn, exc)
+                    raise
                 finally:
                     reset_subagent_emitter(emitter_token)
                     reset_subagent_context_id(context_token)
@@ -449,6 +547,11 @@ class GenericLangGraphChatAgent(BaseAgent):
         subagent_event_queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
         # queue for agent streaming
         output_queue: asyncio.Queue = asyncio.Queue()
+        # agent_chunk_forwarder owns the accumulator, but after_turn runs in the
+        # outer generator after all chunks have been yielded. A Future hands over
+        # only the compact final result instead of buffering streamed chunks.
+        stream_result: asyncio.Future[TurnResult] = asyncio.Future()
+        turn = None
 
         ### Subagent emit event
         async def emit_subagent_event(e: StreamEvent) -> None:
@@ -461,30 +564,52 @@ class GenericLangGraphChatAgent(BaseAgent):
         try:
             span_scope.__enter__()
             span_entered = True
+            self._ensure_blackboard(context_id)
+            if not self.graph:
+                await self.init_graph(emit_subagent_event)
+            turn_inputs = await self.turn_input_builder.build_inputs(
+                query=query,
+                context_id=context_id,
+                task_id=task_id,
+                user_id=user_id,
+                metadata=metadata,
+                context_error_handler=self._emit_context_provider_error,
+            )
+            turn = turn_inputs.turn
+            inputs = turn_inputs.inputs
+            turn_degraded = turn_inputs.degraded
+            missing_providers = turn_inputs.missing_providers
+            context_id = turn.context_id
+            task_id = turn.task_id
+            user_id = turn.user_id
+            metadata = turn.metadata
             self.telemetry.event(
                 "message",
                 attributes={
                     "message.role": "user",
-                    "message.content": query,
+                    "message.content": turn.query,
                     **self._event_identity_attributes(
-                        session_id=context_id,
-                        task_id=task_id,
-                        user_id=user_id,
+                        session_id=turn.context_id,
+                        task_id=turn.task_id,
+                        user_id=turn.user_id,
                     ),
                 },
             )
-            inputs = await self._build_stream_inputs(
-                query, context_id, task_id, user_id, metadata
-            )
 
-            config = self._build_runnable_config(context_id, user_id, task_id)
-            logger.info(
-                f"Running planner agent stream for session {context_id} {task_id} with input {query}"
+            config = self._build_runnable_config(
+                turn.context_id,
+                turn.user_id,
+                turn.task_id,
             )
-            self._ensure_blackboard(context_id)
-            if not self.graph:
-                await self.init_graph(emit_subagent_event)
+            logger.info(
+                "Running planner agent stream for session %s %s with input %s",
+                turn.context_id,
+                turn.task_id,
+                turn.query,
+            )
         except BaseException as exc:
+            if turn is not None and isinstance(exc, Exception):
+                await self.turn_input_builder.on_turn_error(turn, exc)
             try:
                 if span_entered:
                     try:
@@ -630,6 +755,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                             task_id=task_id,
                             user_id=user_id,
                             metadata=metadata,
+                            degraded=turn_degraded,
+                            missing_providers=missing_providers,
+                            stream_result=stream_result,
                         )
                         break
                     except TokenBudgetExceededError as exc:
@@ -641,7 +769,19 @@ class GenericLangGraphChatAgent(BaseAgent):
                             task_id,
                             exc,
                         )
-                        await output_queue.put(self._token_budget_exceeded_output(exc))
+                        output = self._token_budget_exceeded_output(exc)
+                        if not stream_result.done():
+                            stream_result.set_result(
+                                TurnResult(
+                                    mode="stream",
+                                    content=output["content"],
+                                    final_output=output,
+                                    status="token_budget_exceeded",
+                                    degraded=turn_degraded,
+                                    missing_providers=missing_providers,
+                                )
+                            )
+                        await output_queue.put(output)
                         break
                     except Exception as exc:
                         logger.exception(
@@ -677,14 +817,24 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 "Agent runtime error while processing the request: "
                                 f"{type(exc).__name__}: {exc}"
                             )
-                        await output_queue.put(
-                            {
-                                "response_type": "text",
-                                "is_task_complete": True,
-                                "require_user_input": False,
-                                "content": error_content,
-                            }
-                        )
+                        output = {
+                            "response_type": "text",
+                            "is_task_complete": True,
+                            "require_user_input": False,
+                            "content": error_content,
+                        }
+                        if not stream_result.done():
+                            stream_result.set_result(
+                                TurnResult(
+                                    mode="stream",
+                                    content=error_content,
+                                    final_output=output,
+                                    status="error",
+                                    degraded=turn_degraded,
+                                    missing_providers=missing_providers,
+                                )
+                            )
+                        await output_queue.put(output)
                         break
                     finally:
                         reset_subagent_emitter(emitter_token)
@@ -695,7 +845,19 @@ class GenericLangGraphChatAgent(BaseAgent):
                     self.agent_name,
                     exc,
                 )
-                await output_queue.put(self._token_budget_exceeded_output(exc))
+                output = self._token_budget_exceeded_output(exc)
+                if not stream_result.done():
+                    stream_result.set_result(
+                        TurnResult(
+                            mode="stream",
+                            content=output["content"],
+                            final_output=output,
+                            status="token_budget_exceeded",
+                            degraded=turn_degraded,
+                            missing_providers=missing_providers,
+                        )
+                    )
+                await output_queue.put(output)
             except Exception as exc:
                 logger.exception(
                     "Agent stream forwarder failed for %s", self.agent_name
@@ -703,14 +865,24 @@ class GenericLangGraphChatAgent(BaseAgent):
                 error_content = "I ran into an internal error while processing the request. Please try again."
                 if self.debug:
                     error_content = f"Agent runtime error while processing the request: {type(exc).__name__}: {exc}"
-                await output_queue.put(
-                    {
-                        "response_type": "text",
-                        "is_task_complete": True,
-                        "require_user_input": False,
-                        "content": error_content,
-                    }
-                )
+                output = {
+                    "response_type": "text",
+                    "is_task_complete": True,
+                    "require_user_input": False,
+                    "content": error_content,
+                }
+                if not stream_result.done():
+                    stream_result.set_result(
+                        TurnResult(
+                            mode="stream",
+                            content=error_content,
+                            final_output=output,
+                            status="error",
+                            degraded=turn_degraded,
+                            missing_providers=missing_providers,
+                        )
+                    )
+                await output_queue.put(output)
             finally:
                 await output_queue.put(None)
 
@@ -732,7 +904,27 @@ class GenericLangGraphChatAgent(BaseAgent):
                     break
                 # print(f"Yielding from {item.get('source')}: {item.get('content', '')[:50]}...")
                 yield item
+            if turn is not None:
+                if stream_result.done():
+                    await self.turn_input_builder.after_turn(
+                        turn,
+                        stream_result.result(),
+                    )
+                else:
+                    # The forwarder can exit via BaseException, such as
+                    # cancellation from graph.astream(), before it can produce
+                    # a final result. Do not fabricate a successful TurnResult.
+                    self.telemetry.event(
+                        "stream.incomplete",
+                        attributes=self._event_identity_attributes(
+                            session_id=context_id,
+                            task_id=task_id,
+                            user_id=user_id,
+                        ),
+                    )
         except BaseException as exc:
+            if turn is not None and isinstance(exc, Exception):
+                await self.turn_input_builder.on_turn_error(turn, exc)
             try:
                 if isinstance(exc, GeneratorExit):
                     self.telemetry.event(
@@ -755,6 +947,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         finally:
             for task in forwarder_tasks:
                 task.cancel()
+            await asyncio.gather(*forwarder_tasks, return_exceptions=True)
             # Signal memory writer shutdown and await completion
             if self.memory_manager:
                 await self._memory_write_queue.put(None)
@@ -786,50 +979,6 @@ class GenericLangGraphChatAgent(BaseAgent):
                 asyncio.create_task(self.memory_manager.manage_memory_size())
             except Exception as e:
                 logger.exception("Memory manager failed")
-
-    async def _build_stream_inputs(
-        self,
-        query: str,
-        context_id: str,
-        task_id: str | None = None,
-        user_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        context = ""
-        if self.retriever:
-            context = await self.retriever.asimilarity_search(query)
-
-        if context:
-            additional_system_query = f"""
-                You are given the following context from the knowledge base:
-                {context}
-            """
-            if self.debug:
-                print(additional_system_query)
-                logger.info(f"Retrieved query: {additional_system_query}")
-        else:
-            additional_system_query = ""
-
-        memory_additional_system_query = await self._build_memory_context(
-            query,
-            context_id=context_id,
-            task_id=task_id,
-            user_id=user_id,
-            metadata=metadata,
-        )
-
-        if memory_additional_system_query.strip():
-            additional_system_query = (
-                f"{additional_system_query}\n\n{memory_additional_system_query}"
-            )
-
-        messages = [{"role": "user", "content": query}]
-        if additional_system_query.strip():
-            messages.insert(0, {"role": "system", "content": additional_system_query})
-        inputs = {"messages": messages}
-
-        logger.debug("Inputs to the LLM: %s", inputs)
-        return inputs
 
     async def _forward_subagent_events(
         self,
@@ -905,41 +1054,6 @@ class GenericLangGraphChatAgent(BaseAgent):
             "content": str(exc),
         }
 
-    async def _build_memory_context(
-        self,
-        query: str,
-        *,
-        context_id: str,
-        task_id: str | None = None,
-        user_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> str:
-        """Retrieve and format prior-conversation memory for the given query."""
-        if not self.memory_manager:
-            return ""
-
-        memory_list = await self.memory_manager.retrieve_memories(
-            query,
-            session_id=context_id,
-            task_id=task_id,
-            user_id=user_id,
-            metadata=metadata,
-            memory_types=[MemoryType.SHORT_TERM, MemoryType.LONG_TERM],
-            include_short_term=True,
-            include_long_term=True,
-        )
-        if not memory_list:
-            return ""
-
-        formatted = "\n".join(f"{m.timestamp}: {m.content}" for m in memory_list)
-        section = (
-            "You are also given the following context from past conversations "
-            f"with the user:\n{formatted}"
-        )
-        if self.debug:
-            logger.info("Retrieved memory context: %s", section)
-        return section
-
     def _build_runnable_config(
         self,
         context_id: str,
@@ -968,6 +1082,165 @@ class GenericLangGraphChatAgent(BaseAgent):
 
         return {"configurable": configurable}
 
+    def _build_invoke_turn_result(
+        self,
+        response: Any,
+        turn_inputs: TurnInputs,
+    ) -> TurnResult:
+        """Normalize a LangGraph invoke response into the hook result contract."""
+        content = self._extract_response_content(response)
+        assistant_text, artifact_text = self._split_artifact_content(content)
+        return TurnResult(
+            mode="invoke",
+            content=assistant_text,
+            artifact_content=artifact_text,
+            raw_response=response,
+            degraded=turn_inputs.degraded,
+            missing_providers=turn_inputs.missing_providers,
+        )
+
+    def _extract_response_content(self, response: Any) -> str:
+        """Best-effort extraction of assistant text from common invoke responses."""
+        if isinstance(response, dict):
+            messages = response.get("messages")
+            if isinstance(messages, list) and messages:
+                # LangGraph state usually carries the full message list; the
+                # last message is the final assistant-visible response.
+                return self._message_content_to_text(messages[-1])
+            for key in ("content", "output", "response"):
+                if key in response:
+                    return self._message_content_to_text(response[key])
+        return self._message_content_to_text(response)
+
+    @staticmethod
+    def _response_messages(response: Any) -> list[BaseMessage]:
+        """Normalize common LangGraph response shapes into message objects."""
+        if isinstance(response, BaseMessage):
+            return [response]
+        if isinstance(response, dict):
+            messages = response.get("messages")
+            if isinstance(messages, list):
+                return [item for item in messages if isinstance(item, BaseMessage)]
+        result = getattr(response, "result", None)
+        if isinstance(result, list):
+            return [item for item in result if isinstance(item, BaseMessage)]
+        return []
+
+    @classmethod
+    def _model_usage_attributes(
+        cls,
+        messages: list[BaseMessage],
+        *,
+        session_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Extract token and model metadata from final LangChain messages."""
+        totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        model = None
+        provider = None
+        response_model = None
+        finish_reason = None
+
+        for message in messages:
+            usage = getattr(message, "usage_metadata", None) or {}
+            metadata = getattr(message, "response_metadata", None) or {}
+            model = model or metadata.get("model") or metadata.get("model_name")
+            response_model = response_model or metadata.get("model_name")
+            provider = provider or metadata.get("model_provider")
+            finish_reason = (
+                finish_reason
+                or metadata.get("finish_reason")
+                or metadata.get("stop_reason")
+            )
+            input_tokens = int(usage.get("input_tokens") or 0)
+            output_tokens = int(usage.get("output_tokens") or 0)
+            total_tokens = int(
+                usage.get("total_tokens") or input_tokens + output_tokens
+            )
+            totals["input_tokens"] += input_tokens
+            totals["output_tokens"] += output_tokens
+            totals["total_tokens"] += total_tokens
+
+        attributes: dict[str, Any] = cls._event_identity_attributes(
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
+        has_model_usage_data = False
+        if model is not None:
+            attributes["model.name"] = model
+            has_model_usage_data = True
+        if response_model is not None:
+            attributes["model.response_name"] = response_model
+            has_model_usage_data = True
+        if provider is not None:
+            attributes["model.provider"] = provider
+            has_model_usage_data = True
+        if finish_reason is not None:
+            attributes["model.finish_reason"] = finish_reason
+            has_model_usage_data = True
+        if totals["total_tokens"]:
+            attributes["model.usage.input_tokens"] = totals["input_tokens"]
+            attributes["model.usage.output_tokens"] = totals["output_tokens"]
+            attributes["model.usage.total_tokens"] = totals["total_tokens"]
+            has_model_usage_data = True
+
+        return attributes if has_model_usage_data else None
+
+    def _emit_model_usage_telemetry(
+        self,
+        messages: list[BaseMessage],
+        *,
+        session_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+    ) -> None:
+        attributes = self._model_usage_attributes(
+            messages,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
+        if attributes:
+            self.telemetry.event("model.usage", attributes=attributes)
+
+    @staticmethod
+    def _message_content_to_text(value: Any) -> str:
+        """Convert LangChain/OpenAI-style message content into plain text."""
+        content = getattr(value, "content", value)
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content")
+                    if text is not None:
+                        parts.append(str(text))
+                else:
+                    parts.append(str(item))
+            return "".join(parts)
+        return str(content)
+
+    @staticmethod
+    def _split_artifact_content(content: str) -> tuple[str, str]:
+        """Split assistant-visible text from artifact marker content."""
+        if not content:
+            return "", ""
+        accumulator = AIMessageAccumulator()
+        # Reuse the streaming parser so invoke and stream expose artifact text
+        # with the same marker semantics.
+        accumulator.add_chunk(AIMessageChunk(content=content))
+        return (
+            accumulator.get_assistant_text() or "",
+            accumulator.get_artifact_text() or "",
+        )
+
     async def _emit_final_output(
         self,
         output_queue: asyncio.Queue,
@@ -976,9 +1249,15 @@ class GenericLangGraphChatAgent(BaseAgent):
         task_id: str,
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        degraded: bool = False,
+        missing_providers: list[str] | None = None,
+        stream_result: asyncio.Future[TurnResult] | None = None,
     ) -> None:
-        final_text = message_accumulator.get_assistant_text()
-        artifact_text = message_accumulator.get_artifact_text()
+        """Emit the final stream item and publish the compact hook result."""
+        missing_providers = missing_providers or []
+        final_text = message_accumulator.get_assistant_text() or ""
+        artifact_text = message_accumulator.get_artifact_text() or ""
+        ai_message = message_accumulator.finalize()
         self.telemetry.event(
             "message",
             attributes={
@@ -992,8 +1271,13 @@ class GenericLangGraphChatAgent(BaseAgent):
                 ),
             },
         )
+        self._emit_model_usage_telemetry(
+            [ai_message],
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
 
-        ai_message = message_accumulator.finalize()
         if self.memory_manager:
             await self._memory_write_queue.put(
                 MemoryWriteEvent(
@@ -1017,25 +1301,45 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 "artifact_name": f"{self.agent_name}-summary",
                             }
                         )
-                    await output_queue.put(
-                        {
-                            "response_type": "data",
-                            "is_task_complete": True,
-                            "require_user_input": False,
-                            "content": parsed,
-                            "additional_artifacts": additional_artifacts,
-                        }
-                    )
+                    output = {
+                        "response_type": "data",
+                        "is_task_complete": True,
+                        "require_user_input": False,
+                        "content": parsed,
+                        "additional_artifacts": additional_artifacts,
+                    }
+                    if stream_result is not None and not stream_result.done():
+                        stream_result.set_result(
+                            TurnResult(
+                                mode="stream",
+                                content=final_text,
+                                artifact_content=artifact_text,
+                                final_output=output,
+                                degraded=degraded,
+                                missing_providers=missing_providers,
+                            )
+                        )
+                    await output_queue.put(output)
                     return
             except Exception:
                 # Intentionally pass.
                 pass
 
-        await output_queue.put(
-            {
-                "response_type": "text",
-                "is_task_complete": True,
-                "require_user_input": False,
-                "content": final_text,
-            }
-        )
+        output = {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": final_text,
+        }
+        if stream_result is not None and not stream_result.done():
+            stream_result.set_result(
+                TurnResult(
+                    mode="stream",
+                    content=final_text,
+                    artifact_content=artifact_text,
+                    final_output=output,
+                    degraded=degraded,
+                    missing_providers=missing_providers,
+                )
+            )
+        await output_queue.put(output)

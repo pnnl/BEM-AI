@@ -35,6 +35,7 @@ class AIMessageAccumulator:
         # Metadata
         self._additional_kwargs: dict[str, Any] = {}
         self._response_metadata: dict[str, Any] = {}
+        self._usage_metadata: dict[str, Any] = {}
         self._tool_calls: list[dict] = []
 
         # State tracking
@@ -56,6 +57,10 @@ class AIMessageAccumulator:
         if chunk.response_metadata:
             self._response_metadata.update(chunk.response_metadata)
 
+        usage_metadata = getattr(chunk, "usage_metadata", None)
+        if usage_metadata:
+            self._merge_dict(self._usage_metadata, dict(usage_metadata))
+
         if getattr(chunk, "tool_calls", None):
             self._tool_calls.extend(chunk.tool_calls)
 
@@ -75,11 +80,11 @@ class AIMessageAccumulator:
                 # Found complete marker
                 if not self._in_artifact:
                     append_assistant(text[:marker_idx])
-                    text = text[marker_idx + len(ARTIFACT_START):]
+                    text = text[marker_idx + len(ARTIFACT_START) :]
                     self._in_artifact = True
                 else:
                     self._artifact_parts.append(text[:marker_idx])
-                    text = text[marker_idx + len(ARTIFACT_END):]
+                    text = text[marker_idx + len(ARTIFACT_END) :]
                     self._in_artifact = False
             else:
                 # No complete marker - check for partial
@@ -134,8 +139,13 @@ class AIMessageAccumulator:
         # Build the final message
         message = AIMessage(
             content=combine_parts,
-            additional_kwargs=self._additional_kwargs if self._additional_kwargs else {},
-            response_metadata=self._response_metadata if self._response_metadata else {},
+            additional_kwargs=(
+                self._additional_kwargs if self._additional_kwargs else {}
+            ),
+            response_metadata=(
+                self._response_metadata if self._response_metadata else {}
+            ),
+            usage_metadata=self._usage_metadata if self._usage_metadata else None,
             tool_calls=self._tool_calls if self._tool_calls else [],
         )
 
@@ -144,6 +154,7 @@ class AIMessageAccumulator:
         self._artifact_parts.clear()
         self._additional_kwargs.clear()
         self._response_metadata.clear()
+        self._usage_metadata.clear()
         self._tool_calls.clear()
         self._in_artifact = False
         self._carry = ""
@@ -151,11 +162,11 @@ class AIMessageAccumulator:
 
     def get_last_assistant_text(self) -> str | None:
         """
-                Get the last assistant text.
+        Get the last assistant text.
 
-                Returns:
-                    The assistant text (stripped of whitespace), or None if no assistant
-                """
+        Returns:
+            The assistant text (stripped of whitespace), or None if no assistant
+        """
         if not self._assistant_parts:
             return None
         return self._assistant_parts[-1]
@@ -193,9 +204,9 @@ class AIMessageAccumulator:
         """
         for key, value in source.items():
             if (
-                    key in target
-                    and isinstance(target[key], dict)
-                    and isinstance(value, dict)
+                key in target
+                and isinstance(target[key], dict)
+                and isinstance(value, dict)
             ):
                 self._merge_dict(target[key], value)
             else:

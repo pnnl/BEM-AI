@@ -103,7 +103,7 @@ def _replace_agent_url_path(url: str, base_url_path: str | None) -> str:
 
 
 def _close_agent(agent: BaseAgent) -> None:
-    close_fn = getattr(agent, "close", None)
+    close_fn = getattr(agent, "aclose", None) or getattr(agent, "close", None)
     if not callable(close_fn):
         return
 

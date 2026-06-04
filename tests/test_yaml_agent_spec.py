@@ -102,6 +102,11 @@ telemetry:
   enabled: true
   recorder: jsonl
   path: ./logs/telemetry.jsonl
+hooks:
+  include_default_context: true
+  turn_hooks:
+    - impl: tests.test_hook_turn_input_builder:PrefixHook
+      config: {}
 """
     )
 
@@ -121,6 +126,10 @@ telemetry:
     assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
     assert kwargs["telemetry_config"]["enabled"] is True
     assert kwargs["telemetry_config"]["recorder"] == "jsonl"
+    assert kwargs["hook_config"]["include_default_context"] is True
+    assert kwargs["hook_config"]["turn_hooks"][0]["impl"] == (
+        "tests.test_hook_turn_input_builder:PrefixHook"
+    )
 
 
 def test_yaml_agent_spec_passes_redis_plain_checkpointer_options() -> None:

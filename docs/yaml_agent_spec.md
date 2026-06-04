@@ -721,9 +721,93 @@ telemetry:
   load_plugins: false
 ```
 
+OpenTelemetry export can be configured with the built-in `otel` recorder:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: prod
+  options:
+    exporter: otlp_http
+    endpoint: https://cloud.langfuse.com/api/public/otel
+    flush_timeout_millis: 5000
+    shutdown_on_close: false
+    headers:
+      Authorization: Basic <base64-public-key-colon-secret-key>
+      x-langfuse-ingestion-version: "4"
+```
+
+The `otel` recorder preserves A2A trace stitching with OTEL-compatible trace and
+span ids. It maps agent and tool spans to basic GenAI semantic attributes and
+emits token/model metadata from final LangChain message objects when providers
+expose it. Cost and prompt/completion rendering are not synthesized.
+Telemetry recording is best-effort: recorder failures are logged and dropped so
+they do not fail agent requests.
+
 Relative JSONL `path` values are resolved from the YAML file's directory.
 See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
-AgentCore adapter example.
+OpenTelemetry/AgentCore adapter guidance.
+
+### `hooks`
+
+Optional object passed through to `AgentFactory(..., hook_config=...)`.
+
+Hooks configure the turn input pipeline for `GenericAgentType.LANGGRAPHCHAT`.
+By default, AUTOMA-AI still includes the built-in retrieval and memory context
+providers when those agent features are configured. Custom context providers are
+appended after those defaults. Set `include_default_context: false` to fully
+replace the context pipeline.
+
+Each custom component uses an import path in `module:ClassName` form. The class
+may expose `from_config(config)` or accept the `config` mapping as keyword
+arguments.
+
+```yaml
+hooks:
+  include_default_context: true
+  turn_hooks:
+    - impl: ce_backend.resume:ResumeAwareTurnHook
+      config:
+        table_name: permit-session-manifest
+  context_providers:
+    - impl: ce_backend.resume:ResumeContextProvider
+      config:
+        redis_url: redis://localhost:6379
+  input_assembler:
+    impl: ce_backend.context:PermitInputAssembler
+    config:
+      max_context_chars: 12000
+```
+
+Use `turn_hooks` for lifecycle behavior that may mutate request content or
+metadata, such as request normalization or resume detection. `before_turn` hooks
+must not mutate `context_id`; the runtime rejects that because the context id is
+the checkpoint, blackboard, and session identity for the turn. Use
+`context_providers` for context engineering blocks such as durable resume state,
+user profile, or domain state. Use `input_assembler` only when the default
+system-context plus user-message shape is not enough. `after_turn` hooks receive
+a stable `TurnResult` object for both `invoke()` and `stream()`, with `mode`,
+`status`, `content`, `artifact_content`, `degraded`, `missing_providers`, and
+optional path-specific details such as `raw_response` or `final_output`.
+
+For LangGraph chat agents, runtime setup happens in this order:
+
+1. Ensure the session blackboard exists and initialize the graph.
+2. Run `before_turn` hooks.
+3. Reject the turn if a hook changed `context_id`.
+4. Run context providers and assemble inputs.
+5. Invoke or stream the graph.
+
+Individual context-provider failures are degraded: the provider failure is
+logged at warning level, emitted as a telemetry event named
+`context_provider.failed`, and the turn continues without that context block.
+The final `TurnResult` is marked with `degraded: true` and the failed provider
+names in `missing_providers` so callers and evals can distinguish a full-context
+answer from one generated with missing retrieval or memory context. `before_turn`
+and input assembly failures still abort the turn and trigger `on_turn_error`.
 
 ## Troubleshooting
 

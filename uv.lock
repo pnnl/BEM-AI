@@ -405,6 +405,11 @@ eplus-mcp-demo = [
     { name = "matplotlib" },
     { name = "plotly" },
 ]
+otel = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+]
 rerank = [
     { name = "sentence-transformers" },
 ]
@@ -464,6 +469,9 @@ requires-dist = [
     { name = "multiprocessing-logging", specifier = ">=0.3.4" },
     { name = "networkx", specifier = ">=3.5" },
     { name = "openstudio", marker = "extra == 'sim-bem-network'", specifier = ">=3.10.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'otel'", specifier = ">=1.38.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.38.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.38.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas-stubs", specifier = "==2.3.3.251219" },
     { name = "plotly", marker = "extra == 'eplus-mcp-demo'", specifier = ">=6.4.0" },
@@ -480,7 +488,7 @@ requires-dist = [
     { name = "trafilatura", marker = "extra == 'web'", specifier = ">=1.12.2" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
-provides-extras = ["web", "rerank", "sim-bem-network", "sim-chat-demo", "sim-chat-stream-demo", "eplus-mcp-demo"]
+provides-extras = ["web", "rerank", "sim-bem-network", "sim-chat-demo", "sim-chat-stream-demo", "eplus-mcp-demo", "otel"]
 
 [package.metadata.requires-dev]
 dev = [

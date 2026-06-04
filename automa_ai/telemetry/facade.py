@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import traceback
-import uuid
+import secrets
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,10 +22,24 @@ from automa_ai.telemetry.context import (
 from automa_ai.telemetry.recorders import NoopRecorder, TelemetryRecorder
 from automa_ai.telemetry.redaction import sanitize_mapping, sanitize_text
 
+logger = logging.getLogger(__name__)
 
-def _new_id() -> str:
-    """Generate an opaque trace/span id for the local recorder."""
-    return uuid.uuid4().hex
+
+def _new_trace_id() -> str:
+    """Generate a 128-bit trace id compatible with OpenTelemetry."""
+    return _new_hex_id(16)
+
+
+def _new_span_id() -> str:
+    """Generate a 64-bit span id compatible with OpenTelemetry."""
+    return _new_hex_id(8)
+
+
+def _new_hex_id(num_bytes: int) -> str:
+    value = secrets.token_hex(num_bytes)
+    while set(value) == {"0"}:
+        value = secrets.token_hex(num_bytes)
+    return value
 
 
 def _now_ns() -> int:
@@ -80,7 +96,7 @@ class Telemetry:
         """
         if not self.enabled:
             return
-        trace_id = current_trace_id() or _new_id()
+        trace_id = current_trace_id() or _new_trace_id()
         span_id = current_span_id()
         item = {
             "type": "event",
@@ -90,7 +106,7 @@ class Telemetry:
             "timestamp": _now_iso(),
             "attributes": self._attributes(attributes),
         }
-        self.recorder.record(item)
+        self._record(item)
 
     def _attributes(self, attributes: dict[str, Any] | None = None) -> dict[str, Any]:
         """Merge global attributes and apply payload sanitization once."""
@@ -110,11 +126,37 @@ class Telemetry:
 
     def flush(self) -> None:
         """Block until the recorder has persisted accepted telemetry items."""
-        self.recorder.flush()
+        try:
+            self.recorder.flush()
+        except Exception:
+            logger.warning("Telemetry flush failed; dropping telemetry.", exc_info=True)
 
     def close(self) -> None:
         """Close the underlying recorder when the caller owns its lifecycle."""
-        self.recorder.close()
+        try:
+            self.recorder.close()
+        except Exception:
+            logger.warning("Telemetry close failed; dropping telemetry.", exc_info=True)
+
+    async def aflush(self) -> None:
+        """Run blocking recorder flush work off the event loop."""
+        await asyncio.to_thread(self.flush)
+
+    async def aclose(self) -> None:
+        """Run blocking recorder close work off the event loop."""
+        await asyncio.to_thread(self.close)
+
+    def _record(self, item: dict[str, Any]) -> bool:
+        """Record telemetry without allowing recorder failures into runtime code."""
+        try:
+            self.recorder.record(item)
+            return True
+        except Exception:
+            logger.warning(
+                "Telemetry record failed; dropping telemetry item.",
+                exc_info=True,
+            )
+            return False
 
 
 @dataclass
@@ -130,13 +172,14 @@ class SpanScope:
     _span_token: Any = None
     _trace_tokens: Any = None
     _closed: bool = False
+    _recording: bool = False
 
     def __enter__(self) -> "SpanScope":
         if not self.telemetry.enabled:
             return self
-        self.trace_id = current_trace_id() or _new_id()
+        self.trace_id = current_trace_id() or _new_trace_id()
         self.parent_span_id = current_span_id()
-        self.span_id = _new_id()
+        self.span_id = _new_span_id()
         self._start_ns = _now_ns()
         # Starting the first span creates a trace. Nested spans only replace the
         # current span id and keep the parent trace id intact.
@@ -147,25 +190,25 @@ class SpanScope:
             )
         else:
             self._span_token = set_current_span(self.span_id)
-        try:
-            self.telemetry.recorder.record(
-                {
-                    "type": "span_start",
-                    "trace_id": self.trace_id,
-                    "span_id": self.span_id,
-                    "parent_span_id": self.parent_span_id,
-                    "name": self.name,
-                    "kind": self.kind,
-                    "timestamp": _now_iso(),
-                    "attributes": self.telemetry._attributes(self.attributes),
-                }
-            )
-        except Exception:
+        recorded = self.telemetry._record(
+            {
+                "type": "span_start",
+                "trace_id": self.trace_id,
+                "span_id": self.span_id,
+                "parent_span_id": self.parent_span_id,
+                "name": self.name,
+                "kind": self.kind,
+                "timestamp": _now_iso(),
+                "attributes": self.telemetry._attributes(self.attributes),
+            }
+        )
+        if not recorded:
             # `record()` can fail after contextvars are already set. Restore the
-            # previous trace/span before re-raising so later work in this async
-            # task cannot inherit a half-started span.
+            # previous trace/span so later work in this async task cannot inherit
+            # a span that was not accepted by the recorder.
             self._reset_context()
-            raise
+        else:
+            self._recording = True
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
@@ -174,6 +217,8 @@ class SpanScope:
         if self._closed:
             return False
         self._closed = True
+        if not self._recording:
+            return False
         end_ns = _now_ns()
         attributes: dict[str, Any] = {}
         status = "ok"
@@ -193,27 +238,25 @@ class SpanScope:
                 attributes["exception.stacktrace"] = "".join(
                     traceback.format_exception(exc_type, exc, tb)
                 )
-        try:
-            self.telemetry.recorder.record(
-                {
-                    "type": "span_end",
-                    "trace_id": self.trace_id,
-                    "span_id": self.span_id,
-                    "parent_span_id": self.parent_span_id,
-                    "name": self.name,
-                    "kind": self.kind,
-                    "timestamp": _now_iso(),
-                    "status": status,
-                    "duration_ms": (
-                        (end_ns - self._start_ns) / 1_000_000
-                        if self._start_ns is not None
-                        else None
-                    ),
-                    "attributes": self.telemetry._attributes(attributes),
-                }
-            )
-        finally:
-            self._reset_context()
+        self.telemetry._record(
+            {
+                "type": "span_end",
+                "trace_id": self.trace_id,
+                "span_id": self.span_id,
+                "parent_span_id": self.parent_span_id,
+                "name": self.name,
+                "kind": self.kind,
+                "timestamp": _now_iso(),
+                "status": status,
+                "duration_ms": (
+                    (end_ns - self._start_ns) / 1_000_000
+                    if self._start_ns is not None
+                    else None
+                ),
+                "attributes": self.telemetry._attributes(attributes),
+            }
+        )
+        self._reset_context()
         # Returning False preserves normal exception propagation.
         return False
 
