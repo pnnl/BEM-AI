@@ -721,9 +721,35 @@ telemetry:
   load_plugins: false
 ```
 
+OpenTelemetry export can be configured with the built-in `otel` recorder:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: prod
+  options:
+    exporter: otlp_http
+    endpoint: https://cloud.langfuse.com/api/public/otel
+    flush_timeout_millis: 5000
+    shutdown_on_close: false
+    headers:
+      Authorization: Basic <base64-public-key-colon-secret-key>
+      x-langfuse-ingestion-version: "4"
+```
+
+The `otel` recorder preserves A2A trace stitching with OTEL-compatible trace and
+span ids. It maps agent and tool spans to basic GenAI semantic attributes and
+emits token/model metadata from final LangChain message objects when providers
+expose it. Cost and prompt/completion rendering are not synthesized.
+Telemetry recording is best-effort: recorder failures are logged and dropped so
+they do not fail agent requests.
+
 Relative JSONL `path` values are resolved from the YAML file's directory.
 See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
-AgentCore adapter example.
+OpenTelemetry/AgentCore adapter guidance.
 
 ### `hooks`
 

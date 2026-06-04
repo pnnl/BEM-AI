@@ -88,6 +88,9 @@ def test_nested_spans_preserve_parent_child_relationship(tmp_path) -> None:
     child_start = records[1]
     assert child_start["name"] == "tool.call"
     assert child_start["parent_span_id"] == parent_span_id
+    assert len(records[0]["trace_id"]) == 32
+    assert len(records[0]["span_id"]) == 16
+    assert len(child_start["span_id"]) == 16
 
 
 def test_span_exit_tolerates_different_context_cleanup(tmp_path) -> None:
@@ -143,6 +146,33 @@ def test_redacted_mode_redacts_secret_values(tmp_path) -> None:
     assert "[REDACTED]" in record["attributes"]["payload"]["content"]
 
 
+def test_token_usage_counts_are_not_redacted(tmp_path) -> None:
+    path = tmp_path / "telemetry.jsonl"
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(path),
+            "content_mode": "metadata",
+        }
+    )
+
+    telemetry.event(
+        "model.usage",
+        attributes={
+            "model.usage.input_tokens": 11,
+            "model.usage.output_tokens": 4,
+            "auth.token": "secret",
+        },
+    )
+
+    telemetry.flush()
+    record = _read_jsonl(path)[0]
+    assert record["attributes"]["model.usage.input_tokens"] == 11
+    assert record["attributes"]["model.usage.output_tokens"] == 4
+    assert record["attributes"]["auth.token"] == "[REDACTED]"
+
+
 def test_noop_recorder_does_not_create_path(tmp_path) -> None:
     path = tmp_path / "missing.jsonl"
     telemetry = build_telemetry(
@@ -155,7 +185,9 @@ def test_noop_recorder_does_not_create_path(tmp_path) -> None:
     assert not path.exists()
 
 
-def test_jsonl_recorder_close_rejects_late_records_without_hanging(tmp_path) -> None:
+def test_jsonl_recorder_close_drops_late_records_without_hanging(
+    tmp_path, caplog
+) -> None:
     recorder = JsonlRecorder(tmp_path / "telemetry.jsonl")
     recorder.record({"type": "event", "name": "before-close"})
     errors: list[BaseException] = []
@@ -172,8 +204,8 @@ def test_jsonl_recorder_close_rejects_late_records_without_hanging(tmp_path) -> 
 
     assert not closer.is_alive()
     assert errors == []
-    with pytest.raises(RuntimeError, match="closed"):
-        recorder.record({"type": "event", "name": "after-close"})
+    recorder.record({"type": "event", "name": "after-close"})
+    assert "JSONL recorder is closed" in caplog.text
 
 
 def test_custom_recorder_registry_builds_registered_recorder(tmp_path) -> None:
@@ -254,6 +286,16 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     with pytest.raises(RuntimeError):
         with telemetry.span("agent.turn", kind="server"):
             telemetry.event("message", attributes={"content": "hello"})
+            telemetry.event(
+                "model.usage",
+                attributes={
+                    "model.name": "gpt-4o",
+                    "model.provider": "openai",
+                    "model.usage.input_tokens": 11,
+                    "model.usage.output_tokens": 4,
+                    "model.usage.total_tokens": 15,
+                },
+            )
             with telemetry.span("tool.call", attributes={"tool.name": "demo_tool"}):
                 raise RuntimeError("tool failed")
 
@@ -261,18 +303,151 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     spans = exporter.get_finished_spans()
     by_name = {span.name: span for span in spans}
 
-    assert set(by_name) == {"agent.turn", "tool.call"}
-    assert by_name["agent.turn"].kind.name == "SERVER"
-    assert by_name["tool.call"].parent.span_id == by_name["agent.turn"].context.span_id
-    assert by_name["tool.call"].status.status_code.name == "ERROR"
-    assert by_name["tool.call"].attributes["tool.name"] == "demo_tool"
-    assert by_name["agent.turn"].events[0].name == "message"
-    assert by_name["agent.turn"].events[0].attributes["content"] == (
+    assert set(by_name) == {"invoke_agent", "execute_tool demo_tool"}
+    agent_span = by_name["invoke_agent"]
+    tool_span = by_name["execute_tool demo_tool"]
+    assert agent_span.kind.name == "SERVER"
+    assert tool_span.parent.span_id == agent_span.context.span_id
+    assert tool_span.status.status_code.name == "ERROR"
+    assert tool_span.attributes["tool.name"] == "demo_tool"
+    assert tool_span.attributes["gen_ai.operation.name"] == "execute_tool"
+    assert tool_span.attributes["gen_ai.tool.name"] == "demo_tool"
+    assert agent_span.attributes["gen_ai.operation.name"] == "invoke_agent"
+    assert agent_span.attributes["gen_ai.provider.name"] == "automa_ai"
+    assert (
+        agent_span.attributes["automa.span_id"] == f"{agent_span.context.span_id:016x}"
+    )
+    assert (
+        agent_span.attributes["automa.trace_id"]
+        == f"{agent_span.context.trace_id:032x}"
+    )
+    assert agent_span.events[0].name == "message"
+    assert agent_span.events[0].attributes["content"] == (
         '{"length": 5, "sha256": '
         '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e730'
         '43362938b9824"}'
     )
-    assert by_name["agent.turn"].resource.attributes["service.name"] == "test-service"
+    assert agent_span.events[1].name == "model.usage"
+    assert agent_span.events[1].attributes["gen_ai.request.model"] == "gpt-4o"
+    assert agent_span.events[1].attributes["gen_ai.provider.name"] == "openai"
+    assert agent_span.events[1].attributes["gen_ai.usage.input_tokens"] == 11
+    assert agent_span.events[1].attributes["gen_ai.usage.output_tokens"] == 4
+    assert agent_span.events[1].attributes["model.usage.total_tokens"] == 15
+    assert agent_span.resource.attributes["service.name"] == "test-service"
+
+
+def test_otel_recorder_uses_remote_parent_without_truncating_ids(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "options": {"processor": "simple"},
+        }
+    )
+    trace_id = "1" * 32
+    parent_span_id = "2" * 16
+    span_id = "3" * 16
+
+    telemetry.recorder.record(
+        {
+            "type": "span_start",
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "name": "agent.turn",
+            "kind": "server",
+            "timestamp": "2026-01-01T00:00:00.000000000Z",
+            "attributes": {"agent.name": "remote-agent"},
+        }
+    )
+    telemetry.recorder.record(
+        {
+            "type": "span_end",
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "name": "agent.turn",
+            "kind": "server",
+            "timestamp": "2026-01-01T00:00:00.100000000Z",
+            "status": "ok",
+            "attributes": {},
+        }
+    )
+
+    telemetry.flush()
+    span = exporter.get_finished_spans()[0]
+    assert span.context.trace_id == int(trace_id, 16)
+    assert span.context.span_id == int(span_id, 16)
+    assert span.parent.span_id == int(parent_span_id, 16)
+    assert otel_module._span_id_to_int("4" * 32) is None
+
+
+def test_otel_timestamp_parser_preserves_nanoseconds() -> None:
+    assert (
+        otel_module._timestamp_ns("2026-01-01T00:00:00.123456789Z")
+        == 1_767_225_600_123_456_789
+    )
+    assert (
+        otel_module._timestamp_ns("2026-01-01T00:00:00.1Z") == 1_767_225_600_100_000_000
+    )
+    assert (
+        otel_module._timestamp_ns("2026-01-01T00:00:00.123456789+01:00")
+        == 1_767_222_000_123_456_789
+    )
+    assert otel_module._timestamp_ns("not-a-timestamp") is None
+
+
+def test_otel_recorder_flush_is_bounded_and_shutdown_is_opt_in() -> None:
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.force_flush_timeout = None
+            self.shutdown_called = False
+
+        def get_tracer(self, *args, **kwargs):
+            return SimpleNamespace()
+
+        def force_flush(self, *, timeout_millis):
+            self.force_flush_timeout = timeout_millis
+            return True
+
+        def shutdown(self):
+            self.shutdown_called = True
+
+    provider = FakeProvider()
+    recorder = otel_module.OpenTelemetryRecorder(
+        TelemetryConfig(
+            enabled=True,
+            recorder="otel",
+            options={"flush_timeout_millis": 1234},
+        ),
+        tracer_provider=provider,
+    )
+
+    recorder.flush()
+    recorder.close()
+
+    assert provider.force_flush_timeout == 1234
+    assert provider.shutdown_called is False
+
+    shutdown_provider = FakeProvider()
+    shutdown_recorder = otel_module.OpenTelemetryRecorder(
+        TelemetryConfig(
+            enabled=True,
+            recorder="otel",
+            options={"shutdown_on_close": True},
+        ),
+        tracer_provider=shutdown_provider,
+    )
+
+    shutdown_recorder.close()
+
+    assert shutdown_provider.shutdown_called is True
 
 
 def test_unknown_enabled_recorder_raises_clear_error() -> None:
@@ -516,22 +691,32 @@ def test_concurrent_plugin_loading_runs_discovery_once(monkeypatch, tmp_path) ->
     assert "test_threaded_plugin" in list_telemetry_recorders()
 
 
-def test_span_start_failure_restores_context() -> None:
+def test_span_start_failure_restores_context_without_raising(caplog) -> None:
     class FailingRecorder:
         def record(self, item):
             raise OSError("cannot write telemetry")
+
+        def flush(self):
+            raise OSError("cannot flush telemetry")
+
+        def close(self):
+            raise OSError("cannot close telemetry")
 
     telemetry = Telemetry(
         config=TelemetryConfig(enabled=True),
         recorder=FailingRecorder(),
     )
 
-    with pytest.raises(OSError, match="cannot write telemetry"):
-        with telemetry.span("agent.turn"):
-            pass
+    with telemetry.span("agent.turn"):
+        telemetry.event("message")
+    telemetry.flush()
+    telemetry.close()
 
     assert current_trace_id() is None
     assert current_span_id() is None
+    assert "Telemetry record failed" in caplog.text
+    assert "Telemetry flush failed" in caplog.text
+    assert "Telemetry close failed" in caplog.text
 
 
 def test_exception_message_is_sanitized_in_metadata_mode(tmp_path) -> None:

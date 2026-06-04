@@ -56,6 +56,11 @@ sim_bem_network = ["openstudio>=3.10.0", "streamlit>=1.51.0"]
 sim_chat_demo = ["streamlit>=1.51.0"]
 sim_chat_stream_demo = ["streamlit>=1.51.0"]
 eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0"]
+otel = [
+    "opentelemetry-sdk>=1.38.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.38.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.38.0",
+]
 
 [tool.uv]
 dev-dependencies = [

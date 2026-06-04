@@ -112,12 +112,15 @@ def test_close_agent_supports_async_close():
     class DummyAgent:
         agent_name = "dummy"
 
-        async def close(self):
-            calls.append("closed")
+        async def aclose(self):
+            calls.append("async-closed")
+
+        def close(self):
+            calls.append("sync-closed")
 
     agent_registry._close_agent(DummyAgent())
 
-    assert calls == ["closed"]
+    assert calls == ["async-closed"]
 
 
 def test_health_check_default_response():

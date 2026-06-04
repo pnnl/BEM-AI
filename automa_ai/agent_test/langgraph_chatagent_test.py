@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from automa_ai.agents.langgraph_chatagent import (
     GenericLangGraphChatAgent,
@@ -122,6 +122,43 @@ def test_agent_close_runs_checkpointer_cleanup_once():
     assert calls == ["closed"]
 
 
+@pytest.mark.asyncio
+async def test_agent_aclose_runs_telemetry_cleanup_once():
+    calls: list[str] = []
+
+    class DummyTelemetry:
+        enabled = True
+
+        def close(self):
+            calls.append("telemetry-close")
+
+        async def aflush(self):
+            calls.append("telemetry-aflush")
+
+        async def aclose(self):
+            calls.append("telemetry-aclose")
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        checkpointer_cleanup=lambda: calls.append("checkpointer-close"),
+    )
+    agent.telemetry = DummyTelemetry()
+
+    await agent.aclose()
+    await agent.aclose()
+    agent.close()
+
+    assert calls == [
+        "checkpointer-close",
+        "telemetry-aflush",
+        "telemetry-aclose",
+    ]
+
+
 def test_load_skill_tool_response_is_never_streamed():
     assert not _should_emit_tool_response(
         "load_skill",
@@ -234,6 +271,59 @@ async def test_invoke_context_provider_failure_degrades_with_telemetry(tmp_path)
     )
     assert event["attributes"]["context.provider"] == "FailingContextProvider"
     assert event["attributes"]["exception.type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_invoke_records_model_usage_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {
+                "messages": [
+                    AIMessage(
+                        content="ok",
+                        usage_metadata={
+                            "input_tokens": 11,
+                            "output_tokens": 4,
+                            "total_tokens": 15,
+                        },
+                        response_metadata={
+                            "model": "gpt-4o",
+                            "model_provider": "openai",
+                            "finish_reason": "stop",
+                        },
+                    )
+                ]
+            }
+
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    await agent.invoke("hello", "session-1", task_id="task-1", user_id="user-1")
+
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(record for record in records if record.get("name") == "model.usage")
+    assert event["attributes"]["model.name"] == "gpt-4o"
+    assert event["attributes"]["model.provider"] == "openai"
+    assert event["attributes"]["model.finish_reason"] == "stop"
+    assert event["attributes"]["model.usage.input_tokens"] == 11
+    assert event["attributes"]["model.usage.output_tokens"] == 4
+    assert event["attributes"]["model.usage.total_tokens"] == 15
+    assert event["attributes"]["session.id"] == "session-1"
+    assert event["attributes"]["task.id"] == "task-1"
+    assert event["attributes"]["user.id"] == "user-1"
 
 
 @pytest.mark.asyncio
@@ -649,6 +739,54 @@ async def test_stream_filters_bedrock_list_artifact_content():
     assert items[-1]["response_type"] == "data"
     assert items[-1]["content"] == {"foo": "bar"}
     assert items[-1]["additional_artifacts"][0]["content"] == "Summary"
+
+
+@pytest.mark.asyncio
+async def test_stream_records_model_usage_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(
+                content="world",
+                usage_metadata={
+                    "input_tokens": 7,
+                    "output_tokens": 3,
+                    "total_tokens": 10,
+                },
+                response_metadata={
+                    "model": "claude-3-5-sonnet",
+                    "model_provider": "anthropic",
+                    "stop_reason": "end_turn",
+                },
+            ), {}
+
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello world"
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(record for record in records if record.get("name") == "model.usage")
+    assert event["attributes"]["model.name"] == "claude-3-5-sonnet"
+    assert event["attributes"]["model.provider"] == "anthropic"
+    assert event["attributes"]["model.finish_reason"] == "end_turn"
+    assert event["attributes"]["model.usage.input_tokens"] == 7
+    assert event["attributes"]["model.usage.output_tokens"] == 3
+    assert event["attributes"]["model.usage.total_tokens"] == 10
 
 
 @pytest.mark.asyncio

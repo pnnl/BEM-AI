@@ -5,7 +5,12 @@ import logging
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, ToolMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessageChunk,
+    BaseMessage,
+    ToolMessage,
+    HumanMessage,
+)
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
@@ -131,6 +136,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
         self._checkpointer_cleanup = checkpointer_cleanup
         self._checkpointer_closed = False
+        self._telemetry_closed = False
         self.blackboard_store = blackboard_store
         self.blackboard_schema_name = blackboard_schema_name
         self.blackboard_schema_version = blackboard_schema_version
@@ -159,8 +165,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.debug = debug
         self.subagents = subagents
 
-        # register close mechanism when shutdown if checkpointer has a cleanup function.
-        if self._checkpointer_cleanup is not None:
+        # Register close mechanisms for standalone scripts. A2AAgentServer also
+        # calls aclose() during normal server teardown.
+        if self._checkpointer_cleanup is not None or self.telemetry.enabled:
             atexit.register(self.close)
 
         # Memory queue - object scope
@@ -168,13 +175,23 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._memory_writer_task: asyncio.Task | None = None
 
     def _checkpoint_thread_id(self, session_id: str) -> str:
-        if AgentCoreMemorySaver is not None and isinstance(self.checkpointer, AgentCoreMemorySaver):
+        if AgentCoreMemorySaver is not None and isinstance(
+            self.checkpointer, AgentCoreMemorySaver
+        ):
             return session_id
         return f"{self.agent_name}:{session_id}"
 
     def close(self) -> None:
         # Close agent behavior.
-        # checkpointer close.
+        self._close_checkpointer()
+        self._close_telemetry()
+
+    async def aclose(self) -> None:
+        """Async-safe agent teardown for server shutdown paths."""
+        self._close_checkpointer()
+        await self._aclose_telemetry()
+
+    def _close_checkpointer(self) -> None:
         if self._checkpointer_closed:
             return
         if self._checkpointer_cleanup is not None:
@@ -183,6 +200,19 @@ class GenericLangGraphChatAgent(BaseAgent):
             except Exception:
                 logger.exception("Failed to close checkpointer cleanly.")
         self._checkpointer_closed = True
+
+    def _close_telemetry(self) -> None:
+        if self._telemetry_closed:
+            return
+        self.telemetry.close()
+        self._telemetry_closed = True
+
+    async def _aclose_telemetry(self) -> None:
+        if self._telemetry_closed:
+            return
+        await self.telemetry.aflush()
+        await self.telemetry.aclose()
+        self._telemetry_closed = True
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
@@ -452,7 +482,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                             task_id=turn.task_id,
                             user_id=turn.user_id,
                         ),
-                    }
+                    },
                 )
                 context_token = set_subagent_context_id(turn.context_id)
                 emitter_token = set_subagent_emitter(emit_subagent_event)
@@ -461,6 +491,12 @@ class GenericLangGraphChatAgent(BaseAgent):
                     await self.turn_input_builder.after_turn(
                         turn,
                         self._build_invoke_turn_result(response, turn_inputs),
+                    )
+                    self._emit_model_usage_telemetry(
+                        self._response_messages(response),
+                        session_id=turn.context_id,
+                        task_id=turn.task_id,
+                        user_id=turn.user_id,
                     )
                     self.telemetry.event(
                         "agent.response",
@@ -1077,6 +1113,99 @@ class GenericLangGraphChatAgent(BaseAgent):
         return self._message_content_to_text(response)
 
     @staticmethod
+    def _response_messages(response: Any) -> list[BaseMessage]:
+        """Normalize common LangGraph response shapes into message objects."""
+        if isinstance(response, BaseMessage):
+            return [response]
+        if isinstance(response, dict):
+            messages = response.get("messages")
+            if isinstance(messages, list):
+                return [item for item in messages if isinstance(item, BaseMessage)]
+        result = getattr(response, "result", None)
+        if isinstance(result, list):
+            return [item for item in result if isinstance(item, BaseMessage)]
+        return []
+
+    @classmethod
+    def _model_usage_attributes(
+        cls,
+        messages: list[BaseMessage],
+        *,
+        session_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Extract token and model metadata from final LangChain messages."""
+        totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        model = None
+        provider = None
+        response_model = None
+        finish_reason = None
+
+        for message in messages:
+            usage = getattr(message, "usage_metadata", None) or {}
+            metadata = getattr(message, "response_metadata", None) or {}
+            model = model or metadata.get("model") or metadata.get("model_name")
+            response_model = response_model or metadata.get("model_name")
+            provider = provider or metadata.get("model_provider")
+            finish_reason = (
+                finish_reason
+                or metadata.get("finish_reason")
+                or metadata.get("stop_reason")
+            )
+            input_tokens = int(usage.get("input_tokens") or 0)
+            output_tokens = int(usage.get("output_tokens") or 0)
+            total_tokens = int(
+                usage.get("total_tokens") or input_tokens + output_tokens
+            )
+            totals["input_tokens"] += input_tokens
+            totals["output_tokens"] += output_tokens
+            totals["total_tokens"] += total_tokens
+
+        attributes: dict[str, Any] = cls._event_identity_attributes(
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
+        has_model_usage_data = False
+        if model is not None:
+            attributes["model.name"] = model
+            has_model_usage_data = True
+        if response_model is not None:
+            attributes["model.response_name"] = response_model
+            has_model_usage_data = True
+        if provider is not None:
+            attributes["model.provider"] = provider
+            has_model_usage_data = True
+        if finish_reason is not None:
+            attributes["model.finish_reason"] = finish_reason
+            has_model_usage_data = True
+        if totals["total_tokens"]:
+            attributes["model.usage.input_tokens"] = totals["input_tokens"]
+            attributes["model.usage.output_tokens"] = totals["output_tokens"]
+            attributes["model.usage.total_tokens"] = totals["total_tokens"]
+            has_model_usage_data = True
+
+        return attributes if has_model_usage_data else None
+
+    def _emit_model_usage_telemetry(
+        self,
+        messages: list[BaseMessage],
+        *,
+        session_id: str,
+        task_id: str | None = None,
+        user_id: str | None = None,
+    ) -> None:
+        attributes = self._model_usage_attributes(
+            messages,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
+        if attributes:
+            self.telemetry.event("model.usage", attributes=attributes)
+
+    @staticmethod
     def _message_content_to_text(value: Any) -> str:
         """Convert LangChain/OpenAI-style message content into plain text."""
         content = getattr(value, "content", value)
@@ -1128,6 +1257,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         missing_providers = missing_providers or []
         final_text = message_accumulator.get_assistant_text() or ""
         artifact_text = message_accumulator.get_artifact_text() or ""
+        ai_message = message_accumulator.finalize()
         self.telemetry.event(
             "message",
             attributes={
@@ -1141,8 +1271,13 @@ class GenericLangGraphChatAgent(BaseAgent):
                 ),
             },
         )
+        self._emit_model_usage_telemetry(
+            [ai_message],
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
 
-        ai_message = message_accumulator.finalize()
         if self.memory_manager:
             await self._memory_write_queue.put(
                 MemoryWriteEvent(
