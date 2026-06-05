@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+TOKEN_BUDGET_WINDOW_PERIODS = frozenset(
+    {"lifetime", "calendar_day", "calendar_month", "rolling"}
+)
 
 
 class TokenUsageStoreConfig(BaseModel):
@@ -12,6 +17,50 @@ class TokenUsageStoreConfig(BaseModel):
     db_path: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class TokenBudgetWindowConfig(BaseModel):
+    """Time window for persisted token budget enforcement."""
+
+    period: Literal["lifetime", "calendar_day", "calendar_month", "rolling"] = (
+        "lifetime"
+    )
+    timezone: str = "UTC"
+    rolling_seconds: int | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("period", mode="before")
+    @classmethod
+    def _validate_period(cls, value: Any) -> Any:
+        if value not in TOKEN_BUDGET_WINDOW_PERIODS:
+            known = ", ".join(sorted(TOKEN_BUDGET_WINDOW_PERIODS))
+            raise ValueError(
+                f"Unsupported token budget window period: {value!r}. "
+                f"Use one of: {known}."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_window(self) -> "TokenBudgetWindowConfig":
+        try:
+            ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(
+                f"Unknown token budget timezone: {self.timezone!r}. "
+                "Use an IANA timezone name such as 'UTC', "
+                "'America/Los_Angeles', or 'Europe/London'."
+            ) from exc
+        if self.period == "rolling":
+            if self.rolling_seconds is None or self.rolling_seconds <= 0:
+                raise ValueError(
+                    "rolling_seconds must be greater than 0 for rolling token windows"
+                )
+        elif self.rolling_seconds is not None:
+            raise ValueError(
+                "rolling_seconds is only supported for rolling token windows"
+            )
+        return self
 
 
 class TokenBudgetConfig(BaseModel):
@@ -25,7 +74,9 @@ class TokenBudgetConfig(BaseModel):
     max_model_calls_per_turn: int | None = None
     max_tool_calls_per_turn: int | None = None
     max_session_tokens: int | None = None
+    session_token_window: TokenBudgetWindowConfig | None = None
     max_user_tokens: int | None = None
+    user_token_window: TokenBudgetWindowConfig | None = None
     trim_strategy: Literal["first", "last"] = "last"
     allow_partial: bool = True
     summarize_when_tokens: int | None = None

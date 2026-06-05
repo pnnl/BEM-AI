@@ -12,6 +12,10 @@ SECRET_KEY_PATTERN = re.compile(
     r"(api[_-]?key|token|secret|password|passwd|authorization|credential)",
     re.IGNORECASE,
 )
+TOKEN_COUNT_KEY_PATTERN = re.compile(
+    r"(^|[._-])(input|output|total)[_-]?tokens$",
+    re.IGNORECASE,
+)
 PAYLOAD_KEY_PATTERN = re.compile(
     r"(content|arguments?|result|payload|input|output|prompt|response|artifact)",
     re.IGNORECASE,
@@ -98,13 +102,18 @@ def sanitize_mapping(
     sanitized: dict[str, Any] = {}
     for key, value in payload.items():
         key_text = str(key)
+        if (
+            TOKEN_COUNT_KEY_PATTERN.search(key_text)
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+        ):
+            sanitized[key_text] = value
+            continue
         if SECRET_KEY_PATTERN.search(key_text):
             sanitized[key_text] = "[REDACTED]"
             continue
         if PAYLOAD_KEY_PATTERN.search(key_text):
-            sanitized[key_text] = sanitize_value(
-                value, mode=mode, max_chars=max_chars
-            )
+            sanitized[key_text] = sanitize_value(value, mode=mode, max_chars=max_chars)
         elif isinstance(value, str) and mode == "redacted":
             sanitized[key_text] = SECRET_VALUE_PATTERN.sub("[REDACTED]", value)
         else:

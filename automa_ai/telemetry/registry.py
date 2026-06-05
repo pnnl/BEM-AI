@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from automa_ai.config.telemetry import TelemetryConfig
+from automa_ai.telemetry.otel import build_otel_recorder
 from automa_ai.telemetry.recorders import JsonlRecorder, NoopRecorder, TelemetryRecorder
 
 TelemetryRecorderFactory = Callable[
@@ -18,7 +19,7 @@ TelemetryRecorderFactory = Callable[
 ]
 
 logger = logging.getLogger(__name__)
-_BUILTIN_RECORDER_NAMES = frozenset({"noop", "jsonl"})
+_BUILTIN_RECORDER_NAMES = frozenset({"noop", "jsonl", "otel"})
 _PLUGIN_LOAD_LOCK = threading.Lock()
 
 
@@ -103,6 +104,7 @@ def _build_jsonl_recorder(
 TELEMETRY_RECORDER_REGISTRY = TelemetryRecorderRegistry()
 TELEMETRY_RECORDER_REGISTRY.register("noop", _build_noop_recorder)
 TELEMETRY_RECORDER_REGISTRY.register("jsonl", _build_jsonl_recorder)
+TELEMETRY_RECORDER_REGISTRY.register("otel", build_otel_recorder)
 
 _PLUGINS_LOADED = False
 

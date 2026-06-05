@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import threading
 import atexit
 from pathlib import Path
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class TelemetryRecorder(Protocol):
@@ -54,7 +57,10 @@ class JsonlRecorder:
     def record(self, item: dict[str, Any]) -> None:
         with self._state_lock:
             if self._closed:
-                raise RuntimeError("Cannot record telemetry after recorder is closed.")
+                logger.warning(
+                    "Dropping telemetry item because JSONL recorder is closed."
+                )
+                return
             if self._error is not None:
                 raise self._error
             self._queue.put(item)

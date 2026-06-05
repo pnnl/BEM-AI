@@ -102,6 +102,11 @@ telemetry:
   enabled: true
   recorder: jsonl
   path: ./logs/telemetry.jsonl
+hooks:
+  include_default_context: true
+  turn_hooks:
+    - impl: tests.test_hook_turn_input_builder:PrefixHook
+      config: {}
 """
     )
 
@@ -121,6 +126,40 @@ telemetry:
     assert kwargs["budget_config"]["store"]["backend"] == "sqlite"
     assert kwargs["telemetry_config"]["enabled"] is True
     assert kwargs["telemetry_config"]["recorder"] == "jsonl"
+    assert kwargs["hook_config"]["include_default_context"] is True
+    assert kwargs["hook_config"]["turn_hooks"][0]["impl"] == (
+        "tests.test_hook_turn_input_builder:PrefixHook"
+    )
+
+
+def test_yaml_agent_spec_passes_redis_plain_checkpointer_options() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+checkpointer:
+  type: redis_plain
+  redis_url: rediss://redis.example.com:6379
+  checkpoint_ttl_seconds: 7200
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 3.0
+  socket_connect_timeout: 2.0
+  health_check_interval: 15
+  retry_on_timeout: true
+"""
+    )
+
+    assert spec.to_factory_kwargs()["checkpointer_config"] == {
+        "type": "redis_plain",
+        "redis_url": "rediss://redis.example.com:6379",
+        "checkpoint_ttl_seconds": 7200,
+        "max_checkpoints_per_thread": 15,
+        "refresh_ttl_on_read": True,
+        "socket_timeout": 3.0,
+        "socket_connect_timeout": 2.0,
+        "health_check_interval": 15,
+        "retry_on_timeout": True,
+    }
 
 
 def test_yaml_agent_spec_rebases_telemetry_jsonl_path(tmp_path: Path) -> None:
@@ -159,6 +198,33 @@ budget:
     assert kwargs["budget_config"]["store"]["db_path"] == str(
         tmp_path / "ledger" / "token_usage.db"
     )
+
+
+def test_yaml_agent_spec_rebases_memory_store_db_paths(tmp_path: Path) -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+memory:
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+""",
+        base_dir=tmp_path,
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    stores = kwargs["memory_config"]["stores"]
+    assert stores[0]["store_config"]["db_path"] == str(
+        tmp_path / "short_term_memory.sqlite"
+    )
+    assert stores[1]["store_config"]["db_path"] == str(tmp_path / "long_term_chroma")
 
 
 def test_yaml_agent_spec_accepts_custom_token_usage_store_config() -> None:

@@ -14,10 +14,20 @@ AgentCore, CloudWatch, Datadog, or another backend.
 - `noop`: disabled/default behavior.
 - `jsonl`: appends local JSONL records to a file using a background writer
   thread, so async agent execution does not block on each filesystem write.
+- `otel`: exports spans through OpenTelemetry. Install the `otel` extra and
+  configure an OTLP endpoint, or rely on standard OTEL environment variables.
 
 `Telemetry.flush()` blocks until the selected recorder has persisted or exported
 accepted records. Use it in tests, shutdown paths, or debugging scripts that need
 to read output immediately after an agent turn.
+
+Telemetry is best-effort and must not break request execution. Recorder failures
+from span/event recording, flush, or close are logged and dropped by the facade.
+Use `Telemetry.aflush()` and `Telemetry.aclose()` from async shutdown paths so
+blocking recorder work runs off the event loop. `A2AAgentServer` calls an
+agent's async `aclose()` during normal server teardown, and the LangGraph chat
+agent uses that path to `aflush()` accepted telemetry before closing; custom
+async hosts should do the same when they own the agent lifecycle.
 
 ## Configuration
 
@@ -45,7 +55,10 @@ The same object can be passed to `AgentFactory(..., telemetry_config=...)`.
 - `raw`: record truncated content without redaction. Use only for local debug.
 
 `options` is reserved for recorder-specific configuration. Built-in `jsonl` does
-not require it, but custom recorders can read it from `TelemetryConfig.options`.
+not require it. Built-in `otel` supports `exporter`, `endpoint`, `headers`,
+`timeout`, `processor`, `resource_attributes`, `flush_timeout_millis`,
+`flush_on_close`, and `shutdown_on_close`. Custom recorders can read their own
+settings from `TelemetryConfig.options`.
 
 `load_plugins` controls whether AUTOMA-AI loads recorder factories from installed
 package entry points. It defaults to `false` so installed third-party packages
@@ -76,6 +89,78 @@ The facade sanitizes attributes before they reach the recorder. Your
 `record()` method receives items already redacted according to `content_mode`.
 Do not re-derive prompts, tool arguments, metadata, or other payloads from
 external state inside a recorder; that bypasses the central redaction policy.
+
+## OpenTelemetry Recorder
+
+Install the OTEL extra before enabling the built-in OpenTelemetry recorder:
+
+```bash
+pip install "automa_ai[otel]"
+```
+
+Basic OTLP-over-HTTP configuration:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: prod
+  options:
+    exporter: otlp_http
+    endpoint: https://collector.example.com/v1/traces
+    processor: batch
+    flush_timeout_millis: 5000
+```
+
+For Langfuse, use Langfuse as the OTLP destination:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: prod
+  options:
+    exporter: otlp_http
+    endpoint: https://cloud.langfuse.com/api/public/otel
+    headers:
+      Authorization: Basic <base64-public-key-colon-secret-key>
+      x-langfuse-ingestion-version: "4"
+```
+
+The recorder uses AUTOMA trace and span ids as the exported OpenTelemetry span
+context ids. AUTOMA trace ids are 128-bit OTEL trace ids, and AUTOMA span ids
+are 64-bit OTEL span ids. This lets A2A-propagated telemetry metadata preserve
+parent-child relationships across process boundaries. The same values are also
+kept as `automa.trace_id`, `automa.span_id`, and `automa.parent_span_id`
+attributes for backend queries.
+
+The recorder adds a small GenAI semantic convention mapping:
+
+- `agent.turn` spans export as `gen_ai.operation.name=invoke_agent`.
+- `tool.call` spans export as `gen_ai.operation.name=execute_tool`.
+- Available `agent.*`, `tool.*`, and `model.*` attributes are copied into
+  matching `gen_ai.*` attributes.
+- Final LangChain message `usage_metadata` and `response_metadata` are emitted
+  as `model.usage` events when providers expose token, model, and provider
+  fields.
+
+This recorder does not synthesize cost or prompt/completion rendering. It only
+exports token/model fields that the LangChain message objects already expose.
+For richer Langfuse or AgentCore LLM evaluation dashboards, instrument the
+model-call layer or add upstream telemetry attributes before they reach the OTEL
+recorder.
+
+`otel` uses synchronous OpenTelemetry SDK exporters under the hood. `flush()`
+calls `force_flush(timeout_millis=...)`; the default timeout is `5000` ms.
+`close()` ends any open spans but does not force-flush or call provider shutdown
+by default, because provider shutdown can block on batch export during worker
+recycling or request teardown. Set `flush_on_close: true` or
+`shutdown_on_close: true` only in lifecycle code where that blocking behavior is
+acceptable, and prefer `Telemetry.aclose()` in async applications.
 
 ## Custom Recorders
 

@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 from unittest import mock
 from types import SimpleNamespace
 
@@ -76,6 +77,8 @@ class DummyTokenUsageStore(TokenUsageStore):
         *,
         user_id: str | None = None,
         context_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> TokenUsageSummary:
         return TokenUsageSummary()
 

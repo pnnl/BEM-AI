@@ -40,6 +40,20 @@ model:
 runtime:
   agent_type: langgraph-chat
   debug: false
+
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
 ```
 
 Create `run_agent.py`:
@@ -211,8 +225,38 @@ skills:
     hvac_sizing:
       path: ./skills/hvac_sizing.md
 
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+
 checkpointer:
-  type: default
+  type: redis_plain
+  redis_url: redis://localhost:6379
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
+
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+  max_content_chars: 4000
+  load_plugins: false
 
 budget:
   max_input_tokens: 12000
@@ -465,7 +509,29 @@ retriever:
 
 Optional object passed through to `AgentFactory(..., memory_config=...)`.
 
-The exact fields depend on the registered memory manager and store provider.
+The built-in memory store entry points include `default_sqlite` for SQLite and
+`default_chroma` for ChromaDB. Use SQLite for short-term memory and ChromaDB for
+long-term memory:
+
+```yaml
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./short_term_memory.sqlite
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term_chroma
+```
+
+Relative `store_config.db_path` values are resolved from the YAML file's
+directory. Custom memory stores can be registered through the
+`automa_ai.memory_stores` entry point group and referenced by `name`.
 
 ### `blackboard`
 
@@ -503,7 +569,46 @@ Redis examples:
 checkpointer:
   type: redis_plain
   redis_url: redis://localhost:6379
+  # redis_plain does not support ElastiCache cluster mode enabled.
+  # Use a single-shard Redis/Valkey target, such as cluster mode disabled
+  # with replicas.
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
 ```
+
+`redis_plain` uses Redis as a bounded hot-session cache. The supported
+plain-Redis-only fields are:
+
+- `checkpoint_ttl_seconds`: Idle TTL applied to checkpoint keys. Defaults to
+  `21600` seconds.
+- `max_checkpoints_per_thread`: Resume-friendly retention cap counted by
+  distinct LangGraph `metadata["step"]` groups. Defaults to `15`. This is not a
+  strict byte or raw checkpoint-record cap.
+- `refresh_ttl_on_read`: Refresh checkpoint TTLs during reads and list calls.
+  Defaults to `true`.
+- `socket_timeout`: Redis socket read/write timeout in seconds. Defaults to
+  `5.0`.
+- `socket_connect_timeout`: Redis connection timeout in seconds. Defaults to
+  `5.0`.
+- `health_check_interval`: Redis connection-pool health check interval in
+  seconds. Defaults to `30`.
+- `retry_on_timeout`: Ask redis-py to retry timeout errors. Defaults to `true`.
+
+For ElastiCache with in-transit encryption, use `rediss://...`. Keep AUTH
+tokens in deployment secrets rather than committed YAML. Advanced TLS CA or IAM
+auth flows should use a prebuilt Redis client in application code instead of
+only `redis_url`.
+
+`redis_plain` does not support Redis Cluster mode or ElastiCache cluster mode
+enabled. It touches multiple keys while expiring, pruning, and deleting a
+thread's checkpoints. Without Redis hash tags those keys can be assigned to
+different hash slots and raise `CROSSSLOT` errors. Deploy it on a single-shard
+Redis/Valkey target, such as ElastiCache cluster mode disabled with replicas.
 
 ### `budget`
 
@@ -523,7 +628,9 @@ model calls:
 - `max_model_calls_per_turn`: Maximum model calls allowed during one agent run.
 - `max_tool_calls_per_turn`: Maximum tool calls allowed during one agent run.
 - `max_session_tokens`: Maximum persisted total tokens for one AUTOMA context.
+- `session_token_window`: Optional time window for `max_session_tokens`.
 - `max_user_tokens`: Maximum persisted total tokens for one user.
+- `user_token_window`: Optional time window for `max_user_tokens`.
 - `summarize_when_tokens`: Enables LangChain summarization middleware when the
   message history reaches this approximate token count.
 - `keep_recent_messages`: Number of recent messages kept by summarization.
@@ -540,7 +647,13 @@ budget:
   max_model_calls_per_turn: 6
   max_tool_calls_per_turn: 10
   max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: America/Los_Angeles
   max_user_tokens: 500000
+  user_token_window:
+    period: calendar_month
+    timezone: America/Los_Angeles
   summarize_when_tokens: 10000
   keep_recent_messages: 20
   store:
@@ -565,6 +678,30 @@ budget:
     region_name: us-west-2
 ```
 
+Token windows are append-only filters over the usage ledger; usage rows are not
+deleted or reset. Supported `period` values are:
+
+- `lifetime`: Default behavior. Count all persisted usage for the scope.
+- `calendar_day`: Count usage from the current local day in `timezone`.
+- `calendar_month`: Count usage from the current local month in `timezone`.
+- `rolling`: Count usage from the last `rolling_seconds`.
+
+`timezone` must be an IANA timezone name, such as `UTC`,
+`America/Los_Angeles`, or `Europe/London`.
+
+```yaml
+budget:
+  max_session_tokens: 100000
+  session_token_window:
+    period: calendar_day
+    timezone: UTC
+  max_user_tokens: 500000
+  user_token_window:
+    period: rolling
+    rolling_seconds: 2592000
+    timezone: UTC
+```
+
 ### `telemetry`
 
 Optional object or string passed through to
@@ -584,9 +721,93 @@ telemetry:
   load_plugins: false
 ```
 
+OpenTelemetry export can be configured with the built-in `otel` recorder:
+
+```yaml
+telemetry:
+  enabled: true
+  recorder: otel
+  content_mode: metadata
+  service_name: automa-ai
+  environment: prod
+  options:
+    exporter: otlp_http
+    endpoint: https://cloud.langfuse.com/api/public/otel
+    flush_timeout_millis: 5000
+    shutdown_on_close: false
+    headers:
+      Authorization: Basic <base64-public-key-colon-secret-key>
+      x-langfuse-ingestion-version: "4"
+```
+
+The `otel` recorder preserves A2A trace stitching with OTEL-compatible trace and
+span ids. It maps agent and tool spans to basic GenAI semantic attributes and
+emits token/model metadata from final LangChain message objects when providers
+expose it. Cost and prompt/completion rendering are not synthesized.
+Telemetry recording is best-effort: recorder failures are logged and dropped so
+they do not fail agent requests.
+
 Relative JSONL `path` values are resolved from the YAML file's directory.
 See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
-AgentCore adapter example.
+OpenTelemetry/AgentCore adapter guidance.
+
+### `hooks`
+
+Optional object passed through to `AgentFactory(..., hook_config=...)`.
+
+Hooks configure the turn input pipeline for `GenericAgentType.LANGGRAPHCHAT`.
+By default, AUTOMA-AI still includes the built-in retrieval and memory context
+providers when those agent features are configured. Custom context providers are
+appended after those defaults. Set `include_default_context: false` to fully
+replace the context pipeline.
+
+Each custom component uses an import path in `module:ClassName` form. The class
+may expose `from_config(config)` or accept the `config` mapping as keyword
+arguments.
+
+```yaml
+hooks:
+  include_default_context: true
+  turn_hooks:
+    - impl: ce_backend.resume:ResumeAwareTurnHook
+      config:
+        table_name: permit-session-manifest
+  context_providers:
+    - impl: ce_backend.resume:ResumeContextProvider
+      config:
+        redis_url: redis://localhost:6379
+  input_assembler:
+    impl: ce_backend.context:PermitInputAssembler
+    config:
+      max_context_chars: 12000
+```
+
+Use `turn_hooks` for lifecycle behavior that may mutate request content or
+metadata, such as request normalization or resume detection. `before_turn` hooks
+must not mutate `context_id`; the runtime rejects that because the context id is
+the checkpoint, blackboard, and session identity for the turn. Use
+`context_providers` for context engineering blocks such as durable resume state,
+user profile, or domain state. Use `input_assembler` only when the default
+system-context plus user-message shape is not enough. `after_turn` hooks receive
+a stable `TurnResult` object for both `invoke()` and `stream()`, with `mode`,
+`status`, `content`, `artifact_content`, `degraded`, `missing_providers`, and
+optional path-specific details such as `raw_response` or `final_output`.
+
+For LangGraph chat agents, runtime setup happens in this order:
+
+1. Ensure the session blackboard exists and initialize the graph.
+2. Run `before_turn` hooks.
+3. Reject the turn if a hook changed `context_id`.
+4. Run context providers and assemble inputs.
+5. Invoke or stream the graph.
+
+Individual context-provider failures are degraded: the provider failure is
+logged at warning level, emitted as a telemetry event named
+`context_provider.failed`, and the turn continues without that context block.
+The final `TurnResult` is marked with `degraded: true` and the failed provider
+names in `missing_providers` so callers and evals can distinguish a full-context
+answer from one generated with missing retrieval or memory context. `before_turn`
+and input assembly failures still abort the turn and trigger `on_turn_error`.
 
 ## Troubleshooting
 

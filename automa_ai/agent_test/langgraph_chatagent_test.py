@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from automa_ai.agents.langgraph_chatagent import (
     GenericLangGraphChatAgent,
@@ -14,6 +14,7 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_START,
     ARTIFACT_END,
 )
+from automa_ai.hook import ContextPipeline, HookRunner, TurnResult
 from automa_ai.telemetry import current_span_id, current_trace_id
 from automa_ai.token_management import TokenBudgetExceededError
 
@@ -40,11 +41,41 @@ class DummyMemoryManager:
         return None
 
 
+class RecordingAfterTurnHook:
+    def __init__(self) -> None:
+        self.result = None
+        self.error = None
+
+    async def after_turn(self, turn, result):
+        self.result = result
+
+    async def on_turn_error(self, turn, error):
+        self.error = type(error).__name__
+
+
+class FailingAfterTurnHook:
+    def __init__(self) -> None:
+        self.error = None
+
+    async def after_turn(self, turn, result):
+        raise RuntimeError("after failed")
+
+    async def on_turn_error(self, turn, error):
+        self.error = type(error).__name__
+
+
+class FailingContextProvider:
+    async def collect(self, turn):
+        raise RuntimeError("context failed")
+
+
 def build_agent(
     *,
     retriever=None,
     memory_manager=None,
     telemetry_config=None,
+    hook_runner=None,
+    context_pipeline=None,
 ) -> GenericLangGraphChatAgent:
     return GenericLangGraphChatAgent(
         agent_name="test-agent",
@@ -55,6 +86,8 @@ def build_agent(
         retriever=retriever,
         memory_manager=memory_manager,
         telemetry_config=telemetry_config,
+        hook_runner=hook_runner,
+        context_pipeline=context_pipeline,
     )
 
 
@@ -87,6 +120,43 @@ def test_agent_close_runs_checkpointer_cleanup_once():
     agent.close()
 
     assert calls == ["closed"]
+
+
+@pytest.mark.asyncio
+async def test_agent_aclose_runs_telemetry_cleanup_once():
+    calls: list[str] = []
+
+    class DummyTelemetry:
+        enabled = True
+
+        def close(self):
+            calls.append("telemetry-close")
+
+        async def aflush(self):
+            calls.append("telemetry-aflush")
+
+        async def aclose(self):
+            calls.append("telemetry-aclose")
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        checkpointer_cleanup=lambda: calls.append("checkpointer-close"),
+    )
+    agent.telemetry = DummyTelemetry()
+
+    await agent.aclose()
+    await agent.aclose()
+    agent.close()
+
+    assert calls == [
+        "checkpointer-close",
+        "telemetry-aflush",
+        "telemetry-aclose",
+    ]
 
 
 def test_load_skill_tool_response_is_never_streamed():
@@ -129,6 +199,147 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
             "automa_context_id": "session-1",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_invoke_after_turn_receives_common_turn_result():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"messages": [AIMessageChunk(content="invoke output")]}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    await agent.invoke("hello", "session-1")
+
+    assert isinstance(hook.result, TurnResult)
+    assert hook.result.mode == "invoke"
+    assert hook.result.content == "invoke output"
+    assert hook.result.raw_response["messages"][0].content == "invoke output"
+
+
+@pytest.mark.asyncio
+async def test_invoke_after_turn_failure_preserves_response():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"ok": True}
+
+    hook = FailingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke("hello", "session-1")
+
+    assert result == {"ok": True}
+    assert hook.error is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_context_provider_failure_degrades_with_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {"messages": [AIMessageChunk(content="ok")]}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        context_pipeline=ContextPipeline([FailingContextProvider()]),
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    result = await agent.invoke("hello", "session-1")
+
+    assert result["messages"][0].content == "ok"
+    assert hook.result.degraded is True
+    assert hook.result.missing_providers == ["FailingContextProvider"]
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(
+        record for record in records if record.get("name") == "context_provider.failed"
+    )
+    assert event["attributes"]["context.provider"] == "FailingContextProvider"
+    assert event["attributes"]["exception.type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_invoke_records_model_usage_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            return {
+                "messages": [
+                    AIMessage(
+                        content="ok",
+                        usage_metadata={
+                            "input_tokens": 11,
+                            "output_tokens": 4,
+                            "total_tokens": 15,
+                        },
+                        response_metadata={
+                            "model": "gpt-4o",
+                            "model_provider": "openai",
+                            "finish_reason": "stop",
+                        },
+                    )
+                ]
+            }
+
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    await agent.invoke("hello", "session-1", task_id="task-1", user_id="user-1")
+
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(record for record in records if record.get("name") == "model.usage")
+    assert event["attributes"]["model.name"] == "gpt-4o"
+    assert event["attributes"]["model.provider"] == "openai"
+    assert event["attributes"]["model.finish_reason"] == "stop"
+    assert event["attributes"]["model.usage.input_tokens"] == 11
+    assert event["attributes"]["model.usage.output_tokens"] == 4
+    assert event["attributes"]["model.usage.total_tokens"] == 15
+    assert event["attributes"]["session.id"] == "session-1"
+    assert event["attributes"]["task.id"] == "task-1"
+    assert event["attributes"]["user.id"] == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_invoke_does_not_run_error_hook_on_cancellation():
+    class DummyGraph:
+        async def ainvoke(self, payload, config):
+            raise asyncio.CancelledError()
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    with pytest.raises(asyncio.CancelledError):
+        await agent.invoke("hello", "session-1")
+
+    assert hook.error is None
 
 
 @pytest.mark.asyncio
@@ -185,9 +396,13 @@ async def test_invoke_records_agent_turn_telemetry(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_build_stream_inputs_includes_context_and_memory():
+async def test_turn_input_builder_includes_context_and_memory():
     agent = build_agent(retriever=DummyRetriever(), memory_manager=DummyMemoryManager())
-    inputs = await agent._build_stream_inputs("hello", "session-1")
+    turn_inputs = await agent.turn_input_builder.build_inputs(
+        query="hello",
+        context_id="session-1",
+    )
+    inputs = turn_inputs.inputs
 
     system_content = inputs["messages"][0]["content"]
     assert "retrieved context" in system_content
@@ -269,7 +484,7 @@ async def test_stream_cancelled_during_setup_closes_span_as_error(tmp_path):
     async def raise_cancelled(*args, **kwargs):
         raise asyncio.CancelledError()
 
-    agent._build_stream_inputs = raise_cancelled
+    agent.turn_input_builder.build_inputs = raise_cancelled
 
     with pytest.raises(asyncio.CancelledError):
         async for _ in agent.stream("hello", "session-1", "task-1"):
@@ -321,6 +536,101 @@ async def test_stream_generator_exit_closes_span_as_ok(tmp_path):
     assert any(record.get("name") == "stream.closed" for record in records)
     assert current_trace_id() is None
     assert current_span_id() is None
+
+
+@pytest.mark.asyncio
+async def test_stream_after_turn_receives_compact_final_result():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(content="world"), {}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello world"
+    assert isinstance(hook.result, TurnResult)
+    assert hook.result.mode == "stream"
+    assert hook.result.content == "hello world"
+    assert hook.result.artifact_content == ""
+    assert hook.result.status == "completed"
+    assert hook.result.degraded is False
+    assert hook.result.missing_providers == []
+
+
+@pytest.mark.asyncio
+async def test_stream_incomplete_forwarder_skips_after_turn_and_emits_telemetry(
+    tmp_path,
+):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            raise asyncio.CancelledError()
+            yield
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items == []
+    assert hook.result is None
+    assert hook.error is None
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(record.get("name") == "stream.incomplete" for record in records)
+
+
+@pytest.mark.asyncio
+async def test_stream_context_provider_failure_marks_turn_result_degraded():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello"), {}
+
+    hook = RecordingAfterTurnHook()
+    agent = build_agent(
+        hook_runner=HookRunner([hook]),
+        context_pipeline=ContextPipeline([FailingContextProvider()]),
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello"
+    assert hook.result.degraded is True
+    assert hook.result.missing_providers == ["FailingContextProvider"]
+
+
+@pytest.mark.asyncio
+async def test_stream_after_turn_failure_does_not_emit_error():
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello"), {}
+
+    hook = FailingAfterTurnHook()
+    agent = build_agent(hook_runner=HookRunner([hook]))
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello"
+    assert hook.error is None
 
 
 @pytest.mark.asyncio
@@ -429,6 +739,54 @@ async def test_stream_filters_bedrock_list_artifact_content():
     assert items[-1]["response_type"] == "data"
     assert items[-1]["content"] == {"foo": "bar"}
     assert items[-1]["additional_artifacts"][0]["content"] == "Summary"
+
+
+@pytest.mark.asyncio
+async def test_stream_records_model_usage_telemetry(tmp_path):
+    telemetry_path = tmp_path / "telemetry.jsonl"
+
+    class DummyGraph:
+        async def astream(self, inputs, config, stream_mode="messages"):
+            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(
+                content="world",
+                usage_metadata={
+                    "input_tokens": 7,
+                    "output_tokens": 3,
+                    "total_tokens": 10,
+                },
+                response_metadata={
+                    "model": "claude-3-5-sonnet",
+                    "model_provider": "anthropic",
+                    "stop_reason": "end_turn",
+                },
+            ), {}
+
+    agent = build_agent(
+        telemetry_config={
+            "enabled": True,
+            "recorder": "jsonl",
+            "path": str(telemetry_path),
+            "content_mode": "metadata",
+        },
+    )
+    agent.graph = DummyGraph()
+
+    items = [item async for item in agent.stream("hello", "session-1", "task-1")]
+
+    assert items[-1]["content"] == "hello world"
+    agent.telemetry.flush()
+    records = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event = next(record for record in records if record.get("name") == "model.usage")
+    assert event["attributes"]["model.name"] == "claude-3-5-sonnet"
+    assert event["attributes"]["model.provider"] == "anthropic"
+    assert event["attributes"]["model.finish_reason"] == "end_turn"
+    assert event["attributes"]["model.usage.input_tokens"] == 7
+    assert event["attributes"]["model.usage.output_tokens"] == 3
+    assert event["attributes"]["model.usage.total_tokens"] == 10
 
 
 @pytest.mark.asyncio

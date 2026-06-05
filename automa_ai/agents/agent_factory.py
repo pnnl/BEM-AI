@@ -27,6 +27,7 @@ from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.retrieval import RetrieverProviderSpec, resolve_retriever
 from automa_ai.common.utils import (
     map_mcp_config_to_server_config,
+    load_memory_store_plugins,
     load_token_usage_store_plugins,
     load_tool_plugins,
 )
@@ -39,6 +40,13 @@ from automa_ai.config.token_budget import TokenBudgetConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
 from automa_ai.checkpoint import PlainRedisSaver
+from automa_ai.hook import (
+    ContextPipeline,
+    HookRunner,
+    InputAssembler,
+    TurnInputBuilder,
+    build_turn_input_builder_from_config,
+)
 from automa_ai.token_management.store import create_token_usage_store
 
 logger = logging.getLogger(__name__)
@@ -183,7 +191,18 @@ def _build_checkpointer(
         return checkpointer, None
 
     if resolved.type == "redis_plain":
-        checkpointer = PlainRedisSaver(redis_url=resolved.redis_url)
+        # PlainRedisSaver owns hot-session cache lifecycle; durable resume state
+        # should live in the application layer, not in Redis checkpoints.
+        checkpointer = PlainRedisSaver(
+            redis_url=resolved.redis_url,
+            checkpoint_ttl_seconds=resolved.checkpoint_ttl_seconds,
+            max_checkpoints_per_thread=resolved.max_checkpoints_per_thread,
+            refresh_ttl_on_read=resolved.refresh_ttl_on_read,
+            socket_timeout=resolved.socket_timeout,
+            socket_connect_timeout=resolved.socket_connect_timeout,
+            health_check_interval=resolved.health_check_interval,
+            retry_on_timeout=resolved.retry_on_timeout,
+        )
         try:
             checkpointer.setup()
         except Exception:
@@ -286,6 +305,11 @@ class AgentFactory:
         checkpointer_config: CheckpointerConfig | Dict[str, Any] | str | None = None,
         budget_config: TokenBudgetConfig | Dict[str, Any] | None = None,
         telemetry_config: TelemetryConfig | Dict[str, Any] | str | None = None,
+        hook_config: Dict[str, Any] | None = None,
+        hook_runner: HookRunner | None = None,
+        context_pipeline: ContextPipeline | None = None,
+        input_assembler: InputAssembler | None = None,
+        turn_input_builder: TurnInputBuilder | None = None,
         model_base_url: str | None = None,
         api_key: str | None = None,
         api_version: str | None = None,
@@ -316,6 +340,11 @@ class AgentFactory:
         self.checkpointer_config = checkpointer_config
         self.budget_config = budget_config
         self.telemetry_config = telemetry_config
+        self.hook_config = hook_config
+        self.hook_runner = hook_runner
+        self.context_pipeline = context_pipeline
+        self.input_assembler = input_assembler
+        self.turn_input_builder = turn_input_builder
         self.model_base_url = model_base_url
         self.api_key = api_key
         self.api_version = api_version
@@ -358,6 +387,7 @@ class AgentFactory:
         # Resolve memories
         memory_manager = None
         if self.memory_config:
+            load_memory_store_plugins()
             memory_manager = DefaultMemoryManager.from_config(self.memory_config)
 
         skill_manager = None
@@ -464,6 +494,23 @@ class AgentFactory:
             checkpointer, checkpointer_cleanup = _build_checkpointer(
                 self.checkpointer_config
             )
+            resolved_retriever = (
+                resolve_retriever(self.retriever_spec)
+                if self.retriever_spec
+                else None
+            )
+            turn_input_builder = self.turn_input_builder or (
+                build_turn_input_builder_from_config(
+                    self.hook_config,
+                    retriever=resolved_retriever,
+                    memory_manager=memory_manager,
+                    hook_runner=self.hook_runner,
+                    context_pipeline=self.context_pipeline,
+                    input_assembler=self.input_assembler,
+                    logger=logger,
+                    debug=self.debug,
+                )
+            )
             return GenericLangGraphChatAgent(
                 agent_name=card.name,
                 description=card.description,
@@ -471,11 +518,7 @@ class AgentFactory:
                 response_format=self.response_format,
                 chat_model=chat_model,
                 mcp_servers=mcp_servers,
-                retriever=(
-                    resolve_retriever(self.retriever_spec)
-                    if self.retriever_spec
-                    else None
-                ),
+                retriever=resolved_retriever,
                 subagents=self.subagent_config if self.subagent_config else None,
                 skills_manager=skill_manager,
                 default_tools=built_tool_specs,
@@ -491,6 +534,7 @@ class AgentFactory:
                 budget_config=budget_config,
                 token_usage_store=token_usage_store,
                 telemetry_config=self.telemetry_config,
+                turn_input_builder=turn_input_builder,
                 debug=self.debug,
             )
 

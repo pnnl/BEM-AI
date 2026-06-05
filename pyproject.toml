@@ -1,6 +1,6 @@
 [project]
 name = "automa_ai"
-version = "0.6.8"
+version = "0.7.0"
 description = "PNNL Auto Multi-Agent AI: Dynamic multi-agent system for building applications"
 requires-python = ">=3.12"
 authors = [{name = "Weili Xu", email = "weili.xu@pnnl.gov"}, {name = "Hanlong, Wan", email = "hanlong.wan@pnnl.gov"}]
@@ -56,6 +56,11 @@ sim_bem_network = ["openstudio>=3.10.0", "streamlit>=1.51.0"]
 sim_chat_demo = ["streamlit>=1.51.0"]
 sim_chat_stream_demo = ["streamlit>=1.51.0"]
 eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0"]
+otel = [
+    "opentelemetry-sdk>=1.38.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.38.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.38.0",
+]
 
 [tool.uv]
 dev-dependencies = [
