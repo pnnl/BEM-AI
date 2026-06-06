@@ -21,12 +21,20 @@ from automa_ai.telemetry import (
     wrap_langchain_tool,
 )
 from automa_ai.telemetry import otel as otel_module
+from automa_ai.telemetry import otel_encoder
 from automa_ai.telemetry import registry as telemetry_registry
 from automa_ai.telemetry.recorders import JsonlRecorder
+from automa_ai.telemetry.records import (
+    EventRecord,
+    SpanKind,
+    SpanStartRecord,
+    parse_telemetry_record,
+)
 
 otel_exporter = pytest.importorskip(
     "opentelemetry.sdk.trace.export.in_memory_span_exporter"
 )
+otel_trace = pytest.importorskip("opentelemetry.trace")
 InMemorySpanExporter = otel_exporter.InMemorySpanExporter
 
 
@@ -270,6 +278,41 @@ def test_custom_recorder_registry_builds_registered_recorder(tmp_path) -> None:
     assert "test_custom_agentcore" in list_telemetry_recorders()
 
 
+def test_parse_telemetry_record_models_distinct_shapes_leniently() -> None:
+    start = parse_telemetry_record(
+        {
+            "type": "span_start",
+            "trace_id": "trace",
+            "span_id": "span",
+            "parent_span_id": "parent",
+            "name": "agent.turn",
+            "kind": "unexpected-kind",
+            "timestamp": "2026-01-01T00:00:00.000000000Z",
+            "attributes": {"agent.name": "demo"},
+        }
+    )
+    event = parse_telemetry_record(
+        {
+            "type": "event",
+            "trace_id": "trace",
+            "span_id": None,
+            "name": "message",
+            "timestamp": "2026-01-01T00:00:00.000000000Z",
+            "attributes": {"content": "hello"},
+            "kind": "ignored",
+        }
+    )
+
+    assert isinstance(start, SpanStartRecord)
+    assert start.kind is SpanKind.INTERNAL
+    assert start.parent_span_id == "parent"
+    assert isinstance(event, EventRecord)
+    assert event.span_id is None
+    assert not hasattr(event, "kind")
+    assert parse_telemetry_record({"type": "future_record"}) is None
+    assert parse_telemetry_record(None) is None
+
+
 def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     exporter = InMemorySpanExporter()
     monkeypatch.setattr(
@@ -317,7 +360,7 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     assert tool_span.attributes["gen_ai.operation.name"] == "execute_tool"
     assert tool_span.attributes["gen_ai.tool.name"] == "demo_tool"
     assert agent_span.attributes["gen_ai.operation.name"] == "invoke_agent"
-    assert agent_span.attributes["gen_ai.provider.name"] == "automa_ai"
+    assert agent_span.attributes["gen_ai.provider.name"] == "openai"
     assert (
         agent_span.attributes["automa.span_id"] == f"{agent_span.context.span_id:016x}"
     )
@@ -336,7 +379,11 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     assert agent_span.events[1].attributes["gen_ai.provider.name"] == "openai"
     assert agent_span.events[1].attributes["gen_ai.usage.input_tokens"] == 11
     assert agent_span.events[1].attributes["gen_ai.usage.output_tokens"] == 4
+    assert agent_span.events[1].attributes["gen_ai.usage.total_tokens"] == 15
     assert agent_span.events[1].attributes["model.usage.total_tokens"] == 15
+    assert agent_span.attributes["gen_ai.usage.input_tokens"] == 11
+    assert agent_span.attributes["gen_ai.usage.output_tokens"] == 4
+    assert agent_span.attributes["gen_ai.usage.total_tokens"] == 15
     assert agent_span.resource.attributes["service.name"] == "test-service"
 
 
@@ -389,22 +436,94 @@ def test_otel_recorder_uses_remote_parent_without_truncating_ids(monkeypatch) ->
     assert span.context.trace_id == int(trace_id, 16)
     assert span.context.span_id == int(span_id, 16)
     assert span.parent.span_id == int(parent_span_id, 16)
-    assert otel_module._span_id_to_int("4" * 32) is None
+    assert otel_encoder._span_id_to_int("4" * 32) is None
+
+
+def test_otel_recorder_sets_current_span_context_in_caller_task(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "options": {"processor": "simple"},
+        }
+    )
+
+    with telemetry.span("agent.turn") as parent:
+        # This is the invariant that must hold for auto-instrumented libraries:
+        # record() attaches the AUTOMA span in the same task running the work.
+        current_parent = otel_trace.get_current_span().get_span_context()
+        assert current_parent.trace_id == int(parent.trace_id, 16)
+        assert current_parent.span_id == int(parent.span_id, 16)
+
+        with telemetry.span("tool.call") as child:
+            current_child = otel_trace.get_current_span().get_span_context()
+            assert current_child.trace_id == int(child.trace_id, 16)
+            assert current_child.span_id == int(child.span_id, 16)
+
+        restored_parent = otel_trace.get_current_span().get_span_context()
+        assert restored_parent.span_id == int(parent.span_id, 16)
+
+    assert not otel_trace.get_current_span().get_span_context().is_valid
+
+
+@pytest.mark.asyncio
+async def test_otel_recorder_isolates_concurrent_task_current_spans(
+    monkeypatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "options": {"processor": "simple"},
+        }
+    )
+
+    async def run_tool(tool_name: str) -> tuple[str, str, str, str]:
+        with telemetry.span("tool.call", attributes={"tool.name": tool_name}) as scope:
+            start_context = otel_trace.get_current_span().get_span_context()
+            await asyncio.sleep(0)
+            resumed_context = otel_trace.get_current_span().get_span_context()
+            return (
+                tool_name,
+                scope.span_id,
+                f"{start_context.span_id:016x}",
+                f"{resumed_context.span_id:016x}",
+            )
+
+    results = await asyncio.gather(run_tool("tool_a"), run_tool("tool_b"))
+
+    assert {item[0] for item in results} == {"tool_a", "tool_b"}
+    for _tool_name, span_id, start_span_id, resumed_span_id in results:
+        assert start_span_id == span_id
+        assert resumed_span_id == span_id
+    assert not otel_trace.get_current_span().get_span_context().is_valid
 
 
 def test_otel_timestamp_parser_preserves_nanoseconds() -> None:
     assert (
-        otel_module._timestamp_ns("2026-01-01T00:00:00.123456789Z")
+        otel_encoder.timestamp_ns("2026-01-01T00:00:00.123456789Z")
         == 1_767_225_600_123_456_789
     )
     assert (
-        otel_module._timestamp_ns("2026-01-01T00:00:00.1Z") == 1_767_225_600_100_000_000
+        otel_encoder.timestamp_ns("2026-01-01T00:00:00.1Z") == 1_767_225_600_100_000_000
     )
     assert (
-        otel_module._timestamp_ns("2026-01-01T00:00:00.123456789+01:00")
+        otel_encoder.timestamp_ns("2026-01-01T00:00:00.123456789+01:00")
         == 1_767_222_000_123_456_789
     )
-    assert otel_module._timestamp_ns("not-a-timestamp") is None
+    assert otel_encoder.timestamp_ns("not-a-timestamp") is None
 
 
 def test_otel_recorder_flush_is_bounded_and_shutdown_is_opt_in() -> None:

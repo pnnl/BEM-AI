@@ -77,9 +77,7 @@ class GenericAgentExecutor(AgentExecutor):
             await updater.update_status(state, message)
             return True
         except Exception as exc:
-            self.logger.warning(
-                f"Failed to publish status '{state}' update: {exc}"
-            )
+            self.logger.warning(f"Failed to publish status '{state}' update: {exc}")
             return False
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -110,9 +108,7 @@ class GenericAgentExecutor(AgentExecutor):
         terminal_state_reached = False
 
         user_id = (
-            metadata.get("user_id") or metadata.get("userId")
-            if metadata
-            else None
+            metadata.get("user_id") or metadata.get("userId") if metadata else None
         )
 
         async for item in self.agent.stream(
@@ -159,12 +155,12 @@ class GenericAgentExecutor(AgentExecutor):
                 )
                 continue
 
-            self.logger.info(f"Received the item: {item}")
+            self.logger.debug("Received stream item: %s", item)
             is_task_complete = item["is_task_complete"]
             require_user_input = item["require_user_input"]
 
             if is_task_complete:
-                self.logger.info(
+                self.logger.debug(
                     f"{os.getpid()}: Completing with content: {item['content']}"
                 )
                 if item["response_type"] == "data":
@@ -202,7 +198,7 @@ class GenericAgentExecutor(AgentExecutor):
                 break
 
             if item["content"] != last_text_sent:
-                self.logger.info(f"Continue updates: {item['content']}")
+                self.logger.debug("Continue updates: %s", item["content"])
                 status_published = await self._safe_publish_status(
                     updater=updater,
                     state=TaskState.TASK_STATE_WORKING,
