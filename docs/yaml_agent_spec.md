@@ -747,6 +747,13 @@ expose it. Cost and prompt/completion rendering are not synthesized.
 Telemetry recording is best-effort: recorder failures are logged and dropped so
 they do not fail agent requests.
 
+Keep OTEL recording synchronous in the agent/tool execution context. The recorder
+uses OpenTelemetry context attachment so auto-instrumented libraries can inherit
+the current AUTOMA span. Do not move OTEL `record()` behind a background queue or
+worker thread, or downstream spans may stop appearing under `agent.turn` and
+`tool.call`. Concurrent tool calls are supported only when each span starts,
+runs, and ends inside its own asyncio task/thread context.
+
 Relative JSONL `path` values are resolved from the YAML file's directory.
 See `docs/telemetry.md` for privacy modes, custom recorder registration, and an
 OpenTelemetry/AgentCore adapter guidance.

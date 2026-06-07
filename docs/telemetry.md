@@ -162,6 +162,16 @@ recycling or request teardown. Set `flush_on_close: true` or
 `shutdown_on_close: true` only in lifecycle code where that blocking behavior is
 acceptable, and prefer `Telemetry.aclose()` in async applications.
 
+Do not move OTEL `record()` calls behind a background queue or worker thread.
+The recorder intentionally runs synchronously in the caller's thread/task so
+`trace.use_span(...)` attaches the AUTOMA span to the same OpenTelemetry context
+that auto-instrumented libraries such as `httpx`, `requests`, `botocore`, and
+model SDKs read from. If span start/end recording happens in a different worker
+context than the tool/model call, those auto-instrumented child spans will not
+inherit the AUTOMA `agent.turn` or `tool.call` parent span. Concurrent tool
+calls are supported when each span starts, runs, and ends inside its own asyncio
+task/thread context; do not start a span in one task and end it in another.
+
 ## Custom Recorders
 
 A recorder implements three methods:
