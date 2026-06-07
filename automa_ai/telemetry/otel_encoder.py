@@ -176,6 +176,8 @@ def timestamp_ns(value: Any) -> int | None:
     tz = match.group("tz") or "+00:00"
     if tz == "Z":
         tz = "+00:00"
+    elif len(tz) == 5 and tz[0] in "+-" and ":" not in tz:
+        tz = f"{tz[:3]}:{tz[3:]}"
     text = f"{match.group('base')}{tz}"
     fraction = match.group("fraction") or ""
     try:
