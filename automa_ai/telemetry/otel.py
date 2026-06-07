@@ -102,10 +102,11 @@ class OpenTelemetryRecorder:
                 return
             for span_id in reversed(list(self._spans)):
                 scope = self._span_scopes.pop(span_id, None)
-                if scope is not None:
-                    scope.__exit__(None, None, None)
                 span = self._spans[span_id]
-                span.end()
+                try:
+                    self._exit_scope(scope)
+                finally:
+                    span.end()
             self._spans.clear()
             self._closed = True
         if self._flush_on_close:
@@ -145,14 +146,15 @@ class OpenTelemetryRecorder:
             self._record_orphan_span_end(record, encoded)
             return
 
-        if encoded.attributes:
-            span.set_attributes(encoded.attributes)
-        if encoded.status is not None:
-            span.set_status(encoded.status)
         scope = self._span_scopes.pop(encoded.span_id or "", None)
-        if scope is not None:
-            scope.__exit__(None, None, None)
-        span.end(end_time=encoded.end_time)
+        try:
+            if encoded.attributes:
+                span.set_attributes(encoded.attributes)
+            if encoded.status is not None:
+                span.set_status(encoded.status)
+            self._exit_scope(scope)
+        finally:
+            span.end(end_time=encoded.end_time)
 
     def _record_event(self, record: EventRecord) -> None:
         encoded = encode_event(record)
@@ -202,6 +204,15 @@ class OpenTelemetryRecorder:
             start_time=timestamp_ns(record.timestamp),
         )
         span.end(end_time=timestamp_ns(record.timestamp))
+
+    @staticmethod
+    def _exit_scope(scope: Any | None) -> None:
+        if scope is None:
+            return
+        try:
+            scope.__exit__(None, None, None)
+        except Exception:
+            logger.debug("OTEL scope exit from foreign context.", exc_info=True)
 
 
 def build_otel_recorder(

@@ -472,6 +472,96 @@ def test_otel_recorder_sets_current_span_context_in_caller_task(monkeypatch) -> 
     assert not otel_trace.get_current_span().get_span_context().is_valid
 
 
+def test_otel_recorder_ends_span_when_scope_exits_from_foreign_context(
+    monkeypatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "options": {"processor": "simple"},
+        }
+    )
+    trace_id = "1" * 32
+    span_id = "2" * 16
+
+    start_record = {
+        "type": "span_start",
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "parent_span_id": None,
+        "name": "agent.turn",
+        "kind": "server",
+        "timestamp": "2026-01-01T00:00:00.000000000Z",
+        "attributes": {},
+    }
+    end_record = {
+        "type": "span_end",
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "parent_span_id": None,
+        "name": "agent.turn",
+        "kind": "server",
+        "timestamp": "2026-01-01T00:00:00.100000000Z",
+        "status": "ok",
+        "attributes": {},
+    }
+
+    contextvars.Context().run(telemetry.recorder.record, start_record)
+    telemetry.recorder.record(end_record)
+    telemetry.flush()
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].context.trace_id == int(trace_id, 16)
+    assert spans[0].context.span_id == int(span_id, 16)
+    assert spans[0].status.status_code.name == "OK"
+
+
+def test_otel_recorder_close_ends_all_spans_with_foreign_scope_contexts(
+    monkeypatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "options": {"processor": "simple"},
+        }
+    )
+
+    for value in ("2", "3"):
+        contextvars.Context().run(
+            telemetry.recorder.record,
+            {
+                "type": "span_start",
+                "trace_id": "1" * 32,
+                "span_id": value * 16,
+                "parent_span_id": None,
+                "name": f"span-{value}",
+                "kind": "internal",
+                "timestamp": "2026-01-01T00:00:00.000000000Z",
+                "attributes": {},
+            },
+        )
+
+    telemetry.close()
+
+    spans = exporter.get_finished_spans()
+    assert {span.name for span in spans} == {"span-2", "span-3"}
+
+
 @pytest.mark.asyncio
 async def test_otel_recorder_isolates_concurrent_task_current_spans(
     monkeypatch,
