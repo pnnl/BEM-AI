@@ -2,27 +2,44 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-import json
 import logging
-import re
 import threading
 from pathlib import Path
 from typing import Any
 
 from automa_ai.config.telemetry import TelemetryConfig
+from automa_ai.telemetry.otel_encoder import (
+    encode_event,
+    encode_span_end,
+    encode_span_start,
+    otel_attributes,
+    orphan_span_attributes,
+    parent_context,
+    span_kind_to_otel,
+    timestamp_ns,
+)
 from automa_ai.telemetry.recorders import TelemetryRecorder
+from automa_ai.telemetry.records import (
+    EventRecord,
+    SpanEndRecord,
+    SpanStartRecord,
+    SpanStatus,
+    parse_telemetry_record,
+)
 
 logger = logging.getLogger(__name__)
-_ISO_TIMESTAMP_PATTERN = re.compile(
-    r"^(?P<base>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})"
-    r"(?:\.(?P<fraction>\d+))?"
-    r"(?P<tz>Z|[+-]\d{2}:?\d{2})?$"
-)
 
 
 class OpenTelemetryRecorder:
-    """Translate AUTOMA trace/span/event records into OpenTelemetry spans."""
+    """Translate AUTOMA trace/span/event records into OpenTelemetry spans.
+
+    Important context invariant: recording must stay synchronous on the caller's
+    thread/task. The recorder attaches started spans to OpenTelemetry's current
+    context with ``trace.use_span(...)`` so auto-instrumented work inside the
+    agent or tool sees the AUTOMA span as its parent. Moving record() onto a
+    background queue/thread would attach the span in the worker context instead,
+    breaking parent-child correlation for libraries such as httpx or botocore.
+    """
 
     def __init__(
         self,
@@ -37,6 +54,7 @@ class OpenTelemetryRecorder:
         self._lock = threading.Lock()
         self._closed = False
         self._spans: dict[str, Any] = {}
+        self._span_scopes: dict[str, Any] = {}
         options = config.options or {}
         self._flush_timeout_millis = int(
             options.get("flush_timeout_millis", options.get("timeout_millis", 5000))
@@ -63,13 +81,15 @@ class OpenTelemetryRecorder:
                     "Dropping telemetry item because OpenTelemetry recorder is closed."
                 )
                 return
-            item_type = item.get("type")
-            if item_type == "span_start":
-                self._record_span_start(item)
-            elif item_type == "span_end":
-                self._record_span_end(item)
-            elif item_type == "event":
-                self._record_event(item)
+            record = parse_telemetry_record(item)
+            if record is None:
+                return
+            if isinstance(record, EventRecord):
+                self._record_event(record)
+            elif isinstance(record, SpanEndRecord):
+                self._record_span_end(record)
+            else:
+                self._record_span_start(record)
 
     def flush(self) -> None:
         force_flush = getattr(self._provider, "force_flush", None)
@@ -80,8 +100,13 @@ class OpenTelemetryRecorder:
         with self._lock:
             if self._closed:
                 return
-            for span in list(self._spans.values()):
-                span.end()
+            for span_id in reversed(list(self._spans)):
+                scope = self._span_scopes.pop(span_id, None)
+                span = self._spans[span_id]
+                try:
+                    self._exit_scope(scope)
+                finally:
+                    span.end()
             self._spans.clear()
             self._closed = True
         if self._flush_on_close:
@@ -90,136 +115,104 @@ class OpenTelemetryRecorder:
         if self._shutdown_on_close and callable(shutdown):
             shutdown()
 
-    def _record_span_start(self, item: dict[str, Any]) -> None:
-        span_id = str(item.get("span_id") or "")
-        if not span_id:
+    def _record_span_start(self, record: SpanStartRecord) -> None:
+        encoded = encode_span_start(
+            record,
+            otel=self._otel,
+            active_spans=self._spans,
+        )
+        if encoded is None:
             return
-        semantic_attributes = _semantic_attributes(
-            str(item.get("name") or ""),
-            dict(item.get("attributes") or {}),
-        )
-        attributes = _otel_attributes(
-            {
-                **semantic_attributes,
-                "automa.trace_id": item.get("trace_id"),
-                "automa.span_id": span_id,
-                "automa.parent_span_id": item.get("parent_span_id"),
-            }
-        )
-        trace_id = _trace_id_to_int(item.get("trace_id"))
-        otel_span_id = _span_id_to_int(span_id)
-        with self._id_generator.use(trace_id=trace_id, span_id=otel_span_id):
+        with self._id_generator.use(
+            trace_id=encoded.trace_id,
+            span_id=encoded.otel_span_id,
+        ):
             span = self._tracer.start_span(
-                _span_name(str(item.get("name") or "automa.span"), semantic_attributes),
-                context=self._parent_context(item),
-                kind=_span_kind(str(item.get("kind") or "internal"), self._otel),
-                attributes=attributes,
-                start_time=_timestamp_ns(item.get("timestamp")),
+                encoded.name,
+                context=encoded.context,
+                kind=encoded.kind,
+                attributes=encoded.attributes,
+                start_time=encoded.start_time,
             )
-        self._spans[span_id] = span
+        scope = self._otel.trace.use_span(span, end_on_exit=False)
+        scope.__enter__()
+        self._span_scopes[encoded.span_id] = scope
+        self._spans[encoded.span_id] = span
 
-    def _record_span_end(self, item: dict[str, Any]) -> None:
-        span_id = str(item.get("span_id") or "")
-        span = self._spans.pop(span_id, None)
+    def _record_span_end(self, record: SpanEndRecord) -> None:
+        encoded = encode_span_end(record, otel=self._otel)
+        span = self._spans.pop(encoded.span_id or "", None)
         if span is None:
-            self._record_orphan_span_end(item)
+            self._record_orphan_span_end(record, encoded)
             return
 
-        attributes = _otel_attributes(item.get("attributes") or {})
-        if attributes:
-            span.set_attributes(attributes)
-        if item.get("status") == "error":
-            span.set_status(
-                self._otel.Status(
-                    self._otel.StatusCode.ERROR,
-                    _status_description(item.get("attributes") or {}),
-                )
-            )
-        elif item.get("status") == "ok":
-            span.set_status(self._otel.Status(self._otel.StatusCode.OK))
-        span.end(end_time=_timestamp_ns(item.get("timestamp")))
+        scope = self._span_scopes.pop(encoded.span_id or "", None)
+        try:
+            if encoded.attributes:
+                span.set_attributes(encoded.attributes)
+            if encoded.status is not None:
+                span.set_status(encoded.status)
+            self._exit_scope(scope)
+        finally:
+            span.end(end_time=encoded.end_time)
 
-    def _record_event(self, item: dict[str, Any]) -> None:
-        span_id = item.get("span_id")
-        span = self._spans.get(str(span_id)) if span_id else None
-        semantic_attributes = _semantic_attributes(
-            str(item.get("name") or ""),
-            dict(item.get("attributes") or {}),
-        )
-        attributes = _otel_attributes(
-            {
-                **semantic_attributes,
-                "automa.trace_id": item.get("trace_id"),
-                "automa.span_id": span_id,
-            }
-        )
+    def _record_event(self, record: EventRecord) -> None:
+        encoded = encode_event(record)
+        span = self._spans.get(str(encoded.span_id)) if encoded.span_id else None
         if span is not None:
+            if record.name == "model.usage" and encoded.attributes:
+                span.set_attributes(encoded.attributes)
             span.add_event(
-                str(item.get("name") or "event"),
-                attributes=attributes,
-                timestamp=_timestamp_ns(item.get("timestamp")),
+                encoded.name,
+                attributes=encoded.attributes,
+                timestamp=encoded.timestamp,
             )
             return
 
-        self._record_orphan_event(item, attributes)
+        self._record_orphan_event(record, encoded.attributes)
 
-    def _record_orphan_span_end(self, item: dict[str, Any]) -> None:
-        attributes = _otel_attributes(
-            {
-                **dict(item.get("attributes") or {}),
-                "automa.trace_id": item.get("trace_id"),
-                "automa.span_id": item.get("span_id"),
-                "automa.parent_span_id": item.get("parent_span_id"),
-                "automa.orphan_span_end": True,
-            }
-        )
+    def _record_orphan_span_end(self, record: SpanEndRecord, encoded: Any) -> None:
         span = self._tracer.start_span(
-            str(item.get("name") or "automa.orphan_span_end"),
-            context=self._parent_context(item),
-            kind=_span_kind(str(item.get("kind") or "internal"), self._otel),
-            attributes=attributes,
-            start_time=_timestamp_ns(item.get("timestamp")),
+            record.name or "automa.orphan_span_end",
+            context=parent_context(
+                record.trace_id,
+                record.parent_span_id,
+                self._spans,
+                self._otel,
+            ),
+            kind=span_kind_to_otel(record.kind, self._otel),
+            attributes=orphan_span_attributes(record),
+            start_time=encoded.end_time,
         )
-        if item.get("status") == "error":
-            span.set_status(
-                self._otel.Status(
-                    self._otel.StatusCode.ERROR,
-                    _status_description(item.get("attributes") or {}),
-                )
-            )
-        span.end(end_time=_timestamp_ns(item.get("timestamp")))
+        if record.status is SpanStatus.ERROR and encoded.status is not None:
+            span.set_status(encoded.status)
+        span.end(end_time=encoded.end_time)
 
     def _record_orphan_event(
         self,
-        item: dict[str, Any],
+        record: EventRecord,
         attributes: dict[str, Any],
     ) -> None:
         span = self._tracer.start_span(
-            str(item.get("name") or "automa.event"),
-            context=self._parent_context(item),
+            record.name or "automa.event",
+            context=None,
             kind=self._otel.SpanKind.INTERNAL,
             attributes={
                 **attributes,
                 "automa.orphan_event": True,
             },
-            start_time=_timestamp_ns(item.get("timestamp")),
+            start_time=timestamp_ns(record.timestamp),
         )
-        span.end(end_time=_timestamp_ns(item.get("timestamp")))
+        span.end(end_time=timestamp_ns(record.timestamp))
 
-    def _parent_context(self, item: dict[str, Any]) -> Any | None:
-        parent_span_id = item.get("parent_span_id")
-        if parent_span_id:
-            parent = self._spans.get(str(parent_span_id))
-            if parent is not None:
-                return self._otel.trace.set_span_in_context(parent)
-            remote_parent = _remote_parent_context(
-                item.get("trace_id"),
-                str(parent_span_id),
-                self._otel,
-            )
-            if remote_parent is not None:
-                return remote_parent
-        return None
+    @staticmethod
+    def _exit_scope(scope: Any | None) -> None:
+        if scope is None:
+            return
+        try:
+            scope.__exit__(None, None, None)
+        except Exception:
+            logger.debug("OTEL scope exit from foreign context.", exc_info=True)
 
 
 def build_otel_recorder(
@@ -240,7 +233,7 @@ def _build_tracer_provider(
     id_generator: Any,
 ) -> Any:
     options = config.options or {}
-    resource_attributes = _otel_attributes(
+    resource_attributes = otel_attributes(
         {
             "service.name": config.service_name,
             "deployment.environment": config.environment,
@@ -393,156 +386,6 @@ def _import_otel() -> Any:
     return otel
 
 
-def _span_kind(kind: str, otel: Any) -> Any:
-    normalized = kind.lower().replace("-", "_")
-    return {
-        "server": otel.SpanKind.SERVER,
-        "client": otel.SpanKind.CLIENT,
-        "producer": otel.SpanKind.PRODUCER,
-        "consumer": otel.SpanKind.CONSUMER,
-        "internal": otel.SpanKind.INTERNAL,
-    }.get(normalized, otel.SpanKind.INTERNAL)
-
-
-def _timestamp_ns(value: Any) -> int | None:
-    if not isinstance(value, str) or not value:
-        return None
-    match = _ISO_TIMESTAMP_PATTERN.match(value.strip())
-    if match is None:
-        return None
-    tz = match.group("tz") or "+00:00"
-    if tz == "Z":
-        tz = "+00:00"
-    text = f"{match.group('base')}{tz}"
-    fraction = match.group("fraction") or ""
-    try:
-        epoch_seconds = int(datetime.fromisoformat(text).timestamp())
-    except ValueError:
-        return None
-    fractional_ns = int(fraction.ljust(9, "0")[:9]) if fraction else 0
-    return epoch_seconds * 1_000_000_000 + fractional_ns
-
-
-def _remote_parent_context(trace_id: Any, parent_span_id: str, otel: Any) -> Any | None:
-    trace_int = _trace_id_to_int(trace_id)
-    span_int = _span_id_to_int(parent_span_id)
-    if trace_int is None or span_int is None:
-        return None
-    context = otel.SpanContext(
-        trace_id=trace_int,
-        span_id=span_int,
-        is_remote=True,
-        trace_flags=otel.TraceFlags(otel.TraceFlags.SAMPLED),
-        trace_state=otel.TraceState(),
-    )
-    return otel.trace.set_span_in_context(otel.NonRecordingSpan(context))
-
-
-def _trace_id_to_int(value: Any) -> int | None:
-    if not isinstance(value, str):
-        return None
-    text = value.strip().replace("-", "")
-    if len(text) != 32:
-        return None
-    try:
-        trace_id = int(text, 16)
-    except ValueError:
-        return None
-    return trace_id or None
-
-
-def _span_id_to_int(value: Any) -> int | None:
-    if not isinstance(value, str):
-        return None
-    text = value.strip().replace("-", "")
-    if len(text) != 16:
-        return None
-    try:
-        span_id = int(text, 16)
-    except ValueError:
-        return None
-    return span_id or None
-
-
-def _semantic_attributes(span_name: str, attributes: dict[str, Any]) -> dict[str, Any]:
-    enriched = dict(attributes)
-    if span_name == "agent.turn":
-        enriched.setdefault("gen_ai.operation.name", "invoke_agent")
-        enriched.setdefault("gen_ai.provider.name", "automa_ai")
-        if "agent.name" in enriched:
-            enriched.setdefault("gen_ai.agent.name", enriched["agent.name"])
-        if "agent.description" in enriched:
-            enriched.setdefault(
-                "gen_ai.agent.description", enriched["agent.description"]
-            )
-        if "agent.version" in enriched:
-            enriched.setdefault("gen_ai.agent.version", enriched["agent.version"])
-        if "model.name" in enriched:
-            enriched.setdefault("gen_ai.request.model", enriched["model.name"])
-        if "model.provider" in enriched:
-            enriched.setdefault("gen_ai.provider.name", enriched["model.provider"])
-    elif span_name == "tool.call":
-        enriched.setdefault("gen_ai.operation.name", "execute_tool")
-        enriched.setdefault("gen_ai.provider.name", "automa_ai")
-        if "tool.name" in enriched:
-            enriched.setdefault("gen_ai.tool.name", enriched["tool.name"])
-    if "model.provider" in enriched:
-        enriched.setdefault("gen_ai.provider.name", enriched["model.provider"])
-    if "model.name" in enriched:
-        enriched.setdefault("gen_ai.request.model", enriched["model.name"])
-    if "model.response_name" in enriched:
-        enriched.setdefault("gen_ai.response.model", enriched["model.response_name"])
-    if "model.usage.input_tokens" in enriched:
-        enriched.setdefault(
-            "gen_ai.usage.input_tokens",
-            enriched["model.usage.input_tokens"],
-        )
-    if "model.usage.output_tokens" in enriched:
-        enriched.setdefault(
-            "gen_ai.usage.output_tokens",
-            enriched["model.usage.output_tokens"],
-        )
-    return enriched
-
-
-def _span_name(original_name: str, attributes: dict[str, Any]) -> str:
-    operation = attributes.get("gen_ai.operation.name")
-    if not operation:
-        return original_name
-    if operation == "invoke_agent" and attributes.get("gen_ai.agent.name"):
-        return f"{operation} {attributes['gen_ai.agent.name']}"
-    if operation == "execute_tool" and attributes.get("gen_ai.tool.name"):
-        return f"{operation} {attributes['gen_ai.tool.name']}"
-    return str(operation)
-
-
-def _otel_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in attributes.items():
-        if value is None:
-            continue
-        result[str(key)] = _otel_attribute_value(value)
-    return result
-
-
-def _otel_attribute_value(value: Any) -> Any:
-    if isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, (list, tuple)):
-        if all(isinstance(item, str) for item in value):
-            return list(value)
-        if all(isinstance(item, bool) for item in value):
-            return list(value)
-        if all(isinstance(item, int) and not isinstance(item, bool) for item in value):
-            return list(value)
-        if all(
-            isinstance(item, (int, float)) and not isinstance(item, bool)
-            for item in value
-        ):
-            return list(value)
-    return json.dumps(value, default=str, ensure_ascii=False, sort_keys=True)
-
-
 def _normalize_headers(value: Any) -> dict[str, str] | str | None:
     if value is None:
         return None
@@ -559,12 +402,3 @@ def _normalize_headers(value: Any) -> dict[str, str] | str | None:
                 headers[key] = item.strip()
         return headers or value
     return value
-
-
-def _status_description(attributes: dict[str, Any]) -> str | None:
-    message = attributes.get("exception.message")
-    if isinstance(message, str):
-        return message
-    if isinstance(message, dict):
-        return str(message.get("content") or message.get("sha256") or "")
-    return None
