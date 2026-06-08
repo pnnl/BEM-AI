@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextvars import Token
 import logging
 import threading
 from pathlib import Path
@@ -35,10 +36,11 @@ class OpenTelemetryRecorder:
 
     Important context invariant: recording must stay synchronous on the caller's
     thread/task. The recorder attaches started spans to OpenTelemetry's current
-    context with ``trace.use_span(...)`` so auto-instrumented work inside the
-    agent or tool sees the AUTOMA span as its parent. Moving record() onto a
-    background queue/thread would attach the span in the worker context instead,
-    breaking parent-child correlation for libraries such as httpx or botocore.
+    context with ``context.attach(trace.set_span_in_context(...))`` so
+    auto-instrumented work inside the agent or tool sees the AUTOMA span as its
+    parent. Moving record() onto a background queue/thread would attach the span
+    in the worker context instead, breaking parent-child correlation for
+    libraries such as httpx or botocore.
     """
 
     def __init__(
@@ -54,7 +56,7 @@ class OpenTelemetryRecorder:
         self._lock = threading.Lock()
         self._closed = False
         self._spans: dict[str, Any] = {}
-        self._span_scopes: dict[str, Any] = {}
+        self._span_tokens: dict[str, Any] = {}
         options = config.options or {}
         self._flush_timeout_millis = int(
             options.get("flush_timeout_millis", options.get("timeout_millis", 5000))
@@ -101,10 +103,10 @@ class OpenTelemetryRecorder:
             if self._closed:
                 return
             for span_id in reversed(list(self._spans)):
-                scope = self._span_scopes.pop(span_id, None)
+                token = self._span_tokens.pop(span_id, None)
                 span = self._spans[span_id]
                 try:
-                    self._exit_scope(scope)
+                    self._detach_token(token)
                 finally:
                     span.end()
             self._spans.clear()
@@ -134,9 +136,8 @@ class OpenTelemetryRecorder:
                 attributes=encoded.attributes,
                 start_time=encoded.start_time,
             )
-        scope = self._otel.trace.use_span(span, end_on_exit=False)
-        scope.__enter__()
-        self._span_scopes[encoded.span_id] = scope
+        token = self._otel.context.attach(self._otel.trace.set_span_in_context(span))
+        self._span_tokens[encoded.span_id] = token
         self._spans[encoded.span_id] = span
 
     def _record_span_end(self, record: SpanEndRecord) -> None:
@@ -146,13 +147,13 @@ class OpenTelemetryRecorder:
             self._record_orphan_span_end(record, encoded)
             return
 
-        scope = self._span_scopes.pop(encoded.span_id or "", None)
+        token = self._span_tokens.pop(encoded.span_id or "", None)
         try:
             if encoded.attributes:
                 span.set_attributes(encoded.attributes)
             if encoded.status is not None:
                 span.set_status(encoded.status)
-            self._exit_scope(scope)
+            self._detach_token(token)
         finally:
             span.end(end_time=encoded.end_time)
 
@@ -206,13 +207,20 @@ class OpenTelemetryRecorder:
         span.end(end_time=timestamp_ns(record.timestamp))
 
     @staticmethod
-    def _exit_scope(scope: Any | None) -> None:
-        if scope is None:
+    def _detach_token(token: Any | None) -> None:
+        if token is None:
             return
         try:
-            scope.__exit__(None, None, None)
+            token.var.reset(token)
+        except ValueError as exc:
+            if "different Context" not in str(exc):
+                logger.debug("OTEL context detach failed.", exc_info=True)
+                return
+            old_value = {} if token.old_value is Token.MISSING else token.old_value
+            token.var.set(old_value)
+            logger.debug("OTEL context token restored from foreign context.")
         except Exception:
-            logger.debug("OTEL scope exit from foreign context.", exc_info=True)
+            logger.debug("OTEL context detach failed.", exc_info=True)
 
 
 def build_otel_recorder(
@@ -333,6 +341,7 @@ def _build_exporter(options: dict[str, Any], otel: Any) -> Any:
 def _import_otel() -> Any:
     try:
         from opentelemetry import trace
+        from opentelemetry import context as context_api
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
             OTLPSpanExporter as GrpcOTLPSpanExporter,
         )
@@ -367,6 +376,7 @@ def _import_otel() -> Any:
         pass
 
     otel = OTel()
+    otel.context = context_api
     otel.trace = trace
     otel.BatchSpanProcessor = BatchSpanProcessor
     otel.ConsoleSpanExporter = ConsoleSpanExporter
