@@ -473,7 +473,7 @@ def test_otel_recorder_sets_current_span_context_in_caller_task(monkeypatch) -> 
 
 
 def test_otel_recorder_ends_span_when_scope_exits_from_foreign_context(
-    monkeypatch,
+    monkeypatch, caplog
 ) -> None:
     exporter = InMemorySpanExporter()
     monkeypatch.setattr(
@@ -522,6 +522,7 @@ def test_otel_recorder_ends_span_when_scope_exits_from_foreign_context(
     assert spans[0].context.trace_id == int(trace_id, 16)
     assert spans[0].context.span_id == int(span_id, 16)
     assert spans[0].status.status_code.name == "OK"
+    assert "Failed to detach context" not in caplog.text
 
 
 def test_otel_recorder_close_ends_all_spans_with_foreign_scope_contexts(
