@@ -15,11 +15,11 @@ from mcp.client.sse import sse_client
 from automa_ai.common.agent_registry import A2AAgentServer
 from automa_ai.config.agent_spec import load_a2a_server_from_yaml
 from automa_ai.skills.manager import SkillManager
-from examples.openstudio_mcp_demo.agent import (
+from examples.openstudio_ai.agent import (
     build_openstudio_mcp_config,
     load_openstudio_agent_spec,
 )
-from examples.openstudio_mcp_demo.openstudio_mcp_server.server import serve
+from examples.openstudio_ai.openstudio_mcp_server.server import serve
 
 
 MCP_HOST = "localhost"
@@ -37,7 +37,7 @@ MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/sse"
 
 def _find_local_epw() -> Path | None:
     candidates = [
-        Path("examples/openstudio_mcp_demo/resource/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw"),
+        Path("examples/openstudio_ai/resource/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw"),
         Path.home() / "github/openstudio-standards/data/weather/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw",
     ]
     for candidate in candidates:
@@ -87,7 +87,7 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     server = load_a2a_server_from_yaml(spec)
     factory_kwargs = spec.to_factory_kwargs()
 
-    assert spec.agent_card["name"] == "OpenStudio MCP Model Workspace Agent"
+    assert spec.agent_card["name"] == "OpenStudio AI Model Workspace Agent"
     assert spec.instructions.path == "../prompts/openstudio_agent.md"
     assert spec.mcp is not None
     assert "openstudio_mcp" in spec.mcp.servers
@@ -98,7 +98,7 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
         "workspace_root"
     ]
     assert Path(workspace_root).resolve() == Path(
-        "examples/openstudio_mcp_demo"
+        "examples/openstudio_ai"
     ).resolve()
     assert factory_kwargs["skills_config"]["enabled"] is True
     assert "hvac_sizing_assistant" in factory_kwargs["skills_config"]["registry"]
@@ -132,12 +132,12 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     assert "## Python Script Safeguard" not in instructions
     assert "Follow the skill instructions exactly" not in instructions
     assert isinstance(server, A2AAgentServer)
-    assert server.name == "OpenStudio MCP Model Workspace Agent"
+    assert server.name == "OpenStudio AI Model Workspace Agent"
 
 
 @pytest.mark.asyncio
 async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
-    env_path = Path("examples/openstudio_mcp_demo/.env")
+    env_path = Path("examples/openstudio_ai/.env")
     env_values = dotenv_values(env_path) if env_path.exists() else {}
     openstudio_path = (
         os.getenv("OPENSTUDIO_PATH", "").strip()
@@ -147,7 +147,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
         pytest.skip("OPENSTUDIO_PATH is not configured to a valid executable.")
 
     sample_model_uri = (
-        Path("examples/openstudio_mcp_demo/resource/sample.osm")
+        Path("examples/openstudio_ai/resource/sample.osm")
         .resolve()
         .as_uri()
     )
@@ -202,7 +202,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
 @pytest.mark.asyncio
 async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
     sample_model_uri = (
-        Path("examples/openstudio_mcp_demo/resource/sample.osm")
+        Path("examples/openstudio_ai/resource/sample.osm")
         .resolve()
         .as_uri()
     )
@@ -254,7 +254,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
 
 @pytest.mark.asyncio
 async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
-    env_path = Path("examples/openstudio_mcp_demo/.env")
+    env_path = Path("examples/openstudio_ai/.env")
     env_values = dotenv_values(env_path) if env_path.exists() else {}
     openstudio_path = (
         os.getenv("OPENSTUDIO_PATH", "").strip()
@@ -267,7 +267,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
         pytest.skip("Local EPW file not found for real simulation test.")
 
     sample_model_uri = (
-        Path("examples/openstudio_mcp_demo/resource/sample.osm")
+        Path("examples/openstudio_ai/resource/sample.osm")
         .resolve()
         .as_uri()
     )

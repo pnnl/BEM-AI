@@ -1,4 +1,4 @@
-from examples.openstudio_mcp_demo.ui import (
+from examples.openstudio_ai.ui import (
     _artifact_contains_json_fence,
     _artifact_contains_python_fence,
     _format_status_text_for_display,
@@ -123,7 +123,7 @@ def test_openstudio_ui_suppresses_load_skill_status_by_prefix() -> None:
 def test_openstudio_ui_suppresses_openstudio_skill_response() -> None:
     assert _should_suppress_status_text(
         "Tool load_skill responded: SKILL: openstudio_sdk_model_editor\n"
-        "SOURCE: /Users/xuwe123/github/BEM-AI/examples/openstudio_mcp_demo/"
+        "SOURCE: /Users/xuwe123/github/BEM-AI/examples/openstudio_ai/"
         "skills/openstudio_sdk_model_editor.md\n\nScope\n\nUse this skill only..."
     )
 
