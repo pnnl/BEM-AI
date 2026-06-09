@@ -1,7 +1,7 @@
 ---
 name: openstudio_hvac_workflow_state
-description: Maintain a task-global HVAC workflow state table for multi-phase OpenStudio model-editing workflows.
-version: 0.1.0
+description: Maintain persistent task-global HVAC workflow state for multi-phase OpenStudio model-editing workflows.
+version: 0.2.0
 output_format: markdown_with_json_state
 ---
 
@@ -11,14 +11,14 @@ Use this skill whenever an OpenStudio HVAC creation or editing workflow spans
 multiple phases, scripts, child skills, or clarification gates.
 
 This skill defines the task-global parameter table that the parent workflow
-skill must maintain. It is intentionally local to the conversation and response
-state for now. Do not assume a persistent blackboard unless the active agent
-configuration explicitly provides one.
+skill must maintain. In OpenStudio AI, this state is persisted in the
+session-scoped local JSON blackboard under `workflows.<workflow_id>`.
 
 ## Core Rule
 
-The parent workflow skill owns the full state table. Child skills and child
-script phases may only read the current state and return a narrow state patch.
+The parent workflow skill owns the full state table and is the only workflow
+role that writes blackboard state. Child skills and child script phases may only
+read the current state and return a narrow state patch.
 
 Do not let child skills independently re-ask global questions when the answer is
 already present in the state table. If a required field is missing, the child
@@ -26,16 +26,35 @@ skill must report the missing field to the parent workflow.
 
 ## State Lifecycle
 
-1. Initialize the state before the first script is drafted.
-2. Update the state after preflight inspection.
+1. Initialize the state in the blackboard before the first script is drafted.
+2. Update the blackboard state after preflight inspection.
 3. Resolve missing required fields through one clarification gate whenever
    practical.
 4. Before each child phase, show the subset of state that phase will use.
 5. After each child phase, apply a state patch from the script result or tool
-   result.
+   result with `blackboard_write`.
 6. Before final validation, show completed steps, pending steps, assumptions,
    created objects, and warnings.
-7. Include the final state summary in the task answer.
+7. Include the final blackboard state summary in the task answer.
+
+## Blackboard Operations
+
+Use these operations through `blackboard_read`, `blackboard_write`, and
+`blackboard_get_revision`:
+
+- `initialize_workflow`: create a safe `workflow_id`, set
+  `active_workflow_id`, set `workflows.<workflow_id>` to the JSON state
+  contract below, and append an `operation_log` item.
+- `get_phase_state`: read `workflows.<workflow_id>` or a narrow path before
+  loading a child skill.
+- `update_state_patch`: normalize a child `state_patch`, merge it into
+  `workflows.<workflow_id>`, update canonical lists such as `pending_steps`,
+  and append an `operation_log` item.
+- `mark_step_complete`: read the workflow, compute the new `completed_steps`
+  and `pending_steps`, write both lists, and append an `operation_log` item.
+
+Always write with `expected_revision` after reading. On a revision conflict,
+re-read, re-apply the smallest intended patch, and retry once.
 
 ## Required State Table
 
@@ -221,8 +240,8 @@ it changed. The parent applies the patch to the full state.
 }
 ```
 
-The parent may normalize convenience keys such as `pending_steps_remove` into
-the canonical `pending_steps` list.
+The parent must normalize convenience keys such as `pending_steps_remove` into
+the canonical `pending_steps` list before writing to the blackboard.
 
 ## Missing Field Behavior
 

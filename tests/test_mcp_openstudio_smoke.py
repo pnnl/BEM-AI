@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import os
 import socket
 import time
@@ -12,6 +13,9 @@ from dotenv import dotenv_values
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
+from automa_ai.blackboard.models import BlackboardPatch
+from automa_ai.blackboard.schema import BlackboardSchemaRegistry
+from automa_ai.blackboard.store import create_blackboard_store
 from automa_ai.common.agent_registry import A2AAgentServer
 from automa_ai.config.agent_spec import load_a2a_server_from_yaml
 from automa_ai.skills.manager import SkillManager
@@ -133,6 +137,127 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     assert "Follow the skill instructions exactly" not in instructions
     assert isinstance(server, A2AAgentServer)
     assert server.name == "OpenStudio AI Model Workspace Agent"
+
+
+def test_openstudio_ai_blackboard_config_supports_workflow_state(tmp_path: Path) -> None:
+    spec = load_openstudio_agent_spec(build_openstudio_mcp_config())
+    factory_kwargs = spec.to_factory_kwargs()
+    blackboard_config = deepcopy(factory_kwargs["blackboard_config"])
+
+    assert blackboard_config["enabled"] is True
+    assert blackboard_config["store"]["backend"] == "local_json"
+    assert Path(blackboard_config["store"]["base_dir"]).resolve() == Path(
+        "examples/openstudio_ai/.openstudio_ai_blackboards"
+    ).resolve()
+    assert blackboard_config["schema_name"] == "openstudio_ai_workflow"
+    assert blackboard_config["initial_data"] == {
+        "active_workflow_id": None,
+        "workflows": {},
+        "operation_log": [],
+        "handoff_notes": [],
+    }
+
+    blackboard_config["store"]["base_dir"] = str(tmp_path)
+    BlackboardSchemaRegistry.register(
+        name=blackboard_config["schema_name"],
+        version=blackboard_config["schema_version"],
+        json_schema=blackboard_config["schema"],
+        description=blackboard_config["schema_description"],
+    )
+    store = create_blackboard_store(blackboard_config["store"])
+    doc = store.create(
+        "session-1",
+        blackboard_config["schema_name"],
+        blackboard_config["schema_version"],
+        blackboard_config["initial_data"],
+    )
+
+    workflow_id = "vav_reheat_001"
+    workflow_state = {
+        "workflow_id": workflow_id,
+        "mode": "preflight",
+        "input_model_path": None,
+        "current_model_path": None,
+        "output_model_path": None,
+        "system": {"system_name": "3 Zone VAV", "target_zone_names": []},
+        "schedules": {},
+        "completed_steps": [],
+        "pending_steps": ["preflight_inspection", "clarification_gate"],
+        "created_objects": {},
+        "assumptions": [],
+        "warnings": [],
+        "validation_results": [],
+    }
+    doc = store.apply_patch(
+        "session-1",
+        BlackboardPatch(
+            ops=[
+                {"op": "set", "path": "active_workflow_id", "value": workflow_id},
+                {
+                    "op": "set",
+                    "path": f"workflows.{workflow_id}",
+                    "value": workflow_state,
+                },
+                {
+                    "op": "append",
+                    "path": "operation_log",
+                    "value": {
+                        "operation": "initialize_workflow",
+                        "workflow_id": workflow_id,
+                        "phase": "preflight_inspection",
+                        "note": "Initialized VAV workflow state.",
+                    },
+                },
+            ],
+            actor="openstudio_vav_reheat_system_creator",
+            note="initialize_workflow",
+        ),
+        expected_revision=doc.revision,
+    )
+
+    doc = store.apply_patch(
+        "session-1",
+        BlackboardPatch(
+            ops=[
+                {
+                    "op": "set",
+                    "path": f"workflows.{workflow_id}.completed_steps",
+                    "value": ["preflight_inspection"],
+                },
+                {
+                    "op": "set",
+                    "path": f"workflows.{workflow_id}.pending_steps",
+                    "value": ["clarification_gate"],
+                },
+                {
+                    "op": "append",
+                    "path": "operation_log",
+                    "value": {
+                        "operation": "mark_step_complete",
+                        "workflow_id": workflow_id,
+                        "phase": "preflight_inspection",
+                        "note": "Marked preflight complete.",
+                    },
+                },
+            ],
+            actor="openstudio_vav_reheat_system_creator",
+            note="mark_step_complete",
+        ),
+        expected_revision=doc.revision,
+    )
+
+    loaded = store.load("session-1")
+    assert loaded.data["active_workflow_id"] == workflow_id
+    assert loaded.data["workflows"][workflow_id]["completed_steps"] == [
+        "preflight_inspection"
+    ]
+    assert loaded.data["workflows"][workflow_id]["pending_steps"] == [
+        "clarification_gate"
+    ]
+    assert [item["operation"] for item in loaded.data["operation_log"]] == [
+        "initialize_workflow",
+        "mark_step_complete",
+    ]
 
 
 @pytest.mark.asyncio

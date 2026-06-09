@@ -56,6 +56,8 @@ coverage.xml
 .pytest_cache/
 examples/output/*
 examples/openstudio_mcp_demo/.sdk_doc_index.json
+examples/openstudio_ai/.sdk_doc_index.json
+examples/openstudio_ai/.openstudio_ai_blackboards/
 
 # Sphinx documentation
 docs/_build/

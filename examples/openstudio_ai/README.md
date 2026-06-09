@@ -28,6 +28,8 @@ The intended split is:
 - `sdk_docs_*` = exact API lookup for SDK constructors, getters, setters,
   parameter types, units, and warnings before drafting scripts.
 - Skills = reusable deterministic modeling workflows and guardrails.
+- Blackboard = persistent session state for long-running workflow assumptions,
+  checklist status, created objects, warnings, and validation results.
 
 ## Architecture
 
@@ -49,10 +51,13 @@ OpenStudio AI has four layers:
 - `runtime/job_manager.py`: `RUNNING/SUCCEEDED/FAILED` lifecycle.
 - `runtime/artifact_store.py`: immutable artifact IDs and metadata.
 - `runtime/measure_registry.py`: policy-based measure lookup and arg validation.
+- Local JSON blackboard: persistent session workflow state under
+  `.openstudio_ai_blackboards/`.
 
 4. Governance/extension layer
 - `specs/openstudio_agent.yaml`
 - `prompts/openstudio_agent.md`
+- `blackboard_schema.json`
 - `policy/tool_allowlist.yaml`
 - `policy/run_gates.yaml`
 - `policy/measure_registry.yaml`
@@ -72,6 +77,23 @@ OpenStudio AI has four layers:
   user-approved path.
 - Do not use `run_python` for simulations, polling, SQL result retrieval,
   subprocesses, shell commands, or network calls.
+
+### Persistent workflow state
+
+OpenStudio AI enables a local JSON blackboard in `specs/openstudio_agent.yaml`.
+For long-running workflows, the parent skill stores state under
+`workflows.<workflow_id>` and treats the blackboard as the source of truth.
+
+The system prompt defines these workflow operations:
+
+- `initialize_workflow`
+- `get_phase_state`
+- `update_state_patch`
+- `mark_step_complete`
+
+Child skills return narrow `state_patch` objects. The parent workflow applies
+those patches through `blackboard_write` with `expected_revision`, which keeps
+assumptions and checklist progress stable across long tasks.
 
 ### Model tools
 
@@ -157,6 +179,7 @@ The spec points to:
   built-in recorder only and does not load telemetry recorder plugins.
 - `logs/python_script_failure_experience.jsonl` for failed Python script
   executions that can be reviewed by a separate learning/summarization process.
+- `.openstudio_ai_blackboards/` for local JSON session blackboard documents.
 - The A2A 1.0 card shape with `supportedInterfaces`.
 
 `agent.py` applies environment-specific overrides from `.env` at startup:
@@ -226,6 +249,8 @@ The spec points to:
 - `examples/openstudio_ai/agent.py`: YAML-backed MCP and A2A bootstrap.
 - `examples/openstudio_ai/specs/openstudio_agent.yaml`: YAML agent spec.
 - `examples/openstudio_ai/prompts/openstudio_agent.md`: YAML agent instruction.
+- `examples/openstudio_ai/blackboard_schema.json`: source copy of the
+  OpenStudio AI workflow-state schema.
 - `examples/openstudio_ai/skills/openstudio_sdk_model_editor.md`: run_python + SDK model-inspection/editing workflow.
 - `examples/openstudio_ai/knowledge/openstudio_sdk_recipes.md`: lightweight SDK knowledge-base entry point and routing summary.
 - `examples/openstudio_ai/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from OpenStudio standards and source-reviewed Python SDK usage.

@@ -46,6 +46,152 @@ telemetry:
   content_mode: metadata
   load_plugins: false
 
+blackboard:
+  enabled: true
+  store:
+    backend: local_json
+    base_dir: ../.openstudio_ai_blackboards
+  schema_name: openstudio_ai_workflow
+  schema_version: 1.0.0
+  schema_description: Persistent OpenStudio AI workflow state keyed by workflow_id.
+  schema:
+    type: object
+    required:
+      - active_workflow_id
+      - workflows
+      - operation_log
+      - handoff_notes
+    properties:
+      active_workflow_id:
+        type: [string, "null"]
+      workflows:
+        type: object
+        additionalProperties:
+          type: object
+          required:
+            - workflow_id
+            - mode
+            - input_model_path
+            - current_model_path
+            - output_model_path
+            - system
+            - schedules
+            - completed_steps
+            - pending_steps
+            - created_objects
+            - assumptions
+            - warnings
+            - validation_results
+          properties:
+            workflow_id:
+              type: string
+            mode:
+              type: string
+            input_model_path:
+              type: [string, "null"]
+            current_model_path:
+              type: [string, "null"]
+            output_model_path:
+              type: [string, "null"]
+            openstudio_version:
+              type: [string, "null"]
+            standards_template:
+              type: [string, "null"]
+            system:
+              type: object
+              additionalProperties: true
+            schedules:
+              type: object
+              additionalProperties: true
+            design_temperatures:
+              type: object
+              additionalProperties: true
+            sizing:
+              type: object
+              additionalProperties: true
+            fan:
+              type: object
+              additionalProperties: true
+            central_heating:
+              type: object
+              additionalProperties: true
+            central_cooling:
+              type: object
+              additionalProperties: true
+            outdoor_air_system:
+              type: object
+              additionalProperties: true
+            air_loop_controls:
+              type: object
+              additionalProperties: true
+            zone_terminals:
+              type: object
+              additionalProperties: true
+            completed_steps:
+              type: array
+              items:
+                type: string
+            pending_steps:
+              type: array
+              items:
+                type: string
+            created_objects:
+              type: object
+              additionalProperties: true
+            assumptions:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            validation_results:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            last_phase:
+              type: [string, "null"]
+            missing_fields:
+              type: array
+              items:
+                type: string
+          additionalProperties: true
+      operation_log:
+        type: array
+        items:
+          type: object
+          required: [operation, workflow_id, note]
+          properties:
+            operation:
+              type: string
+              enum:
+                - initialize_workflow
+                - update_state_patch
+                - get_phase_state
+                - mark_step_complete
+                - clarification
+                - validation
+                - handoff
+            workflow_id:
+              type: [string, "null"]
+            phase:
+              type: [string, "null"]
+            note:
+              type: string
+          additionalProperties: true
+      handoff_notes:
+        type: array
+        items:
+          type: string
+    additionalProperties: false
+  initial_data:
+    active_workflow_id: null
+    workflows: {}
+    operation_log: []
+    handoff_notes: []
+
 tools:
   tools:
     - type: run_python

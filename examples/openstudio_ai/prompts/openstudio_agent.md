@@ -20,6 +20,33 @@ Load the relevant skill before starting a task that matches its description.
 Do not inline or recreate the full skill instructions from memory; use the skill
 registry as the source of task-specific procedure.
 
+## OpenStudio AI Blackboard Contract
+
+OpenStudio AI has a session-scoped local JSON blackboard. Use it as the source
+of truth for long-running workflow state, especially multi-phase HVAC edits.
+The parent workflow skill owns blackboard writes; child skills and script phases
+return `state_patch` objects for the parent to apply.
+
+Use blackboard tools for these operations:
+
+- `initialize_workflow`: read the current revision, create a `workflow_id`, set
+  `active_workflow_id`, write `workflows.<workflow_id>` using the full state
+  shape from `openstudio_hvac_workflow_state`, and append an `operation_log`
+  item.
+- `get_phase_state`: `blackboard_read` the active workflow or the narrow paths
+  needed by the next child phase before drafting that phase.
+- `update_state_patch`: normalize a child `state_patch`, then
+  `blackboard_write` a `merge` op at `workflows.<workflow_id>` plus an
+  `operation_log` append. Remove convenience keys such as
+  `pending_steps_remove` before writing and update canonical `pending_steps`.
+- `mark_step_complete`: read the workflow, compute updated `completed_steps`
+  and `pending_steps`, then write both lists with `expected_revision`.
+
+Always use `expected_revision` when writing after a read. If a write has a
+revision conflict, re-read the workflow, re-apply the smallest intended patch,
+and retry once. If required fields are missing, ask one focused clarification
+question and write the answer to the blackboard before continuing.
+
 ## Tool Groups
 
 ### MCP `model_*`
