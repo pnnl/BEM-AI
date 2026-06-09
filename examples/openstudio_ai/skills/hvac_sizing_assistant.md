@@ -68,7 +68,7 @@ H. Summarize outputs (`results_summarize`) and return assumptions + artifact IDs
 
 ```json
 {
-  "model_uri": "file:///tmp/demo.osm",
+  "model_uri": "file:///tmp/sample.osm",
   "epw_path": "/absolute/path/to/weather.epw",
   "derive_from_epw": true,
   "hvac_template_measure": "hvac_template",

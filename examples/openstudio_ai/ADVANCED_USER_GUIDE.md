@@ -1,12 +1,13 @@
 # OpenStudio AI: Advanced User Guide
 
-This guide is for advanced users who want to extend the OpenStudio MCP server with custom measures, policies, and skills.
+This guide is for advanced users who want to extend OpenStudio AI with custom
+measures, policies, skills, and knowledge-base content.
 
 ## Who this is for
 
 - You can read/write Python.
 - You are comfortable with OpenStudio model concepts.
-- You want to customize behavior beyond the default demo workflow.
+- You want to customize behavior beyond the default OpenStudio AI workflow.
 
 ## Extension Surface
 
@@ -190,12 +191,18 @@ import sys
 import openstudio
 
 
+def version_translator():
+    if hasattr(openstudio, "openstudioosversion"):
+        return openstudio.openstudioosversion.VersionTranslator()
+    return openstudio.osversion.VersionTranslator()
+
+
 def main() -> int:
     input_path = os.getenv("OSM_INPUT_PATH", "")
     output_path = os.getenv("OSM_OUTPUT_PATH", "")
     args = json.loads(os.getenv("MEASURE_ARGS_JSON", "{}"))
 
-    translator = openstudio.openstudioosversion.VersionTranslator()
+    translator = version_translator()
     m = translator.loadModel(str(input_path))
     if not m.is_initialized():
         print(json.dumps({"ok": False, "error": "Failed to load model."}))

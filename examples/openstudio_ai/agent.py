@@ -34,7 +34,7 @@ def build_openstudio_mcp_config() -> MCPServerConfig:
 def load_openstudio_agent_spec(
     mcp_config: MCPServerConfig | None = None,
 ) -> YamlAgentSpec:
-    """Load the YAML agent spec and apply environment-specific demo settings."""
+    """Load the YAML agent spec and apply environment-specific settings."""
     spec = YamlAgentSpec.from_yaml_file(AGENT_SPEC_PATH)
     spec.agent_card["supportedInterfaces"][0]["url"] = CHATBOT_SERVER_URL
     if not spec.model.name:

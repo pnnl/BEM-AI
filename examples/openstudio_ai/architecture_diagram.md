@@ -1,6 +1,6 @@
-# OpenStudio MCP Server Diagram (Sponsor View)
+# OpenStudio AI Architecture Diagram (Sponsor View)
 
-This diagram shows how a user request flows through the OpenStudio MCP demo.
+This diagram shows how a user request flows through OpenStudio AI.
 
 ## 1) Big Picture
 

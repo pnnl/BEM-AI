@@ -1,1 +1,1 @@
-"""Runtime helpers for OpenStudio MCP demo."""
+"""Runtime helpers for OpenStudio AI MCP workflows."""

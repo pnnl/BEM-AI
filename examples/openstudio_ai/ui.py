@@ -782,7 +782,7 @@ def main() -> None:
             context_id=st.session_state.get("context_id"),
         )
 
-    st.title("🏗️ OpenStudio AI Demo")
+    st.title("🏗️ OpenStudio AI")
 
     for msg in st.session_state["messages"]:
         with st.chat_message(msg["role"]):

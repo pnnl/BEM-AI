@@ -1,13 +1,13 @@
 # OpenStudio AI
 
-This example shows a YAML-defined AUTOMA-AI agent connected to a real MCP server
-that exposes a minimal OpenStudio modeling/simulation lifecycle. It also gives
-the agent a bounded `run_python` workspace for OpenStudio Python SDK model
-inspection and model editing. The Python bootstrap still starts the MCP and A2A
-servers, but the agent card, model, runtime settings, tools, MCP client
+OpenStudio AI is a YAML-defined AUTOMA-AI workspace connected to a real MCP
+server that exposes a minimal OpenStudio modeling/simulation lifecycle. It also
+gives the agent a bounded `run_python` workspace for OpenStudio Python SDK model
+inspection and model editing. The Python bootstrap starts the MCP and A2A
+servers, while the agent card, model, runtime settings, tools, MCP client
 connection, skills, and instructions live in YAML.
 
-## What is `openstudio_mcp`?
+## What Is `openstudio_mcp`?
 
 `openstudio_mcp` is a real MCP server (Anthropic `mcp`/`FastMCP`) that exposes OpenStudio workflows as MCP tools for AUTOMA-AI agents.
 
@@ -31,7 +31,7 @@ The intended split is:
 
 ## Architecture
 
-The example has four layers:
+OpenStudio AI has four layers:
 
 1. Agent layer
 - `examples/openstudio_ai/agent.py`
@@ -152,8 +152,8 @@ The spec points to:
 - `skills/openstudio_sdk_model_editor.md` for bounded SDK inspection/editing.
 - `knowledge/openstudio_sdk_wiki/` as dynamically loadable SDK example packs.
 - The `openstudio_mcp` MCP client connection.
-- A built-in `run_python` tool rooted at the example directory.
-- `logs/telemetry.jsonl` for local JSONL agent telemetry. The demo uses the
+- A built-in `run_python` tool rooted at the OpenStudio AI directory.
+- `logs/telemetry.jsonl` for local JSONL agent telemetry. OpenStudio AI uses the
   built-in recorder only and does not load telemetry recorder plugins.
 - `logs/python_script_failure_experience.jsonl` for failed Python script
   executions that can be reviewed by a separate learning/summarization process.

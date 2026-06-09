@@ -1,1 +1,1 @@
-"""OpenStudio MCP tool handlers for demo."""
+"""OpenStudio MCP tool handlers for OpenStudio AI."""

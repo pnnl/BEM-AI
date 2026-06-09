@@ -572,8 +572,8 @@ azimuth_deg = openstudio.convert(surface.azimuth(), "rad", "deg").get()
 
 `openstudio.convert(...)` returns an optional numeric conversion result. Check
 `is_initialized()` before `.get()` in generated scripts when inputs may be
-invalid. `surface.azimuth()` is radians in the Python SDK usage expected by this
-demo, so convert to degrees before cardinal binning.
+invalid. `surface.azimuth()` is radians in the Python SDK usage expected by
+OpenStudio AI, so convert to degrees before cardinal binning.
 
 ## Simulation Workflow
 
@@ -643,8 +643,10 @@ Adds standard summary reports to the model output requests.
 
 ## Practical Agent Drafting Rules Learned
 
-- Use `openstudio.openstudioosversion.VersionTranslator()` when drafting
-  robust OSM load examples for this demo.
+- Use a version-translator compatibility helper when drafting robust OSM load
+  examples for OpenStudio AI; some bindings expose
+  `openstudio.openstudioosversion.VersionTranslator()` and others expose
+  `openstudio.osversion.VersionTranslator()`.
 - Treat `is_initialized()` and `.empty()` as distinct optional checks. Typed
   model relationships commonly use `is_initialized()`;
   `getObjectByTypeAndName(...)` results in these projects use `.empty()`.

@@ -2,7 +2,7 @@ spec_version: v1
 
 agent_card:
   name: OpenStudio AI Model Workspace Agent
-  description: YAML-defined example agent wired to OpenStudio MCP tools and bounded OpenStudio SDK model editing.
+  description: YAML-defined OpenStudio AI agent wired to MCP tools and bounded OpenStudio SDK model editing.
   version: 0.1.0
   defaultInputModes: [text]
   defaultOutputModes: [text]
@@ -18,7 +18,7 @@ agent_card:
       description: Runs a constrained OpenStudio sizing workflow via MCP tools.
       tags: [openstudio, mcp, hvac_sizing]
       examples:
-        - Run a sizing workflow for model file:///tmp/demo.osm.
+        - Run a sizing workflow for model file:///tmp/sample.osm.
         - Validate and size this model with default weather assumptions.
     - id: openstudio_sdk_model_editor
       name: OpenStudio SDK Model Editor
