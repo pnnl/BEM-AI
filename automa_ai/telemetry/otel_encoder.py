@@ -116,6 +116,41 @@ def encode_event(record: EventRecord) -> EncodedEvent:
     )
 
 
+def span_attributes_from_event(
+    event_name: str | None,
+    attributes: dict[str, Any],
+) -> dict[str, Any]:
+    """Return span-level OTEL attributes implied by an AUTOMA event.
+
+    AUTOMA records rich message/tool/model details as events. Some OTEL
+    backends, including LLM observability tools, primarily populate preview and
+    usage UI from span attributes. This helper promotes a small, stable subset
+    of event attributes without removing the original event.
+    """
+    if event_name == "message":
+        role = attributes.get("message.role")
+        content = attributes.get("message.content")
+        if role == "user" and content is not None:
+            return {
+                "input.value": content,
+                "gen_ai.prompt": content,
+            }
+        if role == "assistant" and content is not None:
+            return {
+                "output.value": content,
+                "gen_ai.completion": content,
+            }
+    elif event_name == "tool.input":
+        arguments = attributes.get("tool.arguments")
+        if arguments is not None:
+            return {"input.value": arguments}
+    elif event_name == "tool.output":
+        result = attributes.get("tool.result")
+        if result is not None:
+            return {"output.value": result}
+    return {}
+
+
 def orphan_span_attributes(record: SpanEndRecord) -> dict[str, Any]:
     return otel_attributes(
         {
@@ -247,9 +282,17 @@ def _semantic_attributes(span_name: str, attributes: dict[str, Any]) -> dict[str
             "gen_ai.usage.input_tokens",
             enriched["model.usage.input_tokens"],
         )
+        enriched.setdefault(
+            "gen_ai.usage.prompt_tokens",
+            enriched["model.usage.input_tokens"],
+        )
     if "model.usage.output_tokens" in enriched:
         enriched.setdefault(
             "gen_ai.usage.output_tokens",
+            enriched["model.usage.output_tokens"],
+        )
+        enriched.setdefault(
+            "gen_ai.usage.completion_tokens",
             enriched["model.usage.output_tokens"],
         )
     if "model.usage.total_tokens" in enriched:

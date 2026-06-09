@@ -332,7 +332,13 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError):
         with telemetry.span("agent.turn", kind="server"):
-            telemetry.event("message", attributes={"content": "hello"})
+            telemetry.event(
+                "message",
+                attributes={
+                    "message.role": "user",
+                    "message.content": "hello",
+                },
+            )
             telemetry.event(
                 "model.usage",
                 attributes={
@@ -344,6 +350,20 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
                 },
             )
             with telemetry.span("tool.call", attributes={"tool.name": "demo_tool"}):
+                telemetry.event(
+                    "tool.input",
+                    attributes={
+                        "tool.name": "demo_tool",
+                        "tool.arguments": {"query": "hvac"},
+                    },
+                )
+                telemetry.event(
+                    "tool.output",
+                    attributes={
+                        "tool.name": "demo_tool",
+                        "tool.result": {"ok": True},
+                    },
+                )
                 raise RuntimeError("tool failed")
 
     telemetry.flush()
@@ -369,21 +389,40 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
         == f"{agent_span.context.trace_id:032x}"
     )
     assert agent_span.events[0].name == "message"
-    assert agent_span.events[0].attributes["content"] == (
+    assert agent_span.events[0].attributes["message.role"] == "user"
+    assert agent_span.events[0].attributes["message.content"] == (
         '{"length": 5, "sha256": '
         '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e730'
         '43362938b9824"}'
     )
+    assert agent_span.attributes["input.value"] == agent_span.events[0].attributes[
+        "message.content"
+    ]
+    assert agent_span.attributes["gen_ai.prompt"] == agent_span.events[0].attributes[
+        "message.content"
+    ]
     assert agent_span.events[1].name == "model.usage"
     assert agent_span.events[1].attributes["gen_ai.request.model"] == "gpt-4o"
     assert agent_span.events[1].attributes["gen_ai.provider.name"] == "openai"
     assert agent_span.events[1].attributes["gen_ai.usage.input_tokens"] == 11
+    assert agent_span.events[1].attributes["gen_ai.usage.prompt_tokens"] == 11
     assert agent_span.events[1].attributes["gen_ai.usage.output_tokens"] == 4
+    assert agent_span.events[1].attributes["gen_ai.usage.completion_tokens"] == 4
     assert agent_span.events[1].attributes["gen_ai.usage.total_tokens"] == 15
     assert agent_span.events[1].attributes["model.usage.total_tokens"] == 15
     assert agent_span.attributes["gen_ai.usage.input_tokens"] == 11
+    assert agent_span.attributes["gen_ai.usage.prompt_tokens"] == 11
     assert agent_span.attributes["gen_ai.usage.output_tokens"] == 4
+    assert agent_span.attributes["gen_ai.usage.completion_tokens"] == 4
     assert agent_span.attributes["gen_ai.usage.total_tokens"] == 15
+    assert tool_span.events[0].name == "tool.input"
+    assert tool_span.events[1].name == "tool.output"
+    assert tool_span.attributes["input.value"] == tool_span.events[0].attributes[
+        "tool.arguments"
+    ]
+    assert tool_span.attributes["output.value"] == tool_span.events[1].attributes[
+        "tool.result"
+    ]
     assert agent_span.resource.attributes["service.name"] == "test-service"
 
 
