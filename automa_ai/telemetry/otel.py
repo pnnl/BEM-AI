@@ -16,6 +16,7 @@ from automa_ai.telemetry.otel_encoder import (
     otel_attributes,
     orphan_span_attributes,
     parent_context,
+    span_attributes_from_event,
     span_kind_to_otel,
     timestamp_ns,
 )
@@ -163,6 +164,12 @@ class OpenTelemetryRecorder:
         if span is not None:
             if record.name == "model.usage" and encoded.attributes:
                 span.set_attributes(encoded.attributes)
+            promoted_attributes = span_attributes_from_event(
+                record.name,
+                encoded.attributes,
+            )
+            if promoted_attributes:
+                span.set_attributes(promoted_attributes)
             span.add_event(
                 encoded.name,
                 attributes=encoded.attributes,
