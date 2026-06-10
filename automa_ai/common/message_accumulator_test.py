@@ -327,12 +327,22 @@ class TestMetadata:
                 },
             )
         )
+        acc.add_chunk(
+            AIMessageChunk(
+                content="",
+                usage_metadata={
+                    "input_tokens": 0,
+                    "output_tokens": 8,
+                    "total_tokens": 8,
+                },
+            )
+        )
 
         msg = acc.finalize()
         assert msg.usage_metadata == {
             "input_tokens": 5,
-            "output_tokens": 2,
-            "total_tokens": 7,
+            "output_tokens": 10,
+            "total_tokens": 15,
         }
 
     def test_tool_calls(self):

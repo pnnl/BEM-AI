@@ -7,6 +7,7 @@ content between normal assistant text and artifact outputs based on special mark
 
 from typing import Any
 from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages.ai import add_usage
 
 ARTIFACT_START = "<<<ARTIFACT_OUTPUT>>>"
 ARTIFACT_END = "<<<END_ARTIFACT_OUTPUT>>>"
@@ -59,7 +60,9 @@ class AIMessageAccumulator:
 
         usage_metadata = getattr(chunk, "usage_metadata", None)
         if usage_metadata:
-            self._merge_dict(self._usage_metadata, dict(usage_metadata))
+            self._usage_metadata = dict(
+                add_usage(self._usage_metadata or None, usage_metadata)
+            )
 
         if getattr(chunk, "tool_calls", None):
             self._tool_calls.extend(chunk.tool_calls)
