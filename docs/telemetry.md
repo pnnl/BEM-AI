@@ -144,15 +144,23 @@ The recorder adds a small GenAI semantic convention mapping:
 - `tool.call` spans export as `gen_ai.operation.name=execute_tool`.
 - Available `agent.*`, `tool.*`, and `model.*` attributes are copied into
   matching `gen_ai.*` attributes.
+- User `message` events are also promoted to the active span as `input.value`
+  and `gen_ai.prompt`; assistant `message` events are promoted as
+  `output.value` and `gen_ai.completion`. The original events are still
+  exported.
+- `tool.input` and `tool.output` events are promoted to their tool span as
+  `input.value` and `output.value`, while preserving the original events.
 - Final LangChain message `usage_metadata` and `response_metadata` are emitted
   as `model.usage` events when providers expose token, model, and provider
-  fields.
+  fields. Token usage is exported with both AUTOMA names such as
+  `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` and
+  prompt/completion aliases used by span-oriented LLM backends.
 
-This recorder does not synthesize cost or prompt/completion rendering. It only
-exports token/model fields that the LangChain message objects already expose.
-For richer Langfuse or AgentCore LLM evaluation dashboards, instrument the
-model-call layer or add upstream telemetry attributes before they reach the OTEL
-recorder.
+This recorder does not synthesize cost or create per-LLM-call observations. It
+promotes already-recorded AUTOMA events onto spans so backends such as Langfuse
+or AgentCore can populate trace preview and usage fields. For separate internal
+LLM-call nodes, instrument the LangChain model-call layer so AUTOMA emits
+dedicated model-call spans.
 
 `otel` uses synchronous OpenTelemetry SDK exporters under the hood. `flush()`
 calls `force_flush(timeout_millis=...)`; the default timeout is `5000` ms.
