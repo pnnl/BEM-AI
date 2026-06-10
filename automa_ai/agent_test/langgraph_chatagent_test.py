@@ -747,13 +747,20 @@ async def test_stream_records_model_usage_telemetry(tmp_path):
 
     class DummyGraph:
         async def astream(self, inputs, config, stream_mode="messages"):
-            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(
+                content="hello ",
+                usage_metadata={
+                    "input_tokens": 7,
+                    "output_tokens": 1,
+                    "total_tokens": 8,
+                },
+            ), {}
             yield AIMessageChunk(
                 content="world",
                 usage_metadata={
-                    "input_tokens": 7,
-                    "output_tokens": 3,
-                    "total_tokens": 10,
+                    "input_tokens": 0,
+                    "output_tokens": 2,
+                    "total_tokens": 2,
                 },
                 response_metadata={
                     "model": "claude-3-5-sonnet",
