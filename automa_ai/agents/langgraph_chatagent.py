@@ -55,7 +55,11 @@ from automa_ai.hook import (
     TurnInputs,
     TurnResult,
 )
-from automa_ai.telemetry import build_telemetry, wrap_langchain_tool
+from automa_ai.telemetry import (
+    AutomaLLMCallbackHandler,
+    build_telemetry,
+    wrap_langchain_tool,
+)
 from automa_ai.telemetry.context import (
     current_trace_id,
     reset_trace_context,
@@ -1080,7 +1084,27 @@ class GenericLangGraphChatAgent(BaseAgent):
         if task_id is not None:
             configurable["task_id"] = task_id
 
-        return {"configurable": configurable}
+        config: dict[str, Any] = {"configurable": configurable}
+        if self.telemetry.enabled:
+            # Use a fresh callback per turn: it owns a run_id -> open span map
+            # while LangChain reports model starts/ends asynchronously.
+            callback_attributes = {
+                "agent.name": self.agent_name,
+                "agent.runtime": "langgraph_chat",
+                "session.id": context_id,
+            }
+            if task_id is not None:
+                callback_attributes["task.id"] = task_id
+            if user_id is not None:
+                callback_attributes["user.id"] = user_id
+            config["callbacks"] = [
+                AutomaLLMCallbackHandler(
+                    self.telemetry,
+                    base_attributes=callback_attributes,
+                )
+            ]
+            config["metadata"] = callback_attributes
+        return config
 
     def _build_invoke_turn_result(
         self,

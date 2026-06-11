@@ -5,13 +5,17 @@ import asyncio
 import contextvars
 import threading
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, LLMResult
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.telemetry import (
+    AutomaLLMCallbackHandler,
     Telemetry,
     build_telemetry,
     current_span_id,
@@ -424,6 +428,118 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
         "tool.result"
     ]
     assert agent_span.resource.attributes["service.name"] == "test-service"
+
+
+@pytest.mark.asyncio
+async def test_llm_callback_exports_child_generation_span(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(
+        otel_module,
+        "_build_exporter",
+        lambda options, otel: exporter,
+    )
+    telemetry = build_telemetry(
+        {
+            "enabled": True,
+            "recorder": "otel",
+            "service_name": "test-service",
+            "environment": "test",
+            "content_mode": "redacted",
+            "options": {"processor": "simple"},
+        }
+    )
+    callback = AutomaLLMCallbackHandler(
+        telemetry,
+        base_attributes={
+            "agent.name": "demo",
+            "session.id": "session-1",
+            "task.id": "task-1",
+            "user.id": "user-1",
+        },
+    )
+    run_id = uuid4()
+
+    with telemetry.span("agent.turn", kind="server", attributes={"agent.name": "demo"}):
+        await callback.on_chat_model_start(
+            {"kwargs": {"model": "gemini-pro"}},
+            [[HumanMessage(content="hello")]],
+            run_id=run_id,
+            metadata={"ls_provider": "google_genai", "ls_model_name": "gemini-pro"},
+            invocation_params={"temperature": 0, "max_tokens": 128},
+        )
+        await callback.on_llm_new_token(
+            "worl",
+            chunk=ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content="worl",
+                    usage_metadata={
+                        "input_tokens": 11,
+                        "output_tokens": 3,
+                        "total_tokens": 14,
+                    },
+                )
+            ),
+            run_id=run_id,
+        )
+        await callback.on_llm_new_token(
+            "d",
+            chunk=ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content="d",
+                    usage_metadata={
+                        "input_tokens": 0,
+                        "output_tokens": 1,
+                        "total_tokens": 1,
+                    },
+                )
+            ),
+            run_id=run_id,
+        )
+        await callback.on_llm_end(
+            LLMResult(
+                generations=[
+                    [
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="world",
+                                usage_metadata={
+                                    "input_tokens": 0,
+                                    "output_tokens": 1,
+                                    "total_tokens": 1,
+                                },
+                                response_metadata={
+                                    "model_name": "gemini-pro",
+                                    "finish_reason": "stop",
+                                    "model_provider": "google_genai",
+                                },
+                            )
+                        )
+                    ]
+                ],
+                llm_output={"model_name": "gemini-pro"},
+            ),
+            run_id=run_id,
+        )
+
+    telemetry.flush()
+    by_name = {span.name: span for span in exporter.get_finished_spans()}
+    agent_span = by_name["invoke_agent demo"]
+    llm_span = by_name["chat gemini-pro"]
+
+    assert llm_span.parent.span_id == agent_span.context.span_id
+    assert llm_span.kind.name == "CLIENT"
+    assert llm_span.attributes["gen_ai.operation.name"] == "chat"
+    assert llm_span.attributes["gen_ai.provider.name"] == "google_genai"
+    assert llm_span.attributes["gen_ai.request.model"] == "gemini-pro"
+    assert llm_span.attributes["gen_ai.response.model"] == "gemini-pro"
+    assert llm_span.attributes["gen_ai.response.finish_reasons"] == ("stop",)
+    assert llm_span.attributes["gen_ai.usage.input_tokens"] == 11
+    assert llm_span.attributes["gen_ai.usage.output_tokens"] == 4
+    assert llm_span.attributes["gen_ai.usage.total_tokens"] == 15
+    assert llm_span.attributes["session.id"] == "session-1"
+    assert llm_span.attributes["user.id"] == "user-1"
+    assert "input.value" in llm_span.attributes
+    assert "output.value" in llm_span.attributes
 
 
 def test_otel_recorder_uses_remote_parent_without_truncating_ids(monkeypatch) -> None:

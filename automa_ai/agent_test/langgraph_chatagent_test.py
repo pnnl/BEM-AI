@@ -15,7 +15,11 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_END,
 )
 from automa_ai.hook import ContextPipeline, HookRunner, TurnResult
-from automa_ai.telemetry import current_span_id, current_trace_id
+from automa_ai.telemetry import (
+    AutomaLLMCallbackHandler,
+    current_span_id,
+    current_trace_id,
+)
 from automa_ai.token_management import TokenBudgetExceededError
 
 
@@ -120,6 +124,28 @@ def test_agent_close_runs_checkpointer_cleanup_once():
     agent.close()
 
     assert calls == ["closed"]
+
+
+def test_runnable_config_includes_llm_callback_when_telemetry_enabled():
+    agent = build_agent(telemetry_config={"enabled": True, "recorder": "noop"})
+
+    config = agent._build_runnable_config("session-1", "user-1", "task-1")
+
+    assert config["configurable"]["thread_id"] == "test-agent:session-1"
+    assert config["metadata"]["session.id"] == "session-1"
+    assert config["metadata"]["task.id"] == "task-1"
+    assert config["metadata"]["user.id"] == "user-1"
+    assert len(config["callbacks"]) == 1
+    assert isinstance(config["callbacks"][0], AutomaLLMCallbackHandler)
+
+
+def test_runnable_config_omits_llm_callback_when_telemetry_disabled():
+    agent = build_agent(telemetry_config={"enabled": False})
+
+    config = agent._build_runnable_config("session-1", "user-1", "task-1")
+
+    assert "callbacks" not in config
+    assert "metadata" not in config
 
 
 @pytest.mark.asyncio

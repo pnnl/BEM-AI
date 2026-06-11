@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from examples.openstudio_mcp_demo.openstudio_mcp_server.sdk_docs.lookup import (
+from examples.openstudio_ai.openstudio_mcp_server.sdk_docs.lookup import (
     OpenStudioSdkDocLookup,
 )
 
