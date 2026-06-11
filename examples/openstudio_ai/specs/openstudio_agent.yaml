@@ -1,0 +1,260 @@
+spec_version: v1
+
+agent_card:
+  name: OpenStudio AI Model Workspace Agent
+  description: YAML-defined OpenStudio AI agent wired to MCP tools and bounded OpenStudio SDK model editing.
+  version: 0.1.0
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:9999
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  skills:
+    - id: hvac_sizing_assistant
+      name: OpenStudio HVAC Sizing Assistant
+      description: Runs a constrained OpenStudio sizing workflow via MCP tools.
+      tags: [openstudio, mcp, hvac_sizing]
+      examples:
+        - Run a sizing workflow for model file:///tmp/sample.osm.
+        - Validate and size this model with default weather assumptions.
+    - id: openstudio_sdk_model_editor
+      name: OpenStudio SDK Model Editor
+      description: Inspects and edits OpenStudio model files through run_python and the OpenStudio Python SDK.
+      tags: [openstudio, sdk, model_editing, run_python]
+      examples:
+        - Inspect spaces, thermal zones, constructions, and loads in resource/sample.osm.
+        - Copy resource/sample.osm and reduce lighting power by 20 percent.
+
+instructions:
+  path: ../prompts/openstudio_agent.md
+
+model:
+  provider: bedrock
+  name: us.anthropic.claude-opus-4-7
+
+runtime:
+  agent_type: langgraph-chat
+  debug: true
+
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ../logs/telemetry.jsonl
+  content_mode: metadata
+  load_plugins: false
+
+blackboard:
+  enabled: true
+  store:
+    backend: local_json
+    base_dir: ../.openstudio_ai_blackboards
+  schema_name: openstudio_ai_workflow
+  schema_version: 1.0.0
+  schema_description: Persistent OpenStudio AI workflow state keyed by workflow_id.
+  schema:
+    type: object
+    required:
+      - active_workflow_id
+      - workflows
+      - operation_log
+      - handoff_notes
+    properties:
+      active_workflow_id:
+        type: [string, "null"]
+      workflows:
+        type: object
+        additionalProperties:
+          type: object
+          required:
+            - workflow_id
+            - mode
+            - input_model_path
+            - current_model_path
+            - output_model_path
+            - system
+            - schedules
+            - completed_steps
+            - pending_steps
+            - created_objects
+            - assumptions
+            - warnings
+            - validation_results
+          properties:
+            workflow_id:
+              type: string
+            mode:
+              type: string
+            input_model_path:
+              type: [string, "null"]
+            current_model_path:
+              type: [string, "null"]
+            output_model_path:
+              type: [string, "null"]
+            openstudio_version:
+              type: [string, "null"]
+            standards_template:
+              type: [string, "null"]
+            system:
+              type: object
+              additionalProperties: true
+            schedules:
+              type: object
+              additionalProperties: true
+            design_temperatures:
+              type: object
+              additionalProperties: true
+            sizing:
+              type: object
+              additionalProperties: true
+            fan:
+              type: object
+              additionalProperties: true
+            central_heating:
+              type: object
+              additionalProperties: true
+            central_cooling:
+              type: object
+              additionalProperties: true
+            outdoor_air_system:
+              type: object
+              additionalProperties: true
+            air_loop_controls:
+              type: object
+              additionalProperties: true
+            zone_terminals:
+              type: object
+              additionalProperties: true
+            completed_steps:
+              type: array
+              items:
+                type: string
+            pending_steps:
+              type: array
+              items:
+                type: string
+            created_objects:
+              type: object
+              additionalProperties: true
+            assumptions:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+            validation_results:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            last_phase:
+              type: [string, "null"]
+            missing_fields:
+              type: array
+              items:
+                type: string
+          additionalProperties: true
+      operation_log:
+        type: array
+        items:
+          type: object
+          required: [operation, workflow_id, note]
+          properties:
+            operation:
+              type: string
+              enum:
+                - initialize_workflow
+                - update_state_patch
+                - get_phase_state
+                - mark_step_complete
+                - clarification
+                - validation
+                - handoff
+            workflow_id:
+              type: [string, "null"]
+            phase:
+              type: [string, "null"]
+            note:
+              type: string
+          additionalProperties: true
+      handoff_notes:
+        type: array
+        items:
+          type: string
+    additionalProperties: false
+  initial_data:
+    active_workflow_id: null
+    workflows: {}
+    operation_log: []
+    handoff_notes: []
+
+tools:
+  tools:
+    - type: run_python
+      config:
+        runner: local_subprocess
+        python_executable: python
+        timeout_s: 120
+        workspace_root: ..
+        max_artifacts: 20
+        warn_script_lines: 120
+        failure_experience_path: ../logs/python_script_failure_experience.jsonl
+        allow_network: false
+        blocked_imports:
+          - subprocess
+          - socket
+          - requests
+          - urllib
+          - ctypes
+
+skills:
+  enabled: true
+  allowed_roots:
+    - ../skills
+    - ../knowledge/openstudio_sdk_wiki
+  registry:
+    hvac_sizing_assistant:
+      path: ../skills/hvac_sizing_assistant.md
+    openstudio_sdk_model_editor:
+      path: ../skills/openstudio_sdk_model_editor.md
+    openstudio_hvac_workflow_state:
+      path: ../skills/openstudio_hvac_workflow_state.md
+    openstudio_vav_reheat_system_creator:
+      path: ../skills/openstudio_vav_reheat_system_creator.md
+    openstudio_hvac_air_loop_creator:
+      path: ../skills/openstudio_hvac_air_loop_creator.md
+    openstudio_hvac_schedule_resolver:
+      path: ../skills/openstudio_hvac_schedule_resolver.md
+    openstudio_hvac_sizing_system_configurator:
+      path: ../skills/openstudio_hvac_sizing_system_configurator.md
+    openstudio_hvac_supply_fan_creator:
+      path: ../skills/openstudio_hvac_supply_fan_creator.md
+    openstudio_hvac_central_heating_coil_creator:
+      path: ../skills/openstudio_hvac_central_heating_coil_creator.md
+    openstudio_hvac_central_cooling_coil_creator:
+      path: ../skills/openstudio_hvac_central_cooling_coil_creator.md
+    openstudio_hvac_outdoor_air_system_creator:
+      path: ../skills/openstudio_hvac_outdoor_air_system_creator.md
+    openstudio_hvac_vav_terminal_creator:
+      path: ../skills/openstudio_hvac_vav_terminal_creator.md
+    openstudio_hvac_system_validator:
+      path: ../skills/openstudio_hvac_system_validator.md
+    openstudio_sdk_wiki:
+      path: ../knowledge/openstudio_sdk_wiki
+      mode: directory
+
+server:
+  log_dir: ../logs
+  health_check_path: /health
+
+mcp:
+  servers:
+    openstudio_mcp:
+      name: openstudio_mcp
+      host: localhost
+      port: 10210
+      transport: sse

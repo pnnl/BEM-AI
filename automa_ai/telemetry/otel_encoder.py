@@ -148,6 +148,24 @@ def span_attributes_from_event(
         result = attributes.get("tool.result")
         if result is not None:
             return {"output.value": result}
+    elif event_name == "llm.output":
+        # The callback learns output/model fields only when LangChain finishes
+        # the run. Promote the event payload onto the open LLM span so
+        # span-oriented backends can render model output without parsing events.
+        output = attributes.get("output.value") or attributes.get("gen_ai.completion")
+        result = {}
+        if output is not None:
+            result["output.value"] = output
+            result["gen_ai.completion"] = output
+        if "gen_ai.response.model" in attributes:
+            result["gen_ai.response.model"] = attributes["gen_ai.response.model"]
+        if "model.response_name" in attributes:
+            result["model.response_name"] = attributes["model.response_name"]
+        if "gen_ai.response.finish_reasons" in attributes:
+            result["gen_ai.response.finish_reasons"] = attributes[
+                "gen_ai.response.finish_reasons"
+            ]
+        return result
     return {}
 
 
@@ -271,6 +289,11 @@ def _semantic_attributes(span_name: str, attributes: dict[str, Any]) -> dict[str
         enriched.setdefault("gen_ai.provider.name", "automa_ai")
         if "tool.name" in enriched:
             enriched.setdefault("gen_ai.tool.name", enriched["tool.name"])
+    elif span_name == "llm.call":
+        # LangChain callbacks start AUTOMA spans named `llm.call`; encode them
+        # as OTEL GenAI inference spans for backend interoperability.
+        enriched.setdefault("gen_ai.operation.name", "chat")
+        enriched.setdefault("gen_ai.provider.name", "langchain")
     if "model.provider" in enriched:
         enriched.setdefault("gen_ai.provider.name", enriched["model.provider"])
     if "model.name" in enriched:
@@ -311,6 +334,12 @@ def _span_name(original_name: str, attributes: dict[str, Any]) -> str:
         return f"{operation} {attributes['gen_ai.agent.name']}"
     if operation == "execute_tool" and attributes.get("gen_ai.tool.name"):
         return f"{operation} {attributes['gen_ai.tool.name']}"
+    if operation in {"chat", "generate_content", "text_completion", "embeddings"}:
+        model = attributes.get("gen_ai.request.model")
+        if model:
+            # OTEL GenAI recommends `{operation} {request.model}` for inference
+            # span names. This also makes Langfuse timelines easier to scan.
+            return f"{operation} {model}"
     return str(operation)
 
 

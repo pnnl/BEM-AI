@@ -20,6 +20,17 @@ PAYLOAD_KEY_PATTERN = re.compile(
     r"(content|arguments?|result|payload|input|output|prompt|response|artifact)",
     re.IGNORECASE,
 )
+SAFE_METADATA_KEYS = frozenset(
+    {
+        # These keys contain "response" but are scalar metadata, not payloads.
+        # Keep them readable so OTEL/Langfuse can identify generation model and
+        # finish reason even when content redaction is enabled.
+        "gen_ai.response.finish_reasons",
+        "gen_ai.response.model",
+        "model.finish_reason",
+        "model.response_name",
+    }
+)
 SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._~+/=-]{12,})"
 )
@@ -111,6 +122,9 @@ def sanitize_mapping(
             continue
         if SECRET_KEY_PATTERN.search(key_text):
             sanitized[key_text] = "[REDACTED]"
+            continue
+        if key_text in SAFE_METADATA_KEYS:
+            sanitized[key_text] = value
             continue
         if PAYLOAD_KEY_PATTERN.search(key_text):
             sanitized[key_text] = sanitize_value(value, mode=mode, max_chars=max_chars)
