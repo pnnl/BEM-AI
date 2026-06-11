@@ -15,7 +15,11 @@ from automa_ai.common.message_accumulator import (
     ARTIFACT_END,
 )
 from automa_ai.hook import ContextPipeline, HookRunner, TurnResult
-from automa_ai.telemetry import current_span_id, current_trace_id
+from automa_ai.telemetry import (
+    AutomaLLMCallbackHandler,
+    current_span_id,
+    current_trace_id,
+)
 from automa_ai.token_management import TokenBudgetExceededError
 
 
@@ -120,6 +124,28 @@ def test_agent_close_runs_checkpointer_cleanup_once():
     agent.close()
 
     assert calls == ["closed"]
+
+
+def test_runnable_config_includes_llm_callback_when_telemetry_enabled():
+    agent = build_agent(telemetry_config={"enabled": True, "recorder": "noop"})
+
+    config = agent._build_runnable_config("session-1", "user-1", "task-1")
+
+    assert config["configurable"]["thread_id"] == "test-agent:session-1"
+    assert config["metadata"]["session.id"] == "session-1"
+    assert config["metadata"]["task.id"] == "task-1"
+    assert config["metadata"]["user.id"] == "user-1"
+    assert len(config["callbacks"]) == 1
+    assert isinstance(config["callbacks"][0], AutomaLLMCallbackHandler)
+
+
+def test_runnable_config_omits_llm_callback_when_telemetry_disabled():
+    agent = build_agent(telemetry_config={"enabled": False})
+
+    config = agent._build_runnable_config("session-1", "user-1", "task-1")
+
+    assert "callbacks" not in config
+    assert "metadata" not in config
 
 
 @pytest.mark.asyncio
@@ -747,13 +773,20 @@ async def test_stream_records_model_usage_telemetry(tmp_path):
 
     class DummyGraph:
         async def astream(self, inputs, config, stream_mode="messages"):
-            yield AIMessageChunk(content="hello "), {}
+            yield AIMessageChunk(
+                content="hello ",
+                usage_metadata={
+                    "input_tokens": 7,
+                    "output_tokens": 1,
+                    "total_tokens": 8,
+                },
+            ), {}
             yield AIMessageChunk(
                 content="world",
                 usage_metadata={
-                    "input_tokens": 7,
-                    "output_tokens": 3,
-                    "total_tokens": 10,
+                    "input_tokens": 0,
+                    "output_tokens": 2,
+                    "total_tokens": 2,
                 },
                 response_metadata={
                     "model": "claude-3-5-sonnet",

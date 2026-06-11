@@ -3,6 +3,7 @@
 from automa_ai.telemetry.config import build_telemetry
 from automa_ai.telemetry.context import current_span_id, current_trace_id
 from automa_ai.telemetry.facade import Telemetry
+from automa_ai.telemetry.langchain_llm import AutomaLLMCallbackHandler
 from automa_ai.telemetry.langchain import wrap_langchain_tool
 from automa_ai.telemetry.otel import OpenTelemetryRecorder
 from automa_ai.telemetry.recorders import (
@@ -21,6 +22,7 @@ from automa_ai.telemetry.registry import (
 
 __all__ = [
     "Telemetry",
+    "AutomaLLMCallbackHandler",
     "TelemetryRecorder",
     "JsonlRecorder",
     "NoopRecorder",
