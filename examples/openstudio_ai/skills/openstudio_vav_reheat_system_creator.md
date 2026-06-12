@@ -23,13 +23,17 @@ Before any VAV script drafting, load:
 - `openstudio_sdk_model_editor`
 - `openstudio_hvac_workflow_state`
 - `sdk_index`
-- `sdk_core_patterns`
-- `sdk_hvac`
-- `sdk_schedules`
-- `sdk_spaces_zones_loads`
 
 Load exactly one child skill for the active edit phase. Do not load all child
-skills at once.
+skills or all SDK packs at once.
+
+Load SDK context packs only when needed:
+
+- `sdk_core_patterns`: before drafting an executable SDK script.
+- `sdk_hvac`: air loop, sizing, fan, coils, outdoor air, terminals, or HVAC
+  validation phases.
+- `sdk_schedules`: schedule resolver phase.
+- `sdk_spaces_zones_loads`: preflight or zone/space-scoped validation.
 
 ## Parent Rules
 

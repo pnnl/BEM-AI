@@ -64,6 +64,67 @@ def test_yaml_agent_spec_loads_instruction_file_relative_to_yaml(
     assert spec.resolve_instructions() == "Use the file prompt."
 
 
+def test_yaml_agent_spec_resolves_env_placeholders_in_model_and_nested_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    monkeypatch.setenv("SERPER_API_KEY", "test-serper-key")
+    monkeypatch.setenv("PINECONE_API_KEY", "test-pinecone-key")
+
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        .replace("provider: ollama", "provider: claude")
+        .replace(
+            "name: llama3.1:8b",
+            "name: claude-opus-4-20250514\n  api_key: ${ANTHROPIC_API_KEY}",
+        )
+        + """
+tools:
+  tools:
+    - type: web_search
+      config:
+        provider: serper
+        serper:
+          api_key: ${SERPER_API_KEY}
+retriever:
+  provider: pinecone
+  retrieval_provider_config:
+    api_key: ${PINECONE_API_KEY}
+"""
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["api_key"] == "test-anthropic-key"
+    assert (
+        kwargs["tools_config"]["tools"][0]["config"]["serper"]["api_key"]
+        == "test-serper-key"
+    )
+    assert (
+        kwargs["retriever_spec"]["retrieval_provider_config"]["api_key"]
+        == "test-pinecone-key"
+    )
+
+
+def test_yaml_agent_spec_raises_for_missing_env_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MISSING_AUTOMA_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="MISSING_AUTOMA_KEY"):
+        YamlAgentSpec.from_yaml_text(
+            _base_yaml()
+            + """
+tools:
+  tools:
+    - type: web_search
+      config:
+        serper:
+          api_key: ${MISSING_AUTOMA_KEY}
+"""
+        )
+
+
 def test_yaml_agent_spec_to_factory_kwargs_maps_current_surface() -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()
