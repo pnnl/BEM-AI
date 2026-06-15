@@ -156,6 +156,18 @@ def test_openstudio_ai_blackboard_config_supports_workflow_state(tmp_path: Path)
         "operation_log": [],
         "handoff_notes": [],
     }
+    assert (
+        blackboard_config["schema"]["properties"]["workflows"][
+            "additionalProperties"
+        ]
+        is True
+    )
+    assert (
+        blackboard_config["schema"]["properties"]["operation_log"]["items"][
+            "additionalProperties"
+        ]
+        is True
+    )
 
     blackboard_config["store"]["base_dir"] = str(tmp_path)
     BlackboardSchemaRegistry.register(
