@@ -106,6 +106,30 @@ retriever:
     )
 
 
+def test_yaml_agent_spec_keeps_env_placeholders_literal_in_user_facing_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+    monkeypatch.delenv("UNSET_PROMPT_PLACEHOLDER", raising=False)
+
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml(
+            "text: use ${OPENAI_API_KEY} as a literal example, not a secret"
+        ).replace(
+            "description: Agent loaded from YAML.",
+            "description: Card example uses ${UNSET_PROMPT_PLACEHOLDER}.",
+        )
+    )
+
+    assert spec.resolve_instructions() == (
+        "use ${OPENAI_API_KEY} as a literal example, not a secret"
+    )
+    assert (
+        spec.agent_card["description"]
+        == "Card example uses ${UNSET_PROMPT_PLACEHOLDER}."
+    )
+
+
 def test_yaml_agent_spec_raises_for_missing_env_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

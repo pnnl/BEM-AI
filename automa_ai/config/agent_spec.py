@@ -24,6 +24,25 @@ from automa_ai.common.mcp_registry import MCPServerConfig
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_PLACEHOLDER_KEY_NAMES = {
+    "api_key",
+    "access_token",
+    "refresh_token",
+    "token",
+    "password",
+    "secret",
+    "client_secret",
+    "private_key",
+}
+_ENV_PLACEHOLDER_KEY_SUFFIXES = (
+    "_api_key",
+    "_token",
+    "_password",
+    "_secret",
+    "_secret_key",
+    "_access_key",
+    "_private_key",
+)
 
 
 class InstructionsSpec(BaseModel):
@@ -323,13 +342,18 @@ def _resolve_path(path: str, *, base_dir: Path) -> Path:
     return resolved
 
 
-def _resolve_env_placeholders(value: Any) -> Any:
-    """Resolve ${ENV_NAME} placeholders in YAML-loaded scalar strings."""
+def _resolve_env_placeholders(value: Any, *, path: tuple[str, ...] = ()) -> Any:
+    """Resolve ${ENV_NAME} placeholders in secret-like YAML config fields."""
     if isinstance(value, dict):
-        return {key: _resolve_env_placeholders(item) for key, item in value.items()}
+        return {
+            key: _resolve_env_placeholders(item, path=path + (str(key),))
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_resolve_env_placeholders(item) for item in value]
+        return [_resolve_env_placeholders(item, path=path) for item in value]
     if not isinstance(value, str):
+        return value
+    if not _should_resolve_env_placeholders(path):
         return value
 
     def replace(match: re.Match[str]) -> str:
@@ -341,6 +365,16 @@ def _resolve_env_placeholders(value: Any) -> Any:
         return os.environ[env_name]
 
     return _ENV_PLACEHOLDER_RE.sub(replace, value)
+
+
+def _should_resolve_env_placeholders(path: tuple[str, ...]) -> bool:
+    """Return true for YAML keys intended to carry secrets or credentials."""
+    if not path:
+        return False
+    key = path[-1].lower()
+    return key in _ENV_PLACEHOLDER_KEY_NAMES or key.endswith(
+        _ENV_PLACEHOLDER_KEY_SUFFIXES
+    )
 
 
 def _validate_a2a_card(card: Any, *, label: str) -> None:

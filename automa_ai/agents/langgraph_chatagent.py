@@ -931,6 +931,17 @@ class GenericLangGraphChatAgent(BaseAgent):
                 await self.turn_input_builder.on_turn_error(turn, exc)
             try:
                 if isinstance(exc, GeneratorExit):
+                    # GeneratorExit fires when the caller stops iterating (e.g.
+                    # the A2A executor breaks after the final item).  The agent
+                    # itself may have finished cleanly and already resolved
+                    # stream_result.  Fire after_turn so hooks and session
+                    # persistence see every completed turn, not only turns whose
+                    # consumer happened to drain the queue past the None sentinel.
+                    if turn is not None and stream_result.done():
+                        await self.turn_input_builder.after_turn(
+                            turn,
+                            stream_result.result(),
+                        )
                     self.telemetry.event(
                         "stream.closed",
                         attributes={

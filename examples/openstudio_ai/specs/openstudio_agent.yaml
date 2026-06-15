@@ -32,8 +32,10 @@ instructions:
   path: ../prompts/openstudio_agent.md
 
 model:
-  provider: bedrock
-  name: us.anthropic.claude-opus-4-7
+  provider: claude
+  name: ${LLM_MODEL_NAME}
+  base_url: ${LLM_MODEL_URL}
+  api_key: ${OSSTD_LLM_API}
 
 runtime:
   agent_type: langgraph-chat
