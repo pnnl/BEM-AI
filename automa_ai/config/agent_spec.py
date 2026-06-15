@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
+import re
 from typing import Any, Literal, TypeAlias
 
 import yaml
@@ -19,6 +21,28 @@ from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.common.agent_registry import A2AAgentServer
 from automa_ai.common.mcp_registry import MCPServerConfig
+
+
+_ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_PLACEHOLDER_KEY_NAMES = {
+    "api_key",
+    "access_token",
+    "refresh_token",
+    "token",
+    "password",
+    "secret",
+    "client_secret",
+    "private_key",
+}
+_ENV_PLACEHOLDER_KEY_SUFFIXES = (
+    "_api_key",
+    "_token",
+    "_password",
+    "_secret",
+    "_secret_key",
+    "_access_key",
+    "_private_key",
+)
 
 
 class InstructionsSpec(BaseModel):
@@ -189,6 +213,7 @@ class YamlAgentSpec(BaseModel):
         data = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
         if data is None:
             raise ValueError(f"YAML agent spec is empty: {spec_path}")
+        data = _resolve_env_placeholders(data)
         spec = cls.model_validate(data)
         spec._base_dir = spec_path.resolve().parent
         return spec
@@ -208,6 +233,7 @@ class YamlAgentSpec(BaseModel):
         data = yaml.safe_load(text)
         if data is None:
             raise ValueError("YAML agent spec is empty.")
+        data = _resolve_env_placeholders(data)
         spec = cls.model_validate(data)
         if base_dir is not None:
             spec._base_dir = Path(base_dir).resolve()
@@ -314,6 +340,41 @@ def _resolve_path(path: str, *, base_dir: Path) -> Path:
     if not resolved.is_absolute():
         resolved = base_dir / resolved
     return resolved
+
+
+def _resolve_env_placeholders(value: Any, *, path: tuple[str, ...] = ()) -> Any:
+    """Resolve ${ENV_NAME} placeholders in secret-like YAML config fields."""
+    if isinstance(value, dict):
+        return {
+            key: _resolve_env_placeholders(item, path=path + (str(key),))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_env_placeholders(item, path=path) for item in value]
+    if not isinstance(value, str):
+        return value
+    if not _should_resolve_env_placeholders(path):
+        return value
+
+    def replace(match: re.Match[str]) -> str:
+        env_name = match.group(1)
+        if env_name not in os.environ:
+            raise ValueError(
+                f"Environment variable '{env_name}' is required by YAML agent spec."
+            )
+        return os.environ[env_name]
+
+    return _ENV_PLACEHOLDER_RE.sub(replace, value)
+
+
+def _should_resolve_env_placeholders(path: tuple[str, ...]) -> bool:
+    """Return true for YAML keys intended to carry secrets or credentials."""
+    if not path:
+        return False
+    key = path[-1].lower()
+    return key in _ENV_PLACEHOLDER_KEY_NAMES or key.endswith(
+        _ENV_PLACEHOLDER_KEY_SUFFIXES
+    )
 
 
 def _validate_a2a_card(card: Any, *, label: str) -> None:

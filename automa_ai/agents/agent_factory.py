@@ -117,10 +117,8 @@ def resolve_chat_model(
         return ChatAnthropic(
             model_name=model_name,
             base_url=base_url,
-            temperature=0,
             api_key=key,
-            timeout=None,
-            stop=["}"],
+            timeout=None
         )
     elif backend == GenericLLM.GEMINI:
         assert os.getenv(
@@ -495,9 +493,7 @@ class AgentFactory:
                 self.checkpointer_config
             )
             resolved_retriever = (
-                resolve_retriever(self.retriever_spec)
-                if self.retriever_spec
-                else None
+                resolve_retriever(self.retriever_spec) if self.retriever_spec else None
             )
             turn_input_builder = self.turn_input_builder or (
                 build_turn_input_builder_from_config(

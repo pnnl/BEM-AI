@@ -323,6 +323,27 @@ Required object.
 - `api_version`: Optional API version, commonly needed for Azure OpenAI.
 - `max_retries`: Optional model retry count for providers that support it.
 
+Secret-like config fields in YAML specs may reference environment variables
+with `${ENV_NAME}`. The loader resolves these placeholders before validation and
+raises an error if a referenced environment variable is not set. This applies to
+keys such as `api_key`, `*_api_key`, `*_token`, `*_password`, `*_secret`,
+`*_access_key`, and `*_private_key` in model settings and nested configs such as
+tools or retrievers. Placeholders in user-facing fields such as
+`instructions.text` and `agent_card.description` remain literal text.
+
+```yaml
+model:
+  provider: claude
+  name: claude-opus-4-20250514
+  api_key: ${ANTHROPIC_API_KEY}
+tools:
+  tools:
+    - type: web_search
+      config:
+        serper:
+          api_key: ${SERPER_API_KEY}
+```
+
 ### `runtime`
 
 Optional object.
