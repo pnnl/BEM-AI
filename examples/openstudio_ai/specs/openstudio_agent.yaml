@@ -33,8 +33,8 @@ instructions:
 
 model:
   provider: claude
-  name: ${LLM_MODEL_NAME}
-  base_url: ${LLM_MODEL_URL}
+  name: your-claude-model
+  base_url: https://your-llm-provider-base-url
   api_key: ${OSSTD_LLM_API}
 
 runtime:

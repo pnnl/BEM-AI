@@ -343,12 +343,7 @@ def _resolve_path(path: str, *, base_dir: Path) -> Path:
 
 
 def _resolve_env_placeholders(value: Any, *, path: tuple[str, ...] = ()) -> Any:
-    """Resolve ${ENV_NAME} placeholders in any YAML config string field.
-
-    Previously restricted to secret-like key names, but non-secret fields such
-    as ``base_url`` and ``name`` also legitimately use ${...} syntax in YAML
-    specs, so we now resolve any string that contains a placeholder pattern.
-    """
+    """Resolve ${ENV_NAME} placeholders in secret-like YAML config fields."""
     if isinstance(value, dict):
         return {
             key: _resolve_env_placeholders(item, path=path + (str(key),))
@@ -358,8 +353,7 @@ def _resolve_env_placeholders(value: Any, *, path: tuple[str, ...] = ()) -> Any:
         return [_resolve_env_placeholders(item, path=path) for item in value]
     if not isinstance(value, str):
         return value
-    # Skip strings that contain no placeholder syntax to avoid spurious errors.
-    if not _ENV_PLACEHOLDER_RE.search(value):
+    if not _should_resolve_env_placeholders(path):
         return value
 
     def replace(match: re.Match[str]) -> str:

@@ -157,7 +157,8 @@ The generated cache is ignored by git.
 4. Ensure the Python executable configured in `specs/openstudio_agent.yaml` can
    import the OpenStudio Python SDK when using SDK inspection/editing. If needed,
    update `tools.tools[0].config.python_executable`.
-5. Optional but recommended: set `OPENSTUDIO_SDK_DOCS_DIR` to local OpenStudio
+5. Set `OSSTD_LLM_API` in your `.env` to your API key — the YAML spec reads it via `${...}` interpolation. Update `model.name` and `model.base_url` directly in `specs/openstudio_agent.yaml` to match your provider.
+6. Optional but recommended: set `OPENSTUDIO_SDK_DOCS_DIR` to local OpenStudio
    SDK HTML documentation so the agent can verify exact SDK APIs before writing
    scripts.
 
