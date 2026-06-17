@@ -194,9 +194,9 @@ The spec points to:
 ## Run
 
 - Start agent server + MCP server:
-  - `python3 examples/openstudio_ai/agent.py`
+  - `uv run python examples/openstudio_ai/agent.py`
 - Optional Streamlit UI:
-  - `streamlit run examples/openstudio_ai/ui.py`
+  - `uv run streamlit run examples/openstudio_ai/ui.py`
   - The UI includes a right-side telemetry panel that reads
     `logs/telemetry.jsonl` and renders recent spans/events as an expandable
     trace tree.
