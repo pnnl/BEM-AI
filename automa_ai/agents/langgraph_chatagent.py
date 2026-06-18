@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import json
 import logging
+from collections.abc import Mapping
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
@@ -1268,14 +1269,19 @@ class GenericLangGraphChatAgent(BaseAgent):
 
     @staticmethod
     def _attachment_telemetry_attributes(
-        attachments: list[dict[str, Any]],
+        attachments: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         """Return attachment metadata for telemetry without payload data."""
+        normalized = [
+            attachment
+            for attachment in attachments or []
+            if isinstance(attachment, Mapping)
+        ]
         return {
-            "message.attachments_count": len(attachments),
+            "message.attachments_count": len(normalized),
             "message.attachment_types": [
                 attachment.get("mime_type", "unknown")
-                for attachment in attachments
+                for attachment in normalized
             ],
         }
 

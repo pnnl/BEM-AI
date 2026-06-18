@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from automa_ai.hook.context import ContextBlock
@@ -15,23 +15,23 @@ class InputAssembler:
         if not turn.attachments:
             return turn.query
 
-        content_blocks: list[dict[str, Any]] = [
-            {"type": "text", "text": turn.query}
-        ]
+        image_blocks: list[dict[str, Any]] = []
         for attachment in turn.attachments:
+            if not isinstance(attachment, Mapping):
+                continue
             mime_type = attachment.get("mime_type", "")
             if mime_type.startswith("image/") and attachment.get("data"):
-                content_blocks.append(
+                image_blocks.append(
                     {
                         "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mime_type,
-                            "data": attachment["data"],
-                        },
+                        "base64": attachment["data"],
+                        "mime_type": mime_type,
                     }
                 )
-        return content_blocks
+
+        if not image_blocks:
+            return turn.query
+        return [{"type": "text", "text": turn.query}, *image_blocks]
 
     def build(
         self,

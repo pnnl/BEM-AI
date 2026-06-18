@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from automa_ai.hook.context import (
@@ -14,6 +15,17 @@ from automa_ai.hook.input_assembler import InputAssembler
 from automa_ai.hook.turn import TurnInputs, TurnRequest, TurnResult
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_attachments(value: Any) -> list[dict[str, Any]]:
+    """Normalize runtime attachment metadata to a list of plain dictionaries."""
+    if value is None:
+        return []
+    if isinstance(value, Mapping):
+        return [dict(value)]
+    if not isinstance(value, list | tuple):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 class TurnInputBuilder:
@@ -81,7 +93,7 @@ class TurnInputBuilder:
     ) -> TurnInputs:
         """Run hooks, collect context, and assemble LangGraph inputs."""
         turn_metadata = dict(metadata or {})
-        attachments = turn_metadata.pop("attachments", [])
+        attachments = _normalize_attachments(turn_metadata.pop("attachments", []))
         turn = TurnRequest(
             query=query,
             context_id=context_id,
