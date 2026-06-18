@@ -80,12 +80,15 @@ class TurnInputBuilder:
         context_error_handler: ContextProviderErrorHandler | None = None,
     ) -> TurnInputs:
         """Run hooks, collect context, and assemble LangGraph inputs."""
+        turn_metadata = dict(metadata or {})
+        attachments = turn_metadata.pop("attachments", [])
         turn = TurnRequest(
             query=query,
             context_id=context_id,
             task_id=task_id,
             user_id=user_id,
-            metadata=metadata or {},
+            metadata=turn_metadata,
+            attachments=attachments,
         )
         try:
             original_context_id = turn.context_id

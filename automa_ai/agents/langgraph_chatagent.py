@@ -481,6 +481,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                     attributes={
                         "message.role": "user",
                         "message.content": turn.query,
+                        **self._attachment_telemetry_attributes(
+                            turn.attachments
+                        ),
                         **self._event_identity_attributes(
                             session_id=turn.context_id,
                             task_id=turn.task_id,
@@ -592,6 +595,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                 attributes={
                     "message.role": "user",
                     "message.content": turn.query,
+                    **self._attachment_telemetry_attributes(turn.attachments),
                     **self._event_identity_attributes(
                         session_id=turn.context_id,
                         task_id=turn.task_id,
@@ -1261,6 +1265,19 @@ class GenericLangGraphChatAgent(BaseAgent):
                     parts.append(str(item))
             return "".join(parts)
         return str(content)
+
+    @staticmethod
+    def _attachment_telemetry_attributes(
+        attachments: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Return attachment metadata for telemetry without payload data."""
+        return {
+            "message.attachments_count": len(attachments),
+            "message.attachment_types": [
+                attachment.get("mime_type", "unknown")
+                for attachment in attachments
+            ],
+        }
 
     @staticmethod
     def _split_artifact_content(content: str) -> tuple[str, str]:

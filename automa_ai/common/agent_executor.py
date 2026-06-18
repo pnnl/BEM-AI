@@ -1,3 +1,4 @@
+import base64
 import os
 
 from a2a.helpers.proto_helpers import (
@@ -24,6 +25,25 @@ from google.protobuf.json_format import MessageToDict
 
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
+
+
+def _extract_attachments_from_message(message) -> list[dict]:
+    """Extract runtime binary attachments from non-text A2A message parts."""
+    if message is None:
+        return []
+
+    attachments = []
+    for part in message.parts:
+        if part.HasField("raw"):
+            attachments.append(
+                {
+                    "type": "raw",
+                    "mime_type": part.media_type,
+                    "data": base64.b64encode(part.raw).decode("ascii"),
+                    "name": part.filename,
+                }
+            )
+    return attachments
 
 
 class GenericAgentExecutor(AgentExecutor):
@@ -92,6 +112,9 @@ class GenericAgentExecutor(AgentExecutor):
             metadata = {}
 
         query = context.get_user_input()
+        attachments = _extract_attachments_from_message(context.message)
+        if attachments:
+            metadata["attachments"] = attachments
         task = context.current_task
 
         if not task:
