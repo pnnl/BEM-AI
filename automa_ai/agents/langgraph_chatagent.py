@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import json
 import logging
+from collections.abc import Mapping
 from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
@@ -481,6 +482,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                     attributes={
                         "message.role": "user",
                         "message.content": turn.query,
+                        **self._attachment_telemetry_attributes(
+                            turn.attachments
+                        ),
                         **self._event_identity_attributes(
                             session_id=turn.context_id,
                             task_id=turn.task_id,
@@ -592,6 +596,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                 attributes={
                     "message.role": "user",
                     "message.content": turn.query,
+                    **self._attachment_telemetry_attributes(turn.attachments),
                     **self._event_identity_attributes(
                         session_id=turn.context_id,
                         task_id=turn.task_id,
@@ -1261,6 +1266,24 @@ class GenericLangGraphChatAgent(BaseAgent):
                     parts.append(str(item))
             return "".join(parts)
         return str(content)
+
+    @staticmethod
+    def _attachment_telemetry_attributes(
+        attachments: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """Return attachment metadata for telemetry without payload data."""
+        normalized = [
+            attachment
+            for attachment in attachments or []
+            if isinstance(attachment, Mapping)
+        ]
+        return {
+            "message.attachments_count": len(normalized),
+            "message.attachment_types": [
+                str(attachment.get("mime_type") or "unknown")
+                for attachment in normalized
+            ],
+        }
 
     @staticmethod
     def _split_artifact_content(content: str) -> tuple[str, str]:
