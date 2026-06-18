@@ -22,6 +22,20 @@ def test_registry_build_includes_run_python_and_web_search() -> None:
     assert "run_python" in names
 
 
+def test_run_python_tool_guides_workspace_relative_inputs() -> None:
+    tool = RunPythonTool(RunPythonToolConfig.model_validate({}))
+    schema = tool.args_schema.model_json_schema()
+
+    assert "workspace-relative paths in input_files" in tool.description
+    assert "Do not use absolute /Users/... paths" in tool.description
+    assert "Workspace-relative file paths" in schema["properties"]["input_files"][
+        "description"
+    ]
+    assert "Do not pass absolute local paths" in schema["properties"]["input_files"][
+        "description"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_run_python_happy_path_arithmetic() -> None:
     tool = RunPythonTool(RunPythonToolConfig.model_validate({}))

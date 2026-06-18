@@ -1,18 +1,11 @@
 import logging
-import os
 from copy import deepcopy
 from typing import Any, Callable, Dict, List
 
 from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict, ParseDict
-from google.adk.models.lite_llm import LiteLlm
-from langchain_anthropic import ChatAnthropic
-from langchain_aws import ChatBedrockConverse
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.adk_agent import GenericADKAgent
@@ -47,105 +40,10 @@ from automa_ai.hook import (
     TurnInputBuilder,
     build_turn_input_builder_from_config,
 )
+from automa_ai.models.chat import resolve_chat_model
 from automa_ai.token_management.store import create_token_usage_store
 
 logger = logging.getLogger(__name__)
-
-
-def resolve_chat_model(
-    backend: GenericLLM,
-    model_name: str,
-    agent_type: GenericAgentType,
-    base_url: str | None = None,
-    api_key: str | None = None,
-    api_version: str | None = None,
-    model_max_retries: int | None = None,
-):
-    if backend == GenericLLM.OLLAMA:
-        return ChatOllama(model=model_name, base_url=base_url, temperature=0)
-    elif backend == GenericLLM.BEDROCK:
-        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-        aws_region = os.getenv("AWS_REGION")
-        if aws_access_key_id is None or aws_secret_access_key is None:
-            logger.warning(
-                "AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY are not set"
-            )
-            return ChatBedrockConverse(
-                model=model_name, region_name=aws_region, temperature=0
-            )
-        return ChatBedrockConverse(
-            model=model_name,
-            region_name=aws_region,
-            aws_access_key_id=SecretStr(aws_access_key_id),
-            aws_secret_access_key=SecretStr(aws_secret_access_key),
-        )
-    elif backend == GenericLLM.OPENAI:
-        temp_key = os.getenv("OPENAI_API_KEY")
-        assert (
-            api_key or temp_key
-        ), "You must provide an API key (api_key) or have OPENAI_API_KEY in the environment to access OpenAI GPT models"
-        # Need support for API key
-        if not api_key:
-            # use the key from environment variable.
-            api_key = temp_key
-        # Detect Azure automatically
-        if base_url and "azure.com" in base_url.lower():
-            # Azure OpenAI
-            if not api_version:
-                raise ValueError(
-                    "AzureChatOpenAI requires azure_api_version and azure_deployment"
-                )
-            streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
-            return AzureChatOpenAI(
-                azure_endpoint=base_url,
-                api_key=SecretStr(api_key),
-                api_version=api_version,
-                azure_deployment=model_name,
-                streaming=streaming,
-            )
-        return ChatOpenAI(
-            model=model_name,
-            base_url=base_url,
-            api_key=SecretStr(api_key),
-            temperature=0,
-            streaming=True,
-        )
-    elif backend == GenericLLM.CLAUDE:
-        assert api_key, "You must provide an API key to access Anthropic Claude model"
-        key = SecretStr(api_key)
-        return ChatAnthropic(
-            model_name=model_name,
-            base_url=base_url,
-            api_key=key,
-            timeout=None
-        )
-    elif backend == GenericLLM.GEMINI:
-        assert os.getenv(
-            "GOOGLE_API_KEY"
-        ), "You must add GOOGLE_API_KEY in the system environment."
-        streaming = True if agent_type is GenericAgentType.LANGGRAPHCHAT else False
-        if model_max_retries is None:
-            max_retries = 2
-        else:
-            try:
-                max_retries = max(0, int(model_max_retries))
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"model_max_retries must be convertible to an integer, got: {model_max_retries!r}"
-                ) from exc
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=0,
-            timeout=None,
-            max_retries=max_retries,
-            max_tokens=None,
-            streaming=streaming,
-        )
-    elif backend == GenericLLM.LITELLAMA:
-        return LiteLlm(model=model_name)
-    else:
-        raise ValueError(f"Unsupported model backend: {backend}")
 
 
 def _build_checkpointer(
@@ -312,6 +210,9 @@ class AgentFactory:
         api_key: str | None = None,
         api_version: str | None = None,
         model_max_retries: int | None = None,
+        model_kwargs: Dict[str, Any] | None = None,
+        default_headers: Dict[str, str] | None = None,
+        extra_body: Dict[str, Any] | None = None,
         transient_retry_attempts: int = 0,
         debug: bool = False,
     ):
@@ -347,6 +248,9 @@ class AgentFactory:
         self.api_key = api_key
         self.api_version = api_version
         self.model_max_retries = model_max_retries
+        self.model_kwargs = model_kwargs
+        self.default_headers = default_headers
+        self.extra_body = extra_body
         self.transient_retry_attempts = transient_retry_attempts
         self.debug = debug
 
@@ -370,6 +274,9 @@ class AgentFactory:
             self.api_key,
             self.api_version,
             self.model_max_retries,
+            self.model_kwargs,
+            self.default_headers,
+            self.extra_body,
         )
 
         mcp_servers = None

@@ -12,6 +12,7 @@ class GenericAgentType(Enum):
 
 class GenericLLM(Enum):
     OPENAI = "openai"
+    OPENAI_COMPATIBLE = "openai-compatible"
     OLLAMA = "ollama"
     CLAUDE = "claude"
     GEMINI = "gemini"
