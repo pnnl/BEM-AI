@@ -28,6 +28,14 @@ class InputAssembler:
                         "mime_type": mime_type,
                     }
                 )
+            elif mime_type.startswith("image/") and attachment.get("url"):
+                image_blocks.append(
+                    {
+                        "type": "image",
+                        "url": attachment["url"],
+                        "mime_type": mime_type,
+                    }
+                )
 
         if not image_blocks:
             return turn.query

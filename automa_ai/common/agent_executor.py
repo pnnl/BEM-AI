@@ -28,7 +28,7 @@ from automa_ai.common.setup_logging import setup_file_logger
 
 
 def _extract_attachments_from_message(message) -> list[dict]:
-    """Extract runtime binary attachments from non-text A2A message parts."""
+    """Extract runtime attachments from non-text A2A message parts."""
     if message is None:
         return []
 
@@ -40,6 +40,15 @@ def _extract_attachments_from_message(message) -> list[dict]:
                     "type": "raw",
                     "mime_type": part.media_type,
                     "data": base64.b64encode(part.raw).decode("ascii"),
+                    "name": part.filename,
+                }
+            )
+        elif part.HasField("url"):
+            attachments.append(
+                {
+                    "type": "url",
+                    "mime_type": part.media_type,
+                    "url": part.url,
                     "name": part.filename,
                 }
             )
