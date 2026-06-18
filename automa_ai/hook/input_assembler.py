@@ -19,7 +19,7 @@ class InputAssembler:
         for attachment in turn.attachments:
             if not isinstance(attachment, Mapping):
                 continue
-            mime_type = attachment.get("mime_type", "")
+            mime_type = str(attachment.get("mime_type") or "")
             if mime_type.startswith("image/") and attachment.get("data"):
                 image_blocks.append(
                     {
