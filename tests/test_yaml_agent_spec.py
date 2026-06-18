@@ -217,6 +217,35 @@ hooks:
     )
 
 
+def test_yaml_agent_spec_maps_openai_compatible_model_options() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        .replace("provider: ollama", "provider: openai-compatible")
+        .replace(
+            "name: llama3.1:8b",
+            """name: llama-compatible
+  base_url: https://models.example/v1
+  api_key: test-key
+  model_kwargs:
+    top_p: 0.8
+  default_headers:
+    X-Provider: local
+  extra_body:
+    metadata:
+      tenant: test""",
+        )
+    )
+
+    kwargs = spec.to_factory_kwargs()
+
+    assert kwargs["chat_model"] == GenericLLM.OPENAI_COMPATIBLE
+    assert kwargs["model_base_url"] == "https://models.example/v1"
+    assert kwargs["api_key"] == "test-key"
+    assert kwargs["model_kwargs"] == {"top_p": 0.8}
+    assert kwargs["default_headers"] == {"X-Provider": "local"}
+    assert kwargs["extra_body"] == {"metadata": {"tenant": "test"}}
+
+
 def test_yaml_agent_spec_passes_redis_plain_checkpointer_options() -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()

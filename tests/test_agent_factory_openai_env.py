@@ -1,5 +1,6 @@
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents import agent_factory
+from automa_ai.models import chat as model_chat
 import pytest
 
 
@@ -12,9 +13,13 @@ def test_resolve_chat_model_uses_openai_api_key_env(monkeypatch):
 
     monkeypatch.delenv("OPENAI_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    monkeypatch.setattr(agent_factory, "ChatOpenAI", DummyChatOpenAI)
+    monkeypatch.setattr(
+        model_chat,
+        "_load_openai_chat_models",
+        lambda: (DummyChatOpenAI, object),
+    )
 
-    agent_factory.resolve_chat_model(
+    model_chat.resolve_chat_model(
         GenericLLM.OPENAI,
         "gpt-4o-mini",
         GenericAgentType.LANGGRAPHCHAT,
@@ -31,9 +36,11 @@ def test_resolve_chat_model_claude_omits_temperature(monkeypatch):
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr(agent_factory, "ChatAnthropic", DummyChatAnthropic)
+    monkeypatch.setattr(
+        model_chat, "_load_anthropic_chat_model", lambda: DummyChatAnthropic
+    )
 
-    agent_factory.resolve_chat_model(
+    model_chat.resolve_chat_model(
         GenericLLM.CLAUDE,
         "claude-opus-4-20250514",
         GenericAgentType.LANGGRAPHCHAT,
@@ -55,10 +62,12 @@ def test_resolve_chat_model_uses_configured_gemini_max_retries(monkeypatch):
 
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
     monkeypatch.setattr(
-        agent_factory, "ChatGoogleGenerativeAI", DummyChatGoogleGenerativeAI
+        model_chat,
+        "_load_gemini_chat_model",
+        lambda: DummyChatGoogleGenerativeAI,
     )
 
-    agent_factory.resolve_chat_model(
+    model_chat.resolve_chat_model(
         GenericLLM.GEMINI,
         "gemini-2.5-flash",
         GenericAgentType.LANGGRAPHCHAT,
@@ -78,10 +87,12 @@ def test_resolve_chat_model_gemini_negative_max_retries_clamped_to_zero(monkeypa
 
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
     monkeypatch.setattr(
-        agent_factory, "ChatGoogleGenerativeAI", DummyChatGoogleGenerativeAI
+        model_chat,
+        "_load_gemini_chat_model",
+        lambda: DummyChatGoogleGenerativeAI,
     )
 
-    agent_factory.resolve_chat_model(
+    model_chat.resolve_chat_model(
         GenericLLM.GEMINI,
         "gemini-2.5-flash",
         GenericAgentType.LANGGRAPHCHAT,
@@ -98,15 +109,99 @@ def test_resolve_chat_model_gemini_invalid_max_retries_raises(monkeypatch):
 
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
     monkeypatch.setattr(
-        agent_factory, "ChatGoogleGenerativeAI", DummyChatGoogleGenerativeAI
+        model_chat,
+        "_load_gemini_chat_model",
+        lambda: DummyChatGoogleGenerativeAI,
     )
 
     with pytest.raises(
         ValueError, match="model_max_retries must be convertible to an integer"
     ):
-        agent_factory.resolve_chat_model(
+        model_chat.resolve_chat_model(
             GenericLLM.GEMINI,
             "gemini-2.5-flash",
             GenericAgentType.LANGGRAPHCHAT,
             model_max_retries="not-a-number",
         )
+
+
+def test_agent_factory_still_exports_resolve_chat_model():
+    assert agent_factory.resolve_chat_model is model_chat.resolve_chat_model
+
+
+def test_resolve_chat_model_openai_compatible_requires_base_url(monkeypatch):
+    class DummyChatOpenAI:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+    monkeypatch.setattr(
+        model_chat,
+        "_load_openai_chat_models",
+        lambda: (DummyChatOpenAI, object),
+    )
+
+    with pytest.raises(ValueError, match="non-empty base_url"):
+        model_chat.resolve_chat_model(
+            GenericLLM.OPENAI_COMPATIBLE,
+            "local-model",
+            GenericAgentType.LANGGRAPHCHAT,
+            api_key="test-key",
+        )
+
+
+def test_resolve_chat_model_openai_compatible_uses_public_chat_openai(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummyChatOpenAI:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        model_chat,
+        "_load_openai_chat_models",
+        lambda: (DummyChatOpenAI, object),
+    )
+
+    model_chat.resolve_chat_model(
+        GenericLLM.OPENAI_COMPATIBLE,
+        "llama-compatible",
+        GenericAgentType.LANGGRAPHCHAT,
+        base_url="https://models.example/v1",
+        api_key=" explicit-key ",
+        model_kwargs={"top_p": 0.8},
+        default_headers={"X-Provider": "local"},
+        extra_body={"metadata": {"tenant": "test"}},
+    )
+
+    assert captured["model"] == "llama-compatible"
+    assert captured["base_url"] == "https://models.example/v1"
+    assert captured["api_key"].get_secret_value() == "explicit-key"
+    assert captured["model_kwargs"] == {"top_p": 0.8}
+    assert captured["default_headers"] == {"X-Provider": "local"}
+    assert captured["extra_body"] == {"metadata": {"tenant": "test"}}
+
+
+def test_resolve_chat_model_openai_compatible_extracts_bearer_token(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummyChatOpenAI:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        model_chat,
+        "_load_openai_chat_models",
+        lambda: (DummyChatOpenAI, object),
+    )
+
+    model_chat.resolve_chat_model(
+        GenericLLM.OPENAI_COMPATIBLE,
+        "llama-compatible",
+        GenericAgentType.LANGGRAPHCHAT,
+        base_url="https://models.example/v1",
+        default_headers={"Authorization": "Bearer header-token"},
+    )
+
+    assert captured["api_key"].get_secret_value() == "header-token"

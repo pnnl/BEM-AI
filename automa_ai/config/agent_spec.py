@@ -78,6 +78,9 @@ class ModelSpec(BaseModel):
     api_key: str | None = None
     api_version: str | None = None
     max_retries: int | None = None
+    model_kwargs: dict[str, Any] | None = None
+    default_headers: dict[str, str] | None = None
+    extra_body: dict[str, Any] | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -301,6 +304,9 @@ class YamlAgentSpec(BaseModel):
             "api_key": self.model.api_key,
             "api_version": self.model.api_version,
             "model_max_retries": self.model.max_retries,
+            "model_kwargs": deepcopy(self.model.model_kwargs),
+            "default_headers": deepcopy(self.model.default_headers),
+            "extra_body": deepcopy(self.model.extra_body),
             "transient_retry_attempts": self.runtime.transient_retry_attempts,
             "debug": self.runtime.debug,
         }

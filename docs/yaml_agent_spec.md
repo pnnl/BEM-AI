@@ -316,12 +316,19 @@ The resolved instruction text is passed to `AgentFactory(..., instructions=...)`
 Required object.
 
 - `provider`: LLM provider enum value. Supported values come from `GenericLLM`:
-  `openai`, `ollama`, `claude`, `gemini`, `litellm`, `bedrock`.
+  `openai`, `openai-compatible`, `ollama`, `claude`, `gemini`, `litellm`,
+  `bedrock`.
 - `name`: Model name or deployment name passed to the provider.
 - `base_url`: Optional provider base URL.
 - `api_key`: Optional API key. Prefer environment variables for secrets.
 - `api_version`: Optional API version, commonly needed for Azure OpenAI.
 - `max_retries`: Optional model retry count for providers that support it.
+- `model_kwargs`: Optional provider-specific model parameters.
+- `default_headers`: Optional HTTP headers for providers that support them.
+- `extra_body`: Optional extra request body for providers that support it.
+
+For OpenAI-compatible chat-completions providers, set
+`provider: openai-compatible` and provide a non-empty `base_url`.
 
 Secret-like config fields in YAML specs may reference environment variables
 with `${ENV_NAME}`. The loader resolves these placeholders before validation and
