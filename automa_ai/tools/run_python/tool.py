@@ -17,9 +17,31 @@ from automa_ai.telemetry import current_span_id, current_trace_id
 
 
 class RunPythonInput(BaseModel):
-    code: str = Field(min_length=1)
-    input_files: list[str] = Field(default_factory=list)
-    expected_outputs: list[str] = Field(default_factory=list)
+    code: str = Field(
+        min_length=1,
+        description=(
+            "Python code to execute inside an isolated per-call working directory. "
+            "Files listed in input_files are copied into that directory before "
+            "execution and should be opened by their relative paths."
+        ),
+    )
+    input_files: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Workspace-relative file paths to copy into the isolated Python "
+            "working directory before execution. Do not pass absolute local "
+            "paths such as /Users/...; convert user-provided local paths under "
+            "the configured workspace_root to relative paths, then open those "
+            "relative paths from the script."
+        ),
+    )
+    expected_outputs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Relative output paths expected to be created inside the isolated "
+            "working directory and returned as artifacts."
+        ),
+    )
     timeout_s: int | None = Field(default=None, ge=1, le=300)
 
 
@@ -38,7 +60,12 @@ class RunPythonTool(BaseDefaultTool):
         return (
             "Execute Python for calculations, structured-data parsing, charts/tables, "
             "file transformations, and simulation preparation logic using a best-effort "
-            "sandbox policy. Not for untrusted code."
+            "sandbox policy. Each call runs in a fresh temporary working directory. "
+            "To read existing workspace files, pass workspace-relative paths in "
+            "input_files; the tool copies them into the temp directory before running "
+            "code, and the script should open those same relative paths. Do not use "
+            "absolute /Users/... paths or probe/copy files from HOME inside the script. "
+            "Not for untrusted code."
         )
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
