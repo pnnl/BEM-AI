@@ -17,6 +17,7 @@ class TurnRequest:
     task_id: str | None = None
     user_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    attachments: list[dict[str, Any]] = field(default_factory=list)
 
     def with_updates(self, **updates: Any) -> "TurnRequest":
         return replace(self, **updates)
