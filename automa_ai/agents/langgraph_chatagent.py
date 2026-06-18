@@ -1280,7 +1280,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         return {
             "message.attachments_count": len(normalized),
             "message.attachment_types": [
-                attachment.get("mime_type", "unknown")
+                str(attachment.get("mime_type") or "unknown")
                 for attachment in normalized
             ],
         }
