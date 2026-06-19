@@ -17,7 +17,7 @@ from automa_ai.agents.remote_agent import (
 )
 from automa_ai.tools.base import BaseDefaultTool
 
-ALLOWED_HEADLESS_TOOL_TYPES = {"web_search", "run_python"}
+ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES = {"web_search", "run_python"}
 YAML_SUFFIXES = {".yaml", ".yml"}
 
 
@@ -129,10 +129,13 @@ class YamlAgentTool(BaseDefaultTool):
                 raise ValueError(
                     f"Headless YAML subagent cannot enable yaml_agent: {yaml_path}"
                 )
-            if tool_type not in ALLOWED_HEADLESS_TOOL_TYPES:
+            if tool_type not in ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES and (
+                not isinstance(tool_type, str) or "." not in tool_type
+            ):
                 raise ValueError(
                     "Headless YAML subagent can only enable built-in tools "
-                    f"{sorted(ALLOWED_HEADLESS_TOOL_TYPES)}; got {tool_type!r}: {yaml_path}"
+                    f"{sorted(ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES)} or custom "
+                    f"dotted-path tools; got {tool_type!r}: {yaml_path}"
                 )
 
     async def _emit_chunk(
@@ -190,26 +193,35 @@ class YamlAgentTool(BaseDefaultTool):
                     "agent.stream(...) must return an async iterable of stream items."
                 )
 
+            # Cap individual chunk size to prevent base64 image data (from
+            # multimodal ToolResult content blocks) from leaking into the
+            # returned chunks and blowing up the parent agent's context.
+            _MAX_CHUNK_CHARS = 16_000
+
             async for item in stream_result:
-                # The current yaml_agent tool stream contract emits text chunks only.
-                # Keep structured data stringified for now, even though this is lossy
-                # for response_type="data" payloads and should be revisited when the
-                # surrounding automa-ai infrastructure supports typed chunk values.
                 content = str(item.get("content", ""))
                 is_final = bool(item.get("is_task_complete"))
                 requires_user_input = bool(item.get("require_user_input"))
 
                 if content:
-                    chunks.append(content)
+                    # Always emit the full content for real-time streaming
                     await self._emit_chunk(
                         source=f"yaml_agent:{agent.agent_name}",
                         content=content,
                         yaml_path=yaml_path,
                         final=is_final or requires_user_input,
                     )
+                    # But only keep reasonably-sized chunks in the return value
+                    # to avoid passing large binary blobs back to the parent LLM.
+                    if len(content) <= _MAX_CHUNK_CHARS:
+                        chunks.append(content)
+                    else:
+                        chunks.append(
+                            content[:200] + f"... [truncated {len(content)} chars]"
+                        )
 
                 if is_final or requires_user_input:
-                    final = content
+                    final = content if len(content) <= _MAX_CHUNK_CHARS else content
                     break
 
             if not final and chunks:

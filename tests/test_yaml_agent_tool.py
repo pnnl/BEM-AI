@@ -291,10 +291,10 @@ tools:
             """
 tools:
   tools:
-    - type: my_package.custom_tool
+    - type: run_command
       config: {}
 """,
-            "can only enable built-in tools",
+            "custom dotted-path tools",
         ),
     ],
 )
@@ -312,6 +312,38 @@ async def test_yaml_agent_tool_rejects_non_headless_spec_surface(
 
     with pytest.raises(ValueError, match=match):
         await tool.invoke({"yaml_path": "agent.yaml", "query": "run"})
+
+
+@pytest.mark.asyncio
+async def test_yaml_agent_tool_accepts_custom_dotted_tool_spec(monkeypatch, tmp_path):
+    agent = FakeYamlAgent()
+    spec_path = tmp_path / "agent.yaml"
+    _write_headless_spec(spec_path)
+    with spec_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            """
+tools:
+  tools:
+    - type: my_package.custom_tool
+      config:
+        option: true
+"""
+        )
+
+    loaded_specs = []
+
+    def fake_loader(spec):
+        loaded_specs.append(spec)
+        return lambda: agent
+
+    monkeypatch.setattr(agent_spec, "load_agent_factory_from_yaml", fake_loader)
+    tool = YamlAgentTool(YamlAgentToolConfig(base_dir=str(tmp_path)))
+
+    result = await tool.invoke({"yaml_path": "agent.yaml", "query": "run"})
+
+    assert result["final"] == "done"
+    assert loaded_specs[0].tools["tools"][0]["type"] == "my_package.custom_tool"
+    assert agent.closed is True
 
 
 @pytest.mark.asyncio

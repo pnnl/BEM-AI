@@ -7,7 +7,7 @@ from typing import Any, Callable
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
-from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
+from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps, ToolResult
 from automa_ai.tools.registry import CUSTOM_TOOL_REGISTRY
 
 
@@ -166,7 +166,7 @@ def tool(
             def description(self) -> str:
                 return self._langchain_tool.description
 
-            async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+            async def invoke(self, payload: dict[str, Any]) -> dict[str, Any] | ToolResult:
                 # If function needs config, inject it and call directly
                 if has_config_param:
                     validated = self._langchain_tool.args_schema.model_validate(payload)
@@ -179,6 +179,8 @@ def tool(
                 # Normalize to dict
                 if isinstance(result, BaseModel):
                     return result.model_dump(mode="json")
+                if isinstance(result, ToolResult):
+                    return result
                 if not isinstance(result, dict):
                     return {"result": result}
                 return result

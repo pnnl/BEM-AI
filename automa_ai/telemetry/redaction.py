@@ -31,6 +31,7 @@ SAFE_METADATA_KEYS = frozenset(
         "model.response_name",
     }
 )
+PAYLOAD_VALUE_KEYS = frozenset({"base64", "data"})
 SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._~+/=-]{12,})"
 )
@@ -123,11 +124,24 @@ def sanitize_mapping(
         if SECRET_KEY_PATTERN.search(key_text):
             sanitized[key_text] = "[REDACTED]"
             continue
+        if key_text in PAYLOAD_VALUE_KEYS:
+            sanitized[key_text] = sanitize_text(
+                value,
+                mode=mode,
+                max_chars=max_chars,
+            )
+            continue
         if key_text in SAFE_METADATA_KEYS:
             sanitized[key_text] = value
             continue
         if PAYLOAD_KEY_PATTERN.search(key_text):
             sanitized[key_text] = sanitize_value(value, mode=mode, max_chars=max_chars)
+        elif isinstance(value, Mapping):
+            sanitized[key_text] = sanitize_mapping(
+                value,
+                mode=mode,
+                max_chars=max_chars,
+            )
         elif isinstance(value, str) and mode == "redacted":
             sanitized[key_text] = SECRET_VALUE_PATTERN.sub("[REDACTED]", value)
         else:
