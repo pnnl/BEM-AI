@@ -45,6 +45,7 @@ from automa_ai.skills.tools import build_load_skill_tool
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.config.tools import ToolSpec
 from automa_ai.tools import build_langchain_tools
+from automa_ai.tools.base import content_to_safe_text, infer_tool_result_provider
 from automa_ai.blackboard.store import BlackboardStore
 from automa_ai.blackboard.tools import build_blackboard_tools
 from automa_ai.config.token_budget import TokenBudgetConfig
@@ -278,7 +279,11 @@ class GenericLangGraphChatAgent(BaseAgent):
                 f"{build_subagent_delegation_instruction(self.subagents)}"
             )
 
-        default_tools = build_langchain_tools(self.default_tool_specs, logger=logger)
+        default_tools = build_langchain_tools(
+            self.default_tool_specs,
+            logger=logger,
+            model_provider=infer_tool_result_provider(self.model),
+        )
         for tool in default_tools:
             if tool.name in used_tool_name:
                 raise ValueError(f"Duplicate tool name '{tool.name}' detected.")
@@ -736,7 +741,11 @@ class GenericLangGraphChatAgent(BaseAgent):
                                         ck.name, ck.content
                                     ):
                                         continue
-                                    content = f"\n\n **Tool {ck.name} responded**: {ck.content}\n\n"
+                                    safe_content = content_to_safe_text(ck.content)
+                                    content = (
+                                        f"\n\n **Tool {ck.name} responded**: "
+                                        f"{safe_content}\n\n"
+                                    )
                                     emitted_output = True
                                     await output_queue.put(
                                         {
@@ -1043,10 +1052,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         content_str = ""
         if event.metadata and event.metadata.get("final"):
             content_str += "(final) "
-        if isinstance(event.content, (dict, list)):
-            content_str += json.dumps(event.content)
-        else:
-            content_str += str(event.content)
+        content_str += content_to_safe_text(event.content)
         return content_str
 
     def _should_retry_stream_error(

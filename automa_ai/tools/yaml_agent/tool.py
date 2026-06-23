@@ -15,7 +15,7 @@ from automa_ai.agents.remote_agent import (
     get_subagent_context_id,
     get_subagent_emitter,
 )
-from automa_ai.tools.base import BaseDefaultTool
+from automa_ai.tools.base import BaseDefaultTool, content_to_safe_text
 
 ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES = {"web_search", "run_python"}
 YAML_SUFFIXES = {".yaml", ".yml"}
@@ -193,35 +193,31 @@ class YamlAgentTool(BaseDefaultTool):
                     "agent.stream(...) must return an async iterable of stream items."
                 )
 
-            # Cap individual chunk size to prevent base64 image data (from
-            # multimodal ToolResult content blocks) from leaking into the
-            # returned chunks and blowing up the parent agent's context.
+            # This is a final text-size guard. Binary payloads are removed
+            # structurally by content_to_safe_text before reaching this point.
             _MAX_CHUNK_CHARS = 16_000
 
+            def bounded(content: str) -> str:
+                if len(content) <= _MAX_CHUNK_CHARS:
+                    return content
+                return content[:200] + f"... [truncated {len(content)} chars]"
+
             async for item in stream_result:
-                content = str(item.get("content", ""))
+                content = bounded(content_to_safe_text(item.get("content", "")))
                 is_final = bool(item.get("is_task_complete"))
                 requires_user_input = bool(item.get("require_user_input"))
 
                 if content:
-                    # Always emit the full content for real-time streaming
                     await self._emit_chunk(
                         source=f"yaml_agent:{agent.agent_name}",
                         content=content,
                         yaml_path=yaml_path,
                         final=is_final or requires_user_input,
                     )
-                    # But only keep reasonably-sized chunks in the return value
-                    # to avoid passing large binary blobs back to the parent LLM.
-                    if len(content) <= _MAX_CHUNK_CHARS:
-                        chunks.append(content)
-                    else:
-                        chunks.append(
-                            content[:200] + f"... [truncated {len(content)} chars]"
-                        )
+                    chunks.append(content)
 
                 if is_final or requires_user_input:
-                    final = content if len(content) <= _MAX_CHUNK_CHARS else content
+                    final = content
                     break
 
             if not final and chunks:

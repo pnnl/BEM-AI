@@ -112,6 +112,34 @@ class AwaitableStreamAgent(FakeYamlAgent):
         return _fake_stream_result()
 
 
+class MultimodalStreamAgent(FakeYamlAgent):
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id=None,
+        metadata=None,
+    ):
+        image_data = "a" * 50_000
+        yield {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": [
+                {"type": "text", "text": "rendered page 1"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": image_data,
+                    },
+                },
+            ],
+        }
+
+
 @pytest.mark.asyncio
 async def test_yaml_agent_tool_streams_chunks_to_parent_emitter(monkeypatch, tmp_path):
     agent = FakeYamlAgent()
@@ -364,6 +392,39 @@ async def test_yaml_agent_tool_accepts_awaitable_stream_result(monkeypatch, tmp_
     assert result["final"] == "awaited stream"
     assert result["chunks"] == ["awaited stream"]
     assert agent.closed is True
+
+
+@pytest.mark.asyncio
+async def test_yaml_agent_tool_does_not_accumulate_multimodal_payloads(
+    monkeypatch, tmp_path
+):
+    agent = MultimodalStreamAgent()
+    spec_path = tmp_path / "agent.yaml"
+    _write_headless_spec(spec_path)
+    monkeypatch.setattr(
+        agent_spec,
+        "load_agent_factory_from_yaml",
+        lambda spec: lambda: agent,
+    )
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    token = set_subagent_emitter(emit)
+    try:
+        result = await YamlAgentTool(
+            YamlAgentToolConfig(base_dir=str(tmp_path))
+        ).invoke({"yaml_path": "agent.yaml", "query": "render"})
+    finally:
+        reset_subagent_emitter(token)
+
+    serialized = str(result)
+    assert "a" * 1_000 not in serialized
+    assert "rendered page 1" in result["final"]
+    assert "[image/png attachment omitted from stream]" in result["final"]
+    assert events[0].content == result["final"]
+    assert len(result["final"]) < 1_000
 
 
 def test_yaml_agent_tool_is_registered() -> None:

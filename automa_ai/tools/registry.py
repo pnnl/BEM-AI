@@ -8,7 +8,11 @@ from collections.abc import Callable
 from typing import Any
 
 from automa_ai.config.tools import ToolSpec
-from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
+from automa_ai.tools.base import (
+    BaseDefaultTool,
+    RuntimeDeps,
+    ToolResultProvider,
+)
 
 ToolBuilder = Callable[[dict[str, Any], RuntimeDeps], BaseDefaultTool]
 
@@ -68,7 +72,10 @@ CUSTOM_TOOL_REGISTRY = ToolRegistry()
 
 
 def build_langchain_tools(
-    tool_specs: list[ToolSpec] | None, logger: logging.Logger | None = None
+    tool_specs: list[ToolSpec] | None,
+    logger: logging.Logger | None = None,
+    *,
+    model_provider: ToolResultProvider = "generic",
 ) -> list[Any]:
     """Build configured tools and adapt them for LangChain.
 
@@ -91,5 +98,5 @@ def build_langchain_tools(
             # Fall back to CUSTOM_TOOL_REGISTRY
             tool = CUSTOM_TOOL_REGISTRY.build(spec, runtime_deps)
 
-        built.append(tool.as_langchain_tool())
+        built.append(tool.as_langchain_tool(model_provider=model_provider))
     return built
