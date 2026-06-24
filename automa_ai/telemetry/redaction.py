@@ -20,6 +20,7 @@ PAYLOAD_KEY_PATTERN = re.compile(
     r"(content|arguments?|result|payload|input|output|prompt|response|artifact)",
     re.IGNORECASE,
 )
+DATA_URL_PATTERN = re.compile(r"^data:", re.IGNORECASE)
 SAFE_METADATA_KEYS = frozenset(
     {
         # These keys contain "response" but are scalar metadata, not payloads.
@@ -31,6 +32,7 @@ SAFE_METADATA_KEYS = frozenset(
         "model.response_name",
     }
 )
+PAYLOAD_VALUE_KEYS = frozenset({"base64"})
 SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._~+/=-]{12,})"
 )
@@ -78,6 +80,11 @@ def sanitize_text(
     return sanitized
 
 
+def sanitize_binary_payload(value: Any) -> dict[str, Any]:
+    """Sanitize binary-like payloads without exposing content in any mode."""
+    return sanitize_text(value, mode="metadata")
+
+
 def sanitize_value(
     value: Any,
     *,
@@ -111,6 +118,7 @@ def sanitize_mapping(
     if not payload:
         return {}
     sanitized: dict[str, Any] = {}
+    current_block_type = str(payload.get("type") or "")
     for key, value in payload.items():
         key_text = str(key)
         if (
@@ -123,11 +131,27 @@ def sanitize_mapping(
         if SECRET_KEY_PATTERN.search(key_text):
             sanitized[key_text] = "[REDACTED]"
             continue
+        if key_text in PAYLOAD_VALUE_KEYS or (
+            key_text == "data"
+            and current_block_type == "base64"
+        ) or (
+            key_text == "url"
+            and isinstance(value, str)
+            and DATA_URL_PATTERN.match(value)
+        ):
+            sanitized[key_text] = sanitize_binary_payload(value)
+            continue
         if key_text in SAFE_METADATA_KEYS:
             sanitized[key_text] = value
             continue
         if PAYLOAD_KEY_PATTERN.search(key_text):
             sanitized[key_text] = sanitize_value(value, mode=mode, max_chars=max_chars)
+        elif isinstance(value, Mapping):
+            sanitized[key_text] = sanitize_mapping(
+                value,
+                mode=mode,
+                max_chars=max_chars,
+            )
         elif isinstance(value, str) and mode == "redacted":
             sanitized[key_text] = SECRET_VALUE_PATTERN.sub("[REDACTED]", value)
         else:

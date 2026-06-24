@@ -12,6 +12,8 @@
 # - Do not enable the `yaml_agent` tool inside this subagent.
 # - Only built-in default tools such as `web_search` and `run_python` should be
 #   enabled when needed.
+# - If you enable custom dotted-path tools, treat this YAML as trusted local
+#   configuration. Tool resolution may import Python modules by path.
 
 spec_version: v1
 

@@ -41,11 +41,15 @@ class CheckpointerConfig(BaseModel):
     - ``redis_plain``: AUTOMA-AI saver implemented with core Redis commands only;
       use a single-shard Redis/Valkey target because Redis Cluster mode can
       CROSSSLOT the saver's multi-key checkpoint lifecycle operations
+    - ``redis_cluster``: AUTOMA-AI saver for Redis Cluster using per-thread
+      hash-tagged keys so checkpoint lifecycle operations stay in one slot
     - ``redis_stack``: LangGraph Redis saver requiring RediSearch and RedisJSON
     - ``agentcore``: AWS AgentCore persistent memory saver
     """
 
-    type: Literal["default", "redis_plain", "redis_stack", "agentcore"] = Field(
+    type: Literal[
+        "default", "redis_plain", "redis_cluster", "redis_stack", "agentcore"
+    ] = Field(
         default="default"
     )
 
@@ -105,10 +109,11 @@ class CheckpointerConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_type_specific_fields(self) -> "CheckpointerConfig":
-        if self.type in {"redis_plain", "redis_stack"}:
+        if self.type in {"redis_plain", "redis_cluster", "redis_stack"}:
             if not self.redis_url:
                 raise ValueError(
-                    "redis_url is required when checkpointer type is 'redis_plain' or 'redis_stack'."
+                    "redis_url is required when checkpointer type is "
+                    "'redis_plain', 'redis_cluster', or 'redis_stack'."
                 )
             if self.memory_id or self.region:
                 raise ValueError(
@@ -118,7 +123,7 @@ class CheckpointerConfig(BaseModel):
             # cannot honor the plain Redis lifecycle/connection options added here.
             if self.type == "redis_stack" and self._uses_custom_plain_redis_options():
                 raise ValueError(
-                    "Plain Redis lifecycle and connection options are only supported by redis_plain."
+                    "Plain Redis lifecycle and connection options are only supported by redis_plain or redis_cluster."
                 )
 
         elif self.type == "agentcore":

@@ -32,6 +32,41 @@ tools:
 - a dict with a `tools` list
 - a plain list of tool specs.
 
+## Multimodal tool results
+
+Tools may return visual data to the LLM with `ToolResult`:
+
+```python
+import base64
+
+from automa_ai.tools import ToolResult, tool
+
+
+@tool
+def render_page(page_number: int) -> ToolResult:
+    png_base64 = base64.b64encode(render_png(page_number)).decode("ascii")
+    return ToolResult(
+        data={"status": "success", "page_number": page_number},
+        attachments=[
+            {
+                "mime_type": "image/png",
+                "data": png_base64,
+            }
+        ],
+    )
+```
+
+When attachments contain image data or image URLs, the framework can render them
+into provider-specific content blocks for model providers that accept multimodal
+tool outputs (for example, Anthropic and Bedrock). For providers that do not
+support multimodal tool responses (currently OpenAI), attachments are omitted.
+`ToolResult` itself remains provider-neutral, and plain dict returns continue to
+behave as before.
+
+Binary attachment payloads are model-facing only. Agent progress streams,
+headless YAML-agent chunks, telemetry, and parent-agent tool summaries include
+text and attachment descriptors without base64 data.
+
 ## Built-in tool: `web_search`
 
 > ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
@@ -171,6 +206,11 @@ enable only built-in default tools such as `web_search` or `run_python` when
 needed, do not enable `yaml_agent` inside the subagent, and do not add MCP,
 persistent memory, or nested subagent configuration.
 
+Treat headless YAML specs and any custom dotted-path tools referenced from them
+as trusted local code/configuration, not untrusted user input. Custom dotted
+tool types can trigger module import during tool resolution, so specs under
+`yaml_agent.config.base_dir` should stay developer-controlled.
+
 Parent agents should be instructed to spawn these headless subagents when a
 focused task appears, for example: "Computing annual totals from the monthly
 results..." followed by a `yaml_agent` call whose `query` tells the subagent
@@ -195,7 +235,10 @@ Configuration fields:
 
 Before creating the agent, `yaml_agent` validates the target spec against the
 headless-subagent constraints: no MCP, no memory config, no persistent
-checkpointer, no nested subagents, no `yaml_agent` tool, and no custom tools.
+checkpointer, no nested subagents, and no `yaml_agent` tool. Headless subagents
+may enable the bounded built-in tools `web_search` and `run_python`, or custom
+tools by fully qualified dotted path. Those dotted-path tools are a trusted
+configuration surface and should not be sourced from untrusted YAML.
 
 Example config:
 

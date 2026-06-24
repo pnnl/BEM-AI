@@ -197,6 +197,31 @@ def test_load_skill_tool_response_is_never_streamed():
     assert _should_emit_tool_response("run_python", "normal result")
 
 
+def test_subagent_event_format_omits_multimodal_payload_data():
+    event = StreamEvent(
+        source="subagent:test",
+        type="chunk",
+        content=[
+            {"type": "text", "text": "rendered"},
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "secret-base64",
+                },
+            },
+        ],
+        metadata={"final": True},
+    )
+
+    formatted = GenericLangGraphChatAgent._format_subagent_event(event)
+
+    assert formatted.startswith("(final) rendered")
+    assert "[image/png attachment omitted from stream]" in formatted
+    assert "secret-base64" not in formatted
+
+
 def test_event_identity_attributes_omit_absent_ids():
     assert GenericLangGraphChatAgent._event_identity_attributes(
         session_id="session-1"
