@@ -129,9 +129,12 @@ class YamlAgentTool(BaseDefaultTool):
                 raise ValueError(
                     f"Headless YAML subagent cannot enable yaml_agent: {yaml_path}"
                 )
-            if tool_type not in ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES and (
-                not isinstance(tool_type, str) or "." not in tool_type
-            ):
+            is_custom_dotted_tool = (
+                isinstance(tool_type, str)
+                and "." in tool_type
+                and all(part.isidentifier() for part in tool_type.split("."))
+            )
+            if tool_type not in ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES and not is_custom_dotted_tool:
                 raise ValueError(
                     "Headless YAML subagent can only enable built-in tools "
                     f"{sorted(ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES)} or custom "
