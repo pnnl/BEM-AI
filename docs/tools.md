@@ -206,6 +206,11 @@ enable only built-in default tools such as `web_search` or `run_python` when
 needed, do not enable `yaml_agent` inside the subagent, and do not add MCP,
 persistent memory, or nested subagent configuration.
 
+Treat headless YAML specs and any custom dotted-path tools referenced from them
+as trusted local code/configuration, not untrusted user input. Custom dotted
+tool types can trigger module import during tool resolution, so specs under
+`yaml_agent.config.base_dir` should stay developer-controlled.
+
 Parent agents should be instructed to spawn these headless subagents when a
 focused task appears, for example: "Computing annual totals from the monthly
 results..." followed by a `yaml_agent` call whose `query` tells the subagent
@@ -232,7 +237,8 @@ Before creating the agent, `yaml_agent` validates the target spec against the
 headless-subagent constraints: no MCP, no memory config, no persistent
 checkpointer, no nested subagents, and no `yaml_agent` tool. Headless subagents
 may enable the bounded built-in tools `web_search` and `run_python`, or custom
-tools by fully qualified dotted path.
+tools by fully qualified dotted path. Those dotted-path tools are a trusted
+configuration surface and should not be sourced from untrusted YAML.
 
 Example config:
 

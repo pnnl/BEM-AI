@@ -115,7 +115,9 @@ For ephemeral headless subagents created by the `yaml_agent` tool, start from
 use default runtime settings, enable only bounded built-in tools such as
 `web_search` or `run_python` when needed, use fully qualified dotted paths for
 custom tools, omit MCP and persistent memory configuration, and do not define
-nested subagents.
+nested subagents. Treat these specs as trusted local configuration: custom
+dotted-path tools can trigger module import during tool resolution, so
+`yaml_agent` should not be pointed at untrusted YAML.
 
 For validation, inspection, or programmatic edits before building, load the
 intermediate spec explicitly:
