@@ -56,10 +56,12 @@ def render_page(page_number: int) -> ToolResult:
     )
 ```
 
-When attachments contain image data or image URLs, the framework renders them
-into content blocks accepted by the configured model provider. `ToolResult`
-itself remains provider-neutral, and plain dict returns continue to behave as
-before.
+When attachments contain image data or image URLs, the framework can render them
+into provider-specific content blocks for model providers that accept multimodal
+tool outputs (for example, Anthropic and Bedrock). For providers that do not
+support multimodal tool responses (currently OpenAI), attachments are omitted.
+`ToolResult` itself remains provider-neutral, and plain dict returns continue to
+behave as before.
 
 Binary attachment payloads are model-facing only. Agent progress streams,
 headless YAML-agent chunks, telemetry, and parent-agent tool summaries include
