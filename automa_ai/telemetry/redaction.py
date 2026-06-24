@@ -124,7 +124,11 @@ def sanitize_mapping(
         if SECRET_KEY_PATTERN.search(key_text):
             sanitized[key_text] = "[REDACTED]"
             continue
-        if key_text in PAYLOAD_VALUE_KEYS:
+        if key_text in PAYLOAD_VALUE_KEYS or (
+            key_text == "url"
+            and isinstance(value, str)
+            and value.startswith("data:")
+        ):
             sanitized[key_text] = sanitize_text(
                 value,
                 mode=mode,
