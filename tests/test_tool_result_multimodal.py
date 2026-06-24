@@ -260,3 +260,43 @@ def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
     assert sanitized["tool.result"][2]["image_url"]["url"]["length"] == len(data_urls[0])
     assert "content" not in sanitized["tool.result"][3]["image_url"]["url"]
     assert sanitized["tool.result"][3]["image_url"]["url"]["length"] == len(data_urls[1])
+
+
+@pytest.mark.parametrize("mode", ["raw", "redacted"])
+def test_binary_payloads_stay_metadata_only_in_all_telemetry_modes(mode):
+    sanitized = sanitize_mapping(
+        {
+            "tool.result": [
+                {"type": "base64", "data": "secret-binary"},
+                {"type": "image", "base64": "secret-base64"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,secret-url"},
+                },
+            ]
+        },
+        mode=mode,
+    )
+
+    assert "content" not in sanitized["tool.result"][0]["data"]
+    assert sanitized["tool.result"][0]["data"]["length"] == len("secret-binary")
+    assert "content" not in sanitized["tool.result"][1]["base64"]
+    assert sanitized["tool.result"][1]["base64"]["length"] == len("secret-base64")
+    assert "content" not in sanitized["tool.result"][2]["image_url"]["url"]
+    assert (
+        sanitized["tool.result"][2]["image_url"]["url"]["length"]
+        == len("data:image/png;base64,secret-url")
+    )
+
+
+def test_non_binary_data_fields_are_not_globally_sanitized():
+    sanitized = sanitize_mapping(
+        {
+            "tool.result": {
+                "type": "json",
+                "data": {"status": "success", "page": 1},
+            }
+        }
+    )
+
+    assert sanitized["tool.result"]["data"] == {"status": "success", "page": 1}

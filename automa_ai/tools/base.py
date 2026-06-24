@@ -29,7 +29,7 @@ class ToolResult:
     """Explicit tool result carrying structured data plus optional attachments."""
 
     data: dict[str, Any]
-    attachments: list[dict[str, Any]] = field(default_factory=list)
+    attachments: list[Any] = field(default_factory=list)
 
 
 class BaseDefaultTool(abc.ABC):
