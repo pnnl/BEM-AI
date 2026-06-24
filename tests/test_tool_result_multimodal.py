@@ -155,18 +155,12 @@ async def test_bedrock_tool_result_uses_nested_source_image_block():
 
 
 @pytest.mark.asyncio
-async def test_openai_tool_result_uses_data_image_url():
+async def test_openai_tool_result_stays_text_only():
     content = await ImageTool().as_langchain_tool(
         model_provider="openai"
     ).ainvoke({})
 
-    assert content[1] == {
-        "type": "image_url",
-        "image_url": {
-            "url": "data:image/png;base64,"
-            + base64.b64encode(b"fake png").decode("ascii")
-        },
-    }
+    assert content == {"status": "success", "page": 0}
 
 
 @pytest.mark.asyncio
@@ -230,7 +224,10 @@ def test_multimodal_content_projects_to_binary_free_stream_text():
 
 
 def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
-    data_url = "data:image/png;base64,ghi"
+    data_urls = [
+        "data:image/png;base64,ghi",
+        "DATA:image/png;base64,jkl",
+    ]
     sanitized = sanitize_mapping(
         {
             "tool.result": [
@@ -244,7 +241,11 @@ def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
                 },
                 {
                     "type": "image_url",
-                    "image_url": {"url": data_url},
+                    "image_url": {"url": data_urls[0]},
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_urls[1]},
                 },
             ]
         }
@@ -256,4 +257,6 @@ def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
     assert "content" not in sanitized["tool.result"][1]["source"]["data"]
     assert sanitized["tool.result"][1]["source"]["data"]["length"] == 3
     assert "content" not in sanitized["tool.result"][2]["image_url"]["url"]
-    assert sanitized["tool.result"][2]["image_url"]["url"]["length"] == len(data_url)
+    assert sanitized["tool.result"][2]["image_url"]["url"]["length"] == len(data_urls[0])
+    assert "content" not in sanitized["tool.result"][3]["image_url"]["url"]
+    assert sanitized["tool.result"][3]["image_url"]["url"]["length"] == len(data_urls[1])

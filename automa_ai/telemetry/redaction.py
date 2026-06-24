@@ -20,6 +20,7 @@ PAYLOAD_KEY_PATTERN = re.compile(
     r"(content|arguments?|result|payload|input|output|prompt|response|artifact)",
     re.IGNORECASE,
 )
+DATA_URL_PATTERN = re.compile(r"^data:", re.IGNORECASE)
 SAFE_METADATA_KEYS = frozenset(
     {
         # These keys contain "response" but are scalar metadata, not payloads.
@@ -127,7 +128,7 @@ def sanitize_mapping(
         if key_text in PAYLOAD_VALUE_KEYS or (
             key_text == "url"
             and isinstance(value, str)
-            and value.startswith("data:")
+            and DATA_URL_PATTERN.match(value)
         ):
             sanitized[key_text] = sanitize_text(
                 value,

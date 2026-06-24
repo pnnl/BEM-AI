@@ -200,7 +200,10 @@ class YamlAgentTool(BaseDefaultTool):
             def bounded(content: str) -> str:
                 if len(content) <= _MAX_CHUNK_CHARS:
                     return content
-                return content[:200] + f"... [truncated {len(content)} chars]"
+                return (
+                    content[:_MAX_CHUNK_CHARS]
+                    + f"... [truncated {len(content)} chars]"
+                )
 
             async for item in stream_result:
                 content = bounded(content_to_safe_text(item.get("content", "")))

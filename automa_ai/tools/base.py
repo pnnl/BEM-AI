@@ -96,6 +96,7 @@ def format_tool_result_content(
 
     image_blocks: list[dict[str, Any]] = []
     ignored_attachment_types: list[str] = []
+    rendered_image_attachments = 0
     for attachment in result.attachments:
         if not isinstance(attachment, Mapping):
             ignored_attachment_types.append(type(attachment).__name__)
@@ -133,6 +134,7 @@ def format_tool_result_content(
                         "mime_type": mime_type,
                     }
                 )
+            rendered_image_attachments += 1
         elif attachment.get("url"):
             if model_provider == "bedrock":
                 raise ValueError(
@@ -161,6 +163,7 @@ def format_tool_result_content(
                         "mime_type": mime_type,
                     }
                 )
+            rendered_image_attachments += 1
         else:
             ignored_attachment_types.append(mime_type)
 
@@ -169,6 +172,14 @@ def format_tool_result_content(
             "ToolResult ignored unsupported or malformed attachments: %s",
             ", ".join(ignored_attachment_types),
         )
+
+    if model_provider == "openai":
+        if rendered_image_attachments:
+            logger.warning(
+                "ToolResult included image attachments, but OpenAI tool "
+                "responses are text-only, so the attachments were omitted."
+            )
+        return result.data
 
     if not image_blocks:
         logger.warning(
