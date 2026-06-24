@@ -115,7 +115,9 @@ For ephemeral headless subagents created by the `yaml_agent` tool, start from
 use default runtime settings, enable only bounded built-in tools such as
 `web_search` or `run_python` when needed, use fully qualified dotted paths for
 custom tools, omit MCP and persistent memory configuration, and do not define
-nested subagents.
+nested subagents. Treat these specs as trusted local configuration: custom
+dotted-path tools can trigger module import during tool resolution, so
+`yaml_agent` should not be pointed at untrusted YAML.
 
 For validation, inspection, or programmatic edits before building, load the
 intermediate spec explicitly:
@@ -603,8 +605,21 @@ checkpointer:
   retry_on_timeout: true
 ```
 
-`redis_plain` uses Redis as a bounded hot-session cache. The supported
-plain-Redis-only fields are:
+```yaml
+checkpointer:
+  type: redis_cluster
+  redis_url: redis://cluster-configuration-endpoint:6379
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
+```
+
+`redis_plain` and `redis_cluster` use Redis as a bounded hot-session cache. The
+supported AUTOMA-AI Redis saver fields are:
 
 - `checkpoint_ttl_seconds`: Idle TTL applied to checkpoint keys. Defaults to
   `21600` seconds.
@@ -631,6 +646,11 @@ enabled. It touches multiple keys while expiring, pruning, and deleting a
 thread's checkpoints. Without Redis hash tags those keys can be assigned to
 different hash slots and raise `CROSSSLOT` errors. Deploy it on a single-shard
 Redis/Valkey target, such as ElastiCache cluster mode disabled with replicas.
+
+`redis_cluster` keeps the same lifecycle behavior as `redis_plain`, but uses
+per-thread hash-tagged keys so each thread's checkpoint record, pending writes,
+indexes, and blobs remain in one Redis Cluster hash slot. Use it when your
+deployment target is Redis Cluster or ElastiCache cluster mode enabled.
 
 ### `budget`
 

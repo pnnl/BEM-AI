@@ -140,6 +140,23 @@ class MultimodalStreamAgent(FakeYamlAgent):
         }
 
 
+class LongTextStreamAgent(FakeYamlAgent):
+    async def stream(
+        self,
+        query,
+        context_id,
+        task_id,
+        user_id=None,
+        metadata=None,
+    ):
+        yield {
+            "response_type": "text",
+            "is_task_complete": True,
+            "require_user_input": False,
+            "content": "x" * 16_500,
+        }
+
+
 @pytest.mark.asyncio
 async def test_yaml_agent_tool_streams_chunks_to_parent_emitter(monkeypatch, tmp_path):
     agent = FakeYamlAgent()
@@ -191,6 +208,35 @@ async def test_yaml_agent_tool_streams_chunks_to_parent_emitter(monkeypatch, tmp
     assert agent.closed is True
     assert [event.content for event in events] == ["working", "done"]
     assert events[-1].metadata["final"] is True
+
+
+@pytest.mark.asyncio
+async def test_yaml_agent_tool_preserves_long_text_results_up_to_cap(
+    monkeypatch, tmp_path
+):
+    agent = LongTextStreamAgent()
+    spec_path = tmp_path / "agent.yaml"
+    _write_headless_spec(spec_path)
+
+    def fake_loader(spec):
+        return lambda: agent
+
+    monkeypatch.setattr(agent_spec, "load_agent_factory_from_yaml", fake_loader)
+
+    tool = YamlAgentTool(YamlAgentToolConfig(base_dir=str(tmp_path)))
+    result = await tool.invoke(
+        {
+            "yaml_path": "agent.yaml",
+            "query": "plan the work",
+            "context_id": "session-1",
+        }
+    )
+
+    suffix = "... [truncated 500 chars]"
+    expected_prefix = "x" * (16_000 - len(suffix))
+
+    assert result["final"] == expected_prefix + suffix
+    assert result["chunks"][0] == expected_prefix + suffix
 
 
 @pytest.mark.asyncio

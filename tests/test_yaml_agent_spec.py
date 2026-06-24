@@ -247,6 +247,36 @@ checkpointer:
     }
 
 
+def test_yaml_agent_spec_passes_redis_cluster_checkpointer_options() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+checkpointer:
+  type: redis_cluster
+  redis_url: rediss://cluster.example.com:6379
+  checkpoint_ttl_seconds: 7200
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 3.0
+  socket_connect_timeout: 2.0
+  health_check_interval: 15
+  retry_on_timeout: true
+"""
+    )
+
+    assert spec.to_factory_kwargs()["checkpointer_config"] == {
+        "type": "redis_cluster",
+        "redis_url": "rediss://cluster.example.com:6379",
+        "checkpoint_ttl_seconds": 7200,
+        "max_checkpoints_per_thread": 15,
+        "refresh_ttl_on_read": True,
+        "socket_timeout": 3.0,
+        "socket_connect_timeout": 2.0,
+        "health_check_interval": 15,
+        "retry_on_timeout": True,
+    }
+
+
 def test_yaml_agent_spec_rebases_telemetry_jsonl_path(tmp_path: Path) -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()
