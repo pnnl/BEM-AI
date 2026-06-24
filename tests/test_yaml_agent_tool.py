@@ -232,8 +232,11 @@ async def test_yaml_agent_tool_preserves_long_text_results_up_to_cap(
         }
     )
 
-    assert result["final"].startswith("x" * 16_000)
-    assert result["chunks"][0].startswith("x" * 16_000)
+    suffix = "... [truncated 500 chars]"
+    expected_prefix = "x" * (16_000 - len(suffix))
+
+    assert result["final"] == expected_prefix + suffix
+    assert result["chunks"][0] == expected_prefix + suffix
 
 
 @pytest.mark.asyncio
