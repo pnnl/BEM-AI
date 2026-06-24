@@ -414,7 +414,7 @@ At startup, AUTOMA-AI validates that the configured Redis server supports:
 - `FT._LIST` for RediSearch
 - `JSON.GET` for RedisJSON
 
-If either command is unavailable, startup fails with a clear error and tells you to switch to `redis_plain` or `redis_cluster`.
+If either command is unavailable, startup fails with a clear error; switch to `redis_plain` or `redis_cluster`.
 
 #### Choosing the backend
 
