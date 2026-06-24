@@ -323,9 +323,10 @@ custom recorder registry used by integrations such as AWS AgentCore adapters.
 `LANGGRAPHCHAT` agents can be configured with an explicit checkpointer backend through `AgentFactory`.
 The default backend is in-memory. Redis is opt-in and requires a connection URL.
 
-There are two Redis backends:
+There are three Redis backends:
 
 - `redis_plain`: Uses only core Redis commands. Choose this for standard single-shard Redis-compatible deployments, including Amazon ElastiCache Redis/Valkey with cluster mode disabled.
+- `redis_cluster`: Uses the AUTOMA-AI cluster-aware saver with per-thread hash-tagged keys. Choose this for Redis Cluster or Amazon ElastiCache cluster mode enabled when you want the same hot-session checkpoint behavior as `redis_plain`.
 - `redis_stack`: Uses LangGraph's Redis saver and requires both RediSearch and RedisJSON support. Choose this only when your Redis deployment supports commands such as `FT._LIST` and `JSON.GET`.
 
 Use `type: default` to force the in-memory saver explicitly.
@@ -373,6 +374,31 @@ in-transit encryption, use `rediss://...`. If your deployment requires custom
 TLS CA settings, IAM auth, or another advanced credential flow, inject a
 prebuilt Redis client rather than relying only on `redis_url`.
 
+#### `redis_cluster`
+
+```yaml
+checkpointer:
+  type: redis_cluster
+  redis_url: redis://cluster-configuration-endpoint:6379
+  checkpoint_ttl_seconds: 21600
+  max_checkpoints_per_thread: 15
+  refresh_ttl_on_read: true
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+  retry_on_timeout: true
+```
+
+`redis_cluster` keeps the same bounded hot-session cache model and lifecycle
+options as `redis_plain`, but changes the key layout so all checkpoint,
+pending-write, index, and blob keys for one logical thread share a Redis
+Cluster hash slot. That avoids `CROSSSLOT` failures during TTL refresh,
+pruning, and thread deletion.
+
+Choose `redis_cluster` when the deployment target is Redis Cluster or
+ElastiCache cluster mode enabled. Use the cluster configuration endpoint in
+`redis_url` so redis-py can discover the cluster topology.
+
 #### `redis_stack`
 
 ```yaml
@@ -388,11 +414,12 @@ At startup, AUTOMA-AI validates that the configured Redis server supports:
 - `FT._LIST` for RediSearch
 - `JSON.GET` for RedisJSON
 
-If either command is unavailable, startup fails with a clear error and tells you to switch to `redis_plain`.
+If either command is unavailable, startup fails with a clear error and tells you to switch to `redis_plain` or `redis_cluster`.
 
 #### Choosing the backend
 
 - Choose `redis_plain` when your deployment target is standard Redis or ElastiCache cluster mode disabled and you do not specifically need Redis Stack modules.
+- Choose `redis_cluster` when your deployment target is Redis Cluster or ElastiCache cluster mode enabled and you do not specifically need Redis Stack modules.
 - Choose `redis_stack` only when the Redis service is known to support RediSearch and RedisJSON.
 - Do not use the old ambiguous `redis` label. The backend must be selected explicitly.
 

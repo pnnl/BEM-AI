@@ -39,7 +39,7 @@ from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.config.token_budget import TokenBudgetConfig
 from automa_ai.config.tools import ToolsConfig, ToolSpec
 from automa_ai.blackboard.instructions import build_blackboard_contract
-from automa_ai.checkpoint import PlainRedisSaver
+from automa_ai.checkpoint import PlainRedisSaver, RedisClusterSaver
 from automa_ai.hook import (
     ContextPipeline,
     HookRunner,
@@ -192,6 +192,26 @@ def _build_checkpointer(
         # PlainRedisSaver owns hot-session cache lifecycle; durable resume state
         # should live in the application layer, not in Redis checkpoints.
         checkpointer = PlainRedisSaver(
+            redis_url=resolved.redis_url,
+            checkpoint_ttl_seconds=resolved.checkpoint_ttl_seconds,
+            max_checkpoints_per_thread=resolved.max_checkpoints_per_thread,
+            refresh_ttl_on_read=resolved.refresh_ttl_on_read,
+            socket_timeout=resolved.socket_timeout,
+            socket_connect_timeout=resolved.socket_connect_timeout,
+            health_check_interval=resolved.health_check_interval,
+            retry_on_timeout=resolved.retry_on_timeout,
+        )
+        try:
+            checkpointer.setup()
+        except Exception:
+            checkpointer.close()
+            raise
+        return checkpointer, checkpointer.close
+
+    if resolved.type == "redis_cluster":
+        # RedisClusterSaver preserves the plain Redis saver contract while
+        # assigning all per-thread keys to one Redis Cluster hash slot.
+        checkpointer = RedisClusterSaver(
             redis_url=resolved.redis_url,
             checkpoint_ttl_seconds=resolved.checkpoint_ttl_seconds,
             max_checkpoints_per_thread=resolved.max_checkpoints_per_thread,
