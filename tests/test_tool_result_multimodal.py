@@ -230,6 +230,7 @@ def test_multimodal_content_projects_to_binary_free_stream_text():
 
 
 def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
+    data_url = "data:image/png;base64,ghi"
     sanitized = sanitize_mapping(
         {
             "tool.result": [
@@ -241,12 +242,18 @@ def test_nested_multimodal_payload_data_is_sanitized_for_telemetry():
                     "type": "image",
                     "source": {"type": "base64", "media_type": "image/jpeg", "data": "def"},
                 },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
+                },
             ]
         }
     )
 
-    # The "data" key inside "source" should be sanitized (length/hash only)
+    # The binary payload keys should be sanitized (length/hash only)
     assert "content" not in sanitized["tool.result"][0]["source"]["data"]
     assert sanitized["tool.result"][0]["source"]["data"]["length"] == 3
     assert "content" not in sanitized["tool.result"][1]["source"]["data"]
     assert sanitized["tool.result"][1]["source"]["data"]["length"] == 3
+    assert "content" not in sanitized["tool.result"][2]["image_url"]["url"]
+    assert sanitized["tool.result"][2]["image_url"]["url"]["length"] == len(data_url)
