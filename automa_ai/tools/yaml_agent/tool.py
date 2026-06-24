@@ -15,9 +15,9 @@ from automa_ai.agents.remote_agent import (
     get_subagent_context_id,
     get_subagent_emitter,
 )
-from automa_ai.tools.base import BaseDefaultTool
+from automa_ai.tools.base import BaseDefaultTool, content_to_safe_text
 
-ALLOWED_HEADLESS_TOOL_TYPES = {"web_search", "run_python"}
+ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES = {"web_search", "run_python"}
 YAML_SUFFIXES = {".yaml", ".yml"}
 
 
@@ -129,10 +129,16 @@ class YamlAgentTool(BaseDefaultTool):
                 raise ValueError(
                     f"Headless YAML subagent cannot enable yaml_agent: {yaml_path}"
                 )
-            if tool_type not in ALLOWED_HEADLESS_TOOL_TYPES:
+            is_custom_dotted_tool = (
+                isinstance(tool_type, str)
+                and "." in tool_type
+                and all(part.isidentifier() for part in tool_type.split("."))
+            )
+            if tool_type not in ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES and not is_custom_dotted_tool:
                 raise ValueError(
                     "Headless YAML subagent can only enable built-in tools "
-                    f"{sorted(ALLOWED_HEADLESS_TOOL_TYPES)}; got {tool_type!r}: {yaml_path}"
+                    f"{sorted(ALLOWED_HEADLESS_BUILTIN_TOOL_TYPES)} or custom "
+                    f"dotted-path tools; got {tool_type!r}: {yaml_path}"
                 )
 
     async def _emit_chunk(
@@ -190,23 +196,31 @@ class YamlAgentTool(BaseDefaultTool):
                     "agent.stream(...) must return an async iterable of stream items."
                 )
 
+            # This is a final text-size guard. Binary payloads are removed
+            # structurally by content_to_safe_text before reaching this point.
+            _MAX_CHUNK_CHARS = 16_000
+
+            def bounded(content: str) -> str:
+                if len(content) <= _MAX_CHUNK_CHARS:
+                    return content
+                truncated = len(content) - _MAX_CHUNK_CHARS
+                suffix = f"... [truncated {truncated} chars]"
+                limit = max(0, _MAX_CHUNK_CHARS - len(suffix))
+                return content[:limit] + suffix
+
             async for item in stream_result:
-                # The current yaml_agent tool stream contract emits text chunks only.
-                # Keep structured data stringified for now, even though this is lossy
-                # for response_type="data" payloads and should be revisited when the
-                # surrounding automa-ai infrastructure supports typed chunk values.
-                content = str(item.get("content", ""))
+                content = bounded(content_to_safe_text(item.get("content", "")))
                 is_final = bool(item.get("is_task_complete"))
                 requires_user_input = bool(item.get("require_user_input"))
 
                 if content:
-                    chunks.append(content)
                     await self._emit_chunk(
                         source=f"yaml_agent:{agent.agent_name}",
                         content=content,
                         yaml_path=yaml_path,
                         final=is_final or requires_user_input,
                     )
+                    chunks.append(content)
 
                 if is_final or requires_user_input:
                     final = content

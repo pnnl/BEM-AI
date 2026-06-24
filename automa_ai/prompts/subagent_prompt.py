@@ -42,8 +42,9 @@ When to spawn a headless subagent:
 YAML subagent spec constraints:
 1. Subagent YAML files should use default runtime settings unless a specific
    task requires otherwise.
-2. Subagent YAML files may use built-in AUTOMA-AI default tools such as
-   `web_search` or `run_python`, but must not include the `yaml_agent` tool.
+2. Subagent YAML files may use bounded built-in AUTOMA-AI default tools such as
+   `web_search` or `run_python`, or custom tools by fully qualified dotted path,
+   but must not include the `yaml_agent` tool.
 3. Subagent YAML files must not define MCP connections.
 4. Subagent YAML files must not define custom memory stores or persistent
    memory. Use the default in-memory runtime only.

@@ -5,6 +5,7 @@ from automa_ai.tools.registry import (
     CUSTOM_TOOL_REGISTRY,
     build_langchain_tools,
 )
+from automa_ai.tools.base import ToolResult
 from automa_ai.tools.decorators import tool
 from automa_ai.tools.run_command import build_run_command_tool
 from automa_ai.tools.run_python import build_run_python_tool
@@ -33,4 +34,5 @@ __all__ = [
     "CUSTOM_TOOL_REGISTRY",
     "build_langchain_tools",
     "tool",
+    "ToolResult",
 ]

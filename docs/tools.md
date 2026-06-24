@@ -32,6 +32,41 @@ tools:
 - a dict with a `tools` list
 - a plain list of tool specs.
 
+## Multimodal tool results
+
+Tools may return visual data to the LLM with `ToolResult`:
+
+```python
+import base64
+
+from automa_ai.tools import ToolResult, tool
+
+
+@tool
+def render_page(page_number: int) -> ToolResult:
+    png_base64 = base64.b64encode(render_png(page_number)).decode("ascii")
+    return ToolResult(
+        data={"status": "success", "page_number": page_number},
+        attachments=[
+            {
+                "mime_type": "image/png",
+                "data": png_base64,
+            }
+        ],
+    )
+```
+
+When attachments contain image data or image URLs, the framework can render them
+into provider-specific content blocks for model providers that accept multimodal
+tool outputs (for example, Anthropic and Bedrock). For providers that do not
+support multimodal tool responses (currently OpenAI), attachments are omitted.
+`ToolResult` itself remains provider-neutral, and plain dict returns continue to
+behave as before.
+
+Binary attachment payloads are model-facing only. Agent progress streams,
+headless YAML-agent chunks, telemetry, and parent-agent tool summaries include
+text and attachment descriptors without base64 data.
+
 ## Built-in tool: `web_search`
 
 > ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
@@ -195,7 +230,9 @@ Configuration fields:
 
 Before creating the agent, `yaml_agent` validates the target spec against the
 headless-subagent constraints: no MCP, no memory config, no persistent
-checkpointer, no nested subagents, no `yaml_agent` tool, and no custom tools.
+checkpointer, no nested subagents, and no `yaml_agent` tool. Headless subagents
+may enable the bounded built-in tools `web_search` and `run_python`, or custom
+tools by fully qualified dotted path.
 
 Example config:
 
