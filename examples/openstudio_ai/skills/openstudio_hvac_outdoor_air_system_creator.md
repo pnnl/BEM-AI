@@ -11,8 +11,7 @@ Use this child skill to create the outdoor-air controller/system and configure
 air-loop availability and night-cycle controls after the central supply
 components exist.
 
-Do not create the air loop, schedules, fan, coils, terminals, simulations, or
-result queries in this skill.
+Do not create the air loop, schedules, the fan, coils, terminals, simulations, result queries in this skill.
 
 ## Required State Fields
 
@@ -27,6 +26,8 @@ result queries in this skill.
 - `completed_steps`
 - `pending_steps`
 
+
+
 ## Optional State Fields
 
 - `schedules.oa_damper_schedule_name`
@@ -35,6 +36,7 @@ result queries in this skill.
 - `outdoor_air_system.oa_system_name`
 - `openstudio_version`
 - `warnings`
+
 
 ## SDK Methods To Verify
 
@@ -54,37 +56,50 @@ result queries in this skill.
 - `AirLoopHVAC.setNightCycleControlType`
 - `AirLoopHVAC.availabilityManager` or `AirLoopHVAC.availabilityManagers`
 
+
 ## Code Pattern
 
 1. Load `current_model_path` and find the air loop.
 2. Resolve the HVAC operation schedule and optional OA damper schedule by name.
 3. Create `ControllerOutdoorAir`; set fixed minimum limit; autosize minimum
    outdoor air; reset maximum fraction and economizer dry-bulb limits.
+   
 4. Apply economizer control type only when present in state.
 5. Apply minimum outdoor-air schedule only when present in state.
-6. Configure controller mechanical ventilation system OA method, usually
-   `ZoneSum`.
+6. Configure controller mechanical ventilation system OA method, usually `ZoneSum`.
 7. Create `AirLoopHVACOutdoorAirSystem`, name it, and add it to the air-loop
    supply inlet node.
+   
 8. Set air-loop availability schedule and night-cycle control. Set night-cycle
    cycling runtime with the API supported by the active OpenStudio version.
+   
 9. Save and return object names and any version warnings.
+
 
 ## Missing Field Behavior
 
 Return missing fields if the air loop, HVAC operation schedule, model paths, or
-required OA control constants are absent. If the named schedule cannot be found,
-return candidate schedules.
+required OA control constants are absent.
+
+If the named schedule cannot be found, return candidate schedules.
 
 ## State Patch
+
+Return only changed fields:
 
 ```json
 {
   "ok": true,
   "state_patch": {
     "current_model_path": "/path/to/output.osm",
-    "completed_steps": ["outdoor_air_system", "air_loop_controls"],
-    "pending_steps_remove": ["outdoor_air_system", "air_loop_controls"],
+    "completed_steps": [
+      "outdoor_air_system",
+      "air_loop_controls"
+    ],
+    "pending_steps_remove": [
+      "outdoor_air_system",
+      "air_loop_controls"
+    ],
     "outdoor_air_system": {
       "controller_name": "3 Zone VAV OA Controller",
       "oa_system_name": "3 Zone VAV OA System"
@@ -109,3 +124,5 @@ return candidate schedules.
 - Mechanical ventilation method is set to the state value.
 - Availability schedule and night-cycle control were applied.
 - Version-specific availability manager access was handled deliberately.
+
+

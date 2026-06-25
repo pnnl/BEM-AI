@@ -1,0 +1,79 @@
+---
+name: {{ skill.name }}
+description: {{ skill.description }}
+version: {{ skill.version }}
+output_format: {{ skill.output_format }}
+---
+
+## Scope
+
+{{ skill.scope | trim }}
+
+Do not create {{ skill.exclusions | join(", ") }} in this skill.
+
+## Required State Fields
+
+{% for field in skill.required_state -%}
+- `{{ field }}`
+{% endfor %}
+{% if skill.conditional_required_state %}
+
+Conditional required fields:
+
+{% for field in skill.conditional_required_state -%}
+- {{ field }}
+{% endfor %}
+{% endif %}
+
+## Optional State Fields
+
+{% for field in skill.optional_state -%}
+- `{{ field }}`
+{% endfor %}
+
+## SDK Methods To Verify
+
+{% if skill.sdk_methods_intro %}{{ skill.sdk_methods_intro | trim }}
+
+{% endif -%}
+{% for method in skill.sdk_methods -%}
+- {{ method }}
+{% endfor %}
+
+## Code Pattern
+
+{% for step in skill.code_pattern -%}
+{{ loop.index }}. {{ step | replace('\n', '\n   ') }}
+{% endfor %}
+
+## Missing Field Behavior
+
+{% for paragraph in skill.missing_field_behavior -%}
+{{ paragraph | trim }}
+
+{% endfor -%}
+## State Patch
+
+Return only changed fields:
+
+```json
+{{ skill.state_patch_json }}
+```
+
+## Validation Checks
+
+{% for check in skill.validation_checks -%}
+- {{ check }}
+{% endfor %}
+{% for section in skill.extra_sections %}
+
+## {{ section.title }}
+
+{% if section.format == "json" -%}
+```json
+{{ section.body }}
+```
+{% else -%}
+{{ section.body | trim }}
+{% endif %}
+{% endfor %}

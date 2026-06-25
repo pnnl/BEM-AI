@@ -10,8 +10,7 @@ output_format: markdown_with_json_state_patch
 Use this child skill to create the central heating coil upstream of the VAV air
 loop. It supports hot-water, gas, electric, and explicit no-heat choices.
 
-Do not create the air loop, fan, cooling coil, outdoor-air system, zone reheat
-coils, simulations, or result queries in this skill.
+Do not create the air loop, the fan, the cooling coil, the outdoor-air system, zone reheat coils, simulations, result queries in this skill.
 
 ## Required State Fields
 
@@ -22,10 +21,14 @@ coils, simulations, or result queries in this skill.
 - `completed_steps`
 - `pending_steps`
 
+
+
 Conditional required fields:
 
 - `central_heating.hot_water_loop_name` when `central_heating.type` is `Water`
 - converted design temperatures when water-coil rated air temperatures are set
+
+
 
 ## Optional State Fields
 
@@ -36,6 +39,7 @@ Conditional required fields:
 - `central_heating.rated_outlet_air_temperature_c`
 - `warnings`
 
+
 ## SDK Methods To Verify
 
 - `CoilHeatingWater.new`
@@ -44,8 +48,8 @@ Conditional required fields:
 - `PlantLoop.addDemandBranchForComponent`
 - `HVACComponent.addToNode`
 - `AirLoopHVAC.supplyInletNode`
-- water-coil rated inlet/outlet water and air temperature setters supported by
-  the active OpenStudio version
+- water-coil rated inlet/outlet water and air temperature setters supported by the active OpenStudio version
+
 
 ## Code Pattern
 
@@ -53,28 +57,39 @@ Conditional required fields:
 2. If type is `Water`, find the named hot-water plant loop, derive loop design
    exit temperature and delta-T when possible, create `CoilHeatingWater`, add it
    to the loop demand side, then add it to the air-loop supply inlet node.
+   
 3. If type is `NaturalGas` or `Gas`, create `CoilHeatingGas` and add it to the
    air-loop supply inlet node.
+   
 4. If type is `Electricity`, create `CoilHeatingElectric` and add it to the
    air-loop supply inlet node.
+   
 5. If type is `None`, create nothing and record the approved no-heat state.
 6. Save and return created coil and loop attachment details.
+
 
 ## Missing Field Behavior
 
 If a water coil is requested without `central_heating.hot_water_loop_name`, ask
-which existing hot-water plant loop should serve the coil. Do not create a plant
-loop in this child skill.
+which existing hot-water plant loop should serve the coil.
+
+Do not create a plant loop in this child skill.
 
 ## State Patch
+
+Return only changed fields:
 
 ```json
 {
   "ok": true,
   "state_patch": {
     "current_model_path": "/path/to/output.osm",
-    "completed_steps": ["central_heating_coil"],
-    "pending_steps_remove": ["central_heating_coil"],
+    "completed_steps": [
+      "central_heating_coil"
+    ],
+    "pending_steps_remove": [
+      "central_heating_coil"
+    ],
     "central_heating": {
       "type": "Water",
       "coil_name": "3 Zone VAV Main Htg Coil",
@@ -90,7 +105,8 @@ loop in this child skill.
 
 ## Validation Checks
 
-- Requested heating-coil type was created exactly once, or no coil was created
-  only when `None` was approved.
+- Requested heating-coil type was created exactly once, or no coil was created only when `None` was approved.
 - Water coil is attached to the named plant loop demand side.
 - Coil is added to the target air-loop supply inlet node.
+
+

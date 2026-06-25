@@ -1,0 +1,98 @@
+name: openstudio_hvac_outdoor_air_system_creator
+description: Create outdoor-air controller, outdoor-air system, and air-loop controls for
+  OpenStudio VAV workflows.
+version: 0.1.0
+output_format: markdown_with_json_state_patch
+scope: |
+  Use this child skill to create the outdoor-air controller/system and configure
+  air-loop availability and night-cycle controls after the central supply
+  components exist.
+exclusions:
+- the air loop
+- schedules
+- the fan
+- coils
+- terminals
+- simulations
+- result queries
+required_state:
+- current_model_path
+- output_model_path
+- created_objects.air_loop
+- schedules.hvac_operation_schedule_name
+- outdoor_air_system.minimum_limit_type
+- outdoor_air_system.mechanical_ventilation_method
+- air_loop_controls.night_cycle_control_type
+- air_loop_controls.night_cycle_runtime_s
+- completed_steps
+- pending_steps
+optional_state:
+- schedules.oa_damper_schedule_name
+- outdoor_air_system.economizer_control_type
+- outdoor_air_system.controller_name
+- outdoor_air_system.oa_system_name
+- openstudio_version
+- warnings
+sdk_methods:
+- '`ControllerOutdoorAir.new`'
+- '`ControllerOutdoorAir.setName`'
+- '`ControllerOutdoorAir.setMinimumLimitType`'
+- '`ControllerOutdoorAir.autosizeMinimumOutdoorAirFlowRate`'
+- '`ControllerOutdoorAir.resetMaximumFractionofOutdoorAirSchedule`'
+- '`ControllerOutdoorAir.resetEconomizerMinimumLimitDryBulbTemperature`'
+- '`ControllerOutdoorAir.setEconomizerControlType`'
+- '`ControllerOutdoorAir.setMinimumOutdoorAirSchedule`'
+- '`ControllerOutdoorAir.controllerMechanicalVentilation`'
+- '`ControllerMechanicalVentilation.setSystemOutdoorAirMethod`'
+- '`AirLoopHVACOutdoorAirSystem.new`'
+- '`AirLoopHVACOutdoorAirSystem.addToNode`'
+- '`AirLoopHVAC.setAvailabilitySchedule`'
+- '`AirLoopHVAC.setNightCycleControlType`'
+- '`AirLoopHVAC.availabilityManager` or `AirLoopHVAC.availabilityManagers`'
+code_pattern:
+- Load `current_model_path` and find the air loop.
+- Resolve the HVAC operation schedule and optional OA damper schedule by name.
+- |
+  Create `ControllerOutdoorAir`; set fixed minimum limit; autosize minimum
+  outdoor air; reset maximum fraction and economizer dry-bulb limits.
+- Apply economizer control type only when present in state.
+- Apply minimum outdoor-air schedule only when present in state.
+- Configure controller mechanical ventilation system OA method, usually `ZoneSum`.
+- |
+  Create `AirLoopHVACOutdoorAirSystem`, name it, and add it to the air-loop
+  supply inlet node.
+- |
+  Set air-loop availability schedule and night-cycle control. Set night-cycle
+  cycling runtime with the API supported by the active OpenStudio version.
+- Save and return object names and any version warnings.
+missing_field_behavior:
+- |
+  Return missing fields if the air loop, HVAC operation schedule, model paths, or
+  required OA control constants are absent.
+- If the named schedule cannot be found, return candidate schedules.
+state_patch:
+  ok: true
+  state_patch:
+    current_model_path: /path/to/output.osm
+    completed_steps:
+    - outdoor_air_system
+    - air_loop_controls
+    pending_steps_remove:
+    - outdoor_air_system
+    - air_loop_controls
+    outdoor_air_system:
+      controller_name: 3 Zone VAV OA Controller
+      oa_system_name: 3 Zone VAV OA System
+    air_loop_controls:
+      availability_schedule_name: Always On Discrete
+      night_cycle_control_type: CycleOnAny
+      night_cycle_runtime_s: 1800
+    created_objects:
+      oa_controller: 3 Zone VAV OA Controller
+      oa_system: 3 Zone VAV OA System
+    warnings: []
+validation_checks:
+- OA controller and OA system exist and are attached to the target air loop.
+- Mechanical ventilation method is set to the state value.
+- Availability schedule and night-cycle control were applied.
+- Version-specific availability manager access was handled deliberately.

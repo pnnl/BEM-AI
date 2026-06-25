@@ -11,8 +11,7 @@ Use this child skill to connect the VAV air loop to target thermal zones through
 one terminal per zone. It creates terminal reheat coils when requested and
 applies zone sizing settings.
 
-Do not create the central air loop, fan, central coils, outdoor-air system,
-simulations, or result queries in this skill.
+Do not create the central air loop, the fan, central coils, the outdoor-air system, simulations, result queries in this skill.
 
 ## Required State Fields
 
@@ -28,9 +27,13 @@ simulations, or result queries in this skill.
 - `completed_steps`
 - `pending_steps`
 
+
+
 Conditional required fields:
 
 - `central_heating.hot_water_loop_name` when terminal reheat type is `Water`
+
+
 
 ## Optional State Fields
 
@@ -39,6 +42,7 @@ Conditional required fields:
 - `zone_terminals.template_specific_damper_logic`
 - `openstudio_version`
 - `warnings`
+
 
 ## SDK Methods To Verify
 
@@ -59,6 +63,7 @@ Conditional required fields:
 - `ThermalZone.setReturnPlenum`
 - selected reheat coil constructors
 
+
 ## Code Pattern
 
 1. Load `current_model_path` and find the target air loop and zones.
@@ -67,36 +72,53 @@ Conditional required fields:
    - create `AirTerminalSingleDuctVAVReheat` when reheat exists;
    - otherwise create `AirTerminalSingleDuctVAVNoReheat`;
    - use the OpenStudio-version-compatible minimum airflow setter;
-   - set damper heating action and maximum reheat air temperature when reheat
-     exists;
+   - set damper heating action and maximum reheat air temperature when reheat exists;
    - add the terminal branch to the air loop;
    - apply zone sizing values;
    - assign return plenum only if present in state.
-3. Save and return terminal names, reheat coil names, served zone names, and
-   warnings.
+   
+3. Save and return terminal names, reheat coil names, served zone names, and warnings.
+
 
 ## Missing Field Behavior
 
-If target zones are missing or a named zone cannot be found, return candidates.
+If target zones are missing or a named zone cannot be found, return
+candidates.
+
 If water reheat is requested without a hot-water loop name, ask for the loop.
+
 Do not create a plant loop in this skill.
 
 ## State Patch
+
+Return only changed fields:
 
 ```json
 {
   "ok": true,
   "state_patch": {
     "current_model_path": "/path/to/output.osm",
-    "completed_steps": ["zone_terminals"],
-    "pending_steps_remove": ["zone_terminals"],
+    "completed_steps": [
+      "zone_terminals"
+    ],
+    "pending_steps_remove": [
+      "zone_terminals"
+    ],
     "zone_terminals": {
-      "terminal_names": ["Zone 1 VAV Terminal"],
-      "reheat_coil_names": ["Zone 1 Reheat Coil"]
+      "terminal_names": [
+        "Zone 1 VAV Terminal"
+      ],
+      "reheat_coil_names": [
+        "Zone 1 Reheat Coil"
+      ]
     },
     "created_objects": {
-      "zone_terminals": ["Zone 1 VAV Terminal"],
-      "zone_reheat_coils": ["Zone 1 Reheat Coil"]
+      "zone_terminals": [
+        "Zone 1 VAV Terminal"
+      ],
+      "zone_reheat_coils": [
+        "Zone 1 Reheat Coil"
+      ]
     },
     "warnings": []
   }
@@ -110,3 +132,5 @@ Do not create a plant loop in this skill.
 - Water reheat coils are attached to the selected hot-water plant loop.
 - Zone sizing temperatures are converted to SI before setters.
 - Return plenum is assigned only when present and found.
+
+

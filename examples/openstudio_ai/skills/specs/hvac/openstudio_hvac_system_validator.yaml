@@ -1,0 +1,79 @@
+name: openstudio_hvac_system_validator
+description: Validate object counts, connections, assumptions, and output state for a phased
+  OpenStudio HVAC workflow.
+version: 0.1.0
+output_format: markdown_with_json_state_patch
+scope: |
+  Use this child skill after model-editing phases and before simulation handoff.
+  It validates the edited `.osm` and summarizes whether the state table matches
+  the model.
+exclusions:
+- HVAC objects except for read-only validation metadata in the returned state patch
+- simulations
+- SQL result queries
+required_state:
+- current_model_path
+- output_model_path
+- created_objects.air_loop
+- system.target_zone_names
+- completed_steps
+- pending_steps
+- created_objects
+- assumptions
+- warnings
+optional_state:
+- central_heating
+- central_cooling
+- outdoor_air_system
+- zone_terminals
+- validation_results
+sdk_methods:
+- '`Model.getAirLoopHVACs`'
+- '`AirLoopHVAC.thermalZones`'
+- '`AirLoopHVAC.supplyComponents`'
+- '`AirLoopHVAC.demandComponents`'
+- '`Model.getThermalZones`'
+- '`ThermalZone.equipment`'
+- '`PlantLoop.demandComponents`'
+- '`Model.save`'
+code_pattern:
+- Load `current_model_path` read-only unless the parent explicitly requests a saved validation
+  copy.
+- Confirm the air loop exists.
+- Confirm all `system.target_zone_names` are served by the air loop.
+- Confirm fan, central coils, OA controller/system, terminals, and reheat coils recorded in
+  `created_objects` exist in the model when those phases were completed.
+- Confirm water coils are connected to the named plant loops when water types were used.
+- Confirm terminal count equals target zone count.
+- Confirm `current_model_path` and `output_model_path` are consistent.
+- Return pass/fail validation items and unresolved warnings.
+missing_field_behavior:
+- If required state is absent, return missing fields rather than guessing from the model.
+- If the model path cannot be loaded, return a hard validation failure.
+state_patch:
+  ok: true
+  state_patch:
+    completed_steps:
+    - validation
+    pending_steps_remove:
+    - validation
+    validation_results:
+    - check: served_zones
+      ok: true
+      detail: All 3 target zones are served by 3 Zone VAV.
+    warnings: []
+validation_checks:
+- Validation results record pass/fail items with enough detail to debug the workflow state.
+- Unresolved warnings remain in the returned state patch instead of being dropped.
+extra_sections:
+- title: Validation Result Format
+  format: json
+  body:
+    check: terminal_count
+    ok: true
+    detail: 3 terminals found for 3 target zones.
+- title: Handoff Rule
+  format: markdown
+  body: |
+    When validation passes or only accepted warnings remain, return control to the
+    parent workflow for MCP `model_*`, `sim_*`, and `results_*` handoff.

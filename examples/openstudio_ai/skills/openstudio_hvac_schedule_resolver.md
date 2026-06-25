@@ -12,18 +12,19 @@ may reuse existing schedules, create approved default schedules, and create the
 constant supply-air temperature schedule used by the VAV supply outlet setpoint
 manager.
 
-Do not create the air loop, fan, coils, outdoor-air controller, terminals,
-simulations, or result queries in this skill.
+Do not create the air loop, the fan, coils, the outdoor-air controller, terminals, simulations, result queries in this skill.
 
 ## Required State Fields
 
 - `current_model_path`
 - `output_model_path`
 - `system.system_name`
-- `schedules.hvac_operation_schedule_name` or approved default
+- `schedules.hvac_operation_schedule_name`
 - `design_temperatures.central_cooling_supply_air_temp_f`
 - `completed_steps`
 - `pending_steps`
+
+
 
 ## Optional State Fields
 
@@ -33,6 +34,7 @@ simulations, or result queries in this skill.
 - `schedules.supply_air_temperature_schedule_name`
 - `assumptions`
 - `warnings`
+
 
 ## SDK Methods To Verify
 
@@ -45,8 +47,8 @@ Verify constructors and setters before drafting code:
 - `SetpointManagerScheduled.new`
 - `SetpointManagerScheduled.setName`
 - `SetpointManagerScheduled.addToNode`
-- `AirLoopHVAC.supplyOutletNode` when attaching the setpoint manager in this
-  phase
+- `AirLoopHVAC.supplyOutletNode` when attaching the setpoint manager in this phase
+
 
 ## Code Pattern
 
@@ -54,31 +56,44 @@ Verify constructors and setters before drafting code:
 2. Resolve the HVAC operation schedule:
    - if the state names an existing schedule, retrieve it;
    - if the parent approved the default, use `model.alwaysOnDiscreteSchedule`.
+   
 3. Resolve the optional outdoor-air damper schedule:
    - retrieve the named schedule when present;
    - otherwise leave it unset and record that status.
+   
 4. Create a constant supply-air temperature schedule using the central cooling
    supply-air design temperature converted to SI.
+   
 5. If `created_objects.air_loop` exists and the parent assigns this phase to
    setpoint-manager attachment, create `SetpointManagerScheduled` and add it to
    the air-loop supply outlet node.
+   
 6. Save to `output_model_path` and update `current_model_path`.
+
 
 ## Missing Field Behavior
 
 If a named schedule cannot be found, return `ok: false` with the missing field
-and candidate schedule names. If the HVAC operation schedule is missing and no
-default was approved, ask whether to use Always On Discrete.
+and candidate schedule names.
+
+If the HVAC operation schedule is missing and no default was approved, ask
+whether to use Always On Discrete.
 
 ## State Patch
+
+Return only changed fields:
 
 ```json
 {
   "ok": true,
   "state_patch": {
     "current_model_path": "/path/to/output.osm",
-    "completed_steps": ["schedule_resolver"],
-    "pending_steps_remove": ["schedule_resolver"],
+    "completed_steps": [
+      "schedule_resolver"
+    ],
+    "pending_steps_remove": [
+      "schedule_resolver"
+    ],
     "schedules": {
       "hvac_operation_schedule_name": "Always On Discrete",
       "hvac_operation_schedule_source": "default",
@@ -101,6 +116,7 @@ default was approved, ask whether to use Always On Discrete.
 ## Validation Checks
 
 - Every named schedule in state resolves to exactly one model object.
-- Created temperature schedule stores SI values and records the originating F
-  value in the state.
+- Created temperature schedule stores SI values and records the originating F value in the state.
 - Setpoint manager is attached only when the target air loop exists.
+
+

@@ -10,8 +10,7 @@ output_format: markdown_with_json_state_patch
 Use this child skill to create the central variable-volume supply fan and add it
 to the existing air-loop supply inlet node.
 
-Do not create schedules, sizing systems, coils, outdoor-air systems, terminals,
-simulations, or result queries in this skill.
+Do not create schedules, sizing systems, coils, outdoor-air systems, terminals, simulations, result queries in this skill.
 
 ## Required State Fields
 
@@ -25,12 +24,15 @@ simulations, or result queries in this skill.
 - `completed_steps`
 - `pending_steps`
 
+
+
 ## Optional State Fields
 
 - `fan.fan_name`
 - `fan.end_use_subcategory`
 - `fan.fan_pressure_rise_pa`
 - `warnings`
+
 
 ## SDK Methods To Verify
 
@@ -45,6 +47,7 @@ simulations, or result queries in this skill.
 - `AirLoopHVAC.supplyInletNode`
 - `Model.alwaysOnDiscreteSchedule`
 
+
 ## Code Pattern
 
 1. Load `current_model_path` and find `created_objects.air_loop`.
@@ -52,27 +55,38 @@ simulations, or result queries in this skill.
 3. Convert pressure rise to Pa:
    - `Pa` stays unchanged;
    - `inH2O` converts with `249.08891 Pa/inH2O`.
+   
 4. Create `FanVariableVolume`.
 5. Set fan total efficiency, motor efficiency, pressure rise, availability
    schedule, and end-use subcategory when the method is available.
+   
 6. Add the fan to `air_loop.supplyInletNode`.
 7. Save and return the fan object name plus pressure conversion.
+
 
 ## Missing Field Behavior
 
 Return missing fields for absent efficiency, motor efficiency, pressure value,
-pressure unit, model paths, or air loop. If the unit is not `Pa` or `inH2O`,
-ask for a supported unit or an explicit conversion.
+pressure unit, model paths, or air loop.
+
+If the unit is not `Pa` or `inH2O`, ask for a supported unit or an explicit
+conversion.
 
 ## State Patch
+
+Return only changed fields:
 
 ```json
 {
   "ok": true,
   "state_patch": {
     "current_model_path": "/path/to/output.osm",
-    "completed_steps": ["supply_fan"],
-    "pending_steps_remove": ["supply_fan"],
+    "completed_steps": [
+      "supply_fan"
+    ],
+    "pending_steps_remove": [
+      "supply_fan"
+    ],
     "fan": {
       "fan_name": "3 Zone VAV Fan",
       "fan_pressure_rise_pa": 996.35564
@@ -90,3 +104,5 @@ ask for a supported unit or an explicit conversion.
 - Fan exists with expected name.
 - Fan is connected to the target air-loop supply inlet node.
 - Pressure rise is stored in Pa in the model and in state.
+
+
