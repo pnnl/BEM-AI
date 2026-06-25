@@ -158,7 +158,7 @@ Responsibilities:
 
 1. Make `harness/package_manifest.yaml` the authoritative package manifest.
 2. Implement `adapters/claude_code_adapter.py export-plugin --dry-run`.
-3. Implement `adapters/codex_adapter.py install --dry-run`.
+3. Implement `adapters/codex_adapter.py export-plugin --dry-run`.
 4. Generate host config from the same harness registry.
 5. Keep MCP imports and package paths stable under `examples.openstudio_ai.openstudio_mcp`.
 6. Add tests that prove the exported package includes MCP, prompts, skills,
@@ -180,10 +180,32 @@ Current Claude Code MVP export command:
   --dry-run
 ```
 
-The export command creates a plugin-style package with `.claude-plugin/`,
+The export command creates a local marketplace with `.claude-plugin/marketplace.json`
+and an `openstudio-ai/` plugin folder containing `.claude-plugin/plugin.json`,
 `.mcp.json`, `commands/`, `skills/`, `knowledge/`, `instructions/`, and
 `blackboard/schemas/`. Skills and knowledge are not packed into one large
 `CLAUDE.md`.
+
+Claude Code install flow:
+
+```text
+/plugin marketplace add /tmp/openstudio-ai-plugin
+/plugin install openstudio-ai@openstudio-ai-local
+/reload-plugins
+```
+
+Current Codex MVP export command:
+
+```bash
+.venv/bin/python -m examples.openstudio_ai.adapters.codex_adapter export-plugin \
+  --output-dir /tmp/openstudio-ai-codex-plugin \
+  --dry-run
+```
+
+The export command creates a repo-local Codex marketplace at
+`.agents/plugins/marketplace.json` and a plugin folder at
+`plugins/openstudio-ai/` containing `.codex-plugin/plugin.json`, `.mcp.json`,
+`skills/`, `knowledge/`, `instructions/`, and `blackboard/schemas/`.
 
 Local project install remains available for development:
 

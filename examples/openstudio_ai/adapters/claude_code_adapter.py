@@ -15,6 +15,8 @@ from examples.openstudio_ai.harness.registry import discover_harness_assets
 GENERATED_START = "<!-- BEGIN OPENSTUDIO_AI_HARNESS -->"
 GENERATED_END = "<!-- END OPENSTUDIO_AI_HARNESS -->"
 SERVER_NAME = "openstudio_ai"
+DEFAULT_PLUGIN_NAME = "openstudio-ai"
+MARKETPLACE_NAME = "openstudio-ai-local"
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class PluginExportResult:
     """Result for exporting a plugin-style package for Claude hosts."""
 
     dry_run: bool
+    marketplace_dir: Path
     plugin_dir: Path
     files: list[Path]
 
@@ -105,7 +108,7 @@ class ClaudeCodeAdapter(OpenStudioAiHostAdapter):
         self,
         output_dir: Path,
         *,
-        plugin_name: str = "openstudio-ai",
+        plugin_name: str = DEFAULT_PLUGIN_NAME,
         dry_run: bool = True,
         force: bool = False,
     ) -> PluginExportResult:
@@ -116,20 +119,40 @@ class ClaudeCodeAdapter(OpenStudioAiHostAdapter):
         instructions remain distinct files/folders.
         """
         workspace_root = self.config.workspace_root.resolve()
-        plugin_dir = (output_dir / plugin_name).resolve()
+        marketplace_dir = output_dir.resolve()
+        plugin_dir = (marketplace_dir / plugin_name).resolve()
         plan = self.build_launch_plan()
-        files = _planned_plugin_files(plugin_dir, plan, workspace_root)
+        files = _planned_export_files(marketplace_dir, plugin_dir, plan, workspace_root)
 
         if dry_run:
-            return PluginExportResult(dry_run=True, plugin_dir=plugin_dir, files=files)
+            return PluginExportResult(
+                dry_run=True,
+                marketplace_dir=marketplace_dir,
+                plugin_dir=plugin_dir,
+                files=files,
+            )
 
         if plugin_dir.exists():
             if not force:
                 raise FileExistsError(f"{plugin_dir} already exists. Use --force to replace it.")
             shutil.rmtree(plugin_dir)
 
+        (marketplace_dir / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+        (marketplace_dir / ".claude-plugin" / "marketplace.json").write_text(
+            _render_marketplace_json(plugin_name),
+            encoding="utf-8",
+        )
+        (marketplace_dir / "INSTALL.md").write_text(
+            _render_install_doc(marketplace_dir, plugin_name),
+            encoding="utf-8",
+        )
         _write_plugin_package(plugin_dir, plan, workspace_root)
-        return PluginExportResult(dry_run=False, plugin_dir=plugin_dir, files=files)
+        return PluginExportResult(
+            dry_run=False,
+            marketplace_dir=marketplace_dir,
+            plugin_dir=plugin_dir,
+            files=files,
+        )
 
 
 def _render_mcp_config(existing_path: Path, plan: HostLaunchPlan, workspace_root: Path) -> str:
@@ -251,13 +274,20 @@ def _generated_instruction_block(plan: HostLaunchPlan, workspace_root: Path) -> 
     )
 
 
-def _planned_plugin_files(plugin_dir: Path, plan: HostLaunchPlan, workspace_root: Path) -> list[Path]:
-    """Return the files that `export_plugin` would create.
+def _planned_export_files(
+    marketplace_dir: Path,
+    plugin_dir: Path,
+    plan: HostLaunchPlan,
+    workspace_root: Path,
+) -> list[Path]:
+    """Return the marketplace and plugin files that `export_plugin` would create.
 
     Dry-run uses this list for review, while tests use it to keep the package
     contract stable.
     """
     files = [
+        marketplace_dir / ".claude-plugin" / "marketplace.json",
+        marketplace_dir / "INSTALL.md",
         plugin_dir / ".claude-plugin" / "plugin.json",
         plugin_dir / ".mcp.json",
         plugin_dir / "README.md",
@@ -273,6 +303,74 @@ def _planned_plugin_files(plugin_dir: Path, plan: HostLaunchPlan, workspace_root
         if root.exists():
             files.extend(plugin_dir / "knowledge" / path.relative_to(root) for path in root.rglob("*") if path.is_file())
     return sorted(files)
+
+
+def _render_marketplace_json(plugin_name: str) -> str:
+    """Render a local marketplace manifest that points at the exported plugin."""
+    return json.dumps(
+        {
+            "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+            "name": MARKETPLACE_NAME,
+            "version": "0.1.0",
+            "description": "Local marketplace for the OpenStudio AI Claude plugin.",
+            "owner": {
+                "name": "OpenStudio AI",
+            },
+            "plugins": [
+                {
+                    "name": plugin_name,
+                    "description": (
+                        "OpenStudio AI harness for OpenStudio model editing, simulation, "
+                        "results, SDK lookup, and reusable workflow skills."
+                    ),
+                    "version": "0.1.0",
+                    "source": f"./{plugin_name}",
+                    "category": "engineering",
+                }
+            ],
+        },
+        indent=2,
+        ensure_ascii=True,
+    ) + "\n"
+
+
+def _render_install_doc(marketplace_dir: Path, plugin_name: str) -> str:
+    """Render install instructions for using the exported package in Claude Code."""
+    return (
+        "# Install OpenStudio AI In Claude Code\n\n"
+        "This export is a local Claude Code marketplace containing the OpenStudio AI plugin.\n\n"
+        "## 1. Validate The Export\n\n"
+        "From the BEM-AI repository:\n\n"
+        "```bash\n"
+        f"claude plugin validate {marketplace_dir}\n"
+        "```\n\n"
+        "## 2. Add The Local Marketplace\n\n"
+        "Open Claude Code in the target project and run:\n\n"
+        "```text\n"
+        f"/plugin marketplace add {marketplace_dir}\n"
+        "```\n\n"
+        "## 3. Install The Plugin\n\n"
+        "Still inside Claude Code, run:\n\n"
+        "```text\n"
+        f"/plugin install {plugin_name}@{MARKETPLACE_NAME}\n"
+        "```\n\n"
+        "If Claude Code asks for scope, choose local or project scope for testing.\n\n"
+        "## 4. Reload Plugins\n\n"
+        "```text\n"
+        "/reload-plugins\n"
+        "```\n\n"
+        "## 5. Try The Plugin\n\n"
+        "Use one of the namespaced commands:\n\n"
+        "```text\n"
+        f"/{plugin_name}:add-vav-reheat\n"
+        f"/{plugin_name}:simulate\n"
+        f"/{plugin_name}:query-results\n"
+        "```\n\n"
+        "The plugin also contributes OpenStudio AI skills and an `openstudio_ai` MCP server.\n\n"
+        "## MVP Limitation\n\n"
+        "This export references the local BEM-AI checkout for the MCP server. Keep the "
+        "repository and Python environment available while testing.\n"
+    )
 
 
 def _write_plugin_package(plugin_dir: Path, plan: HostLaunchPlan, workspace_root: Path) -> None:
@@ -375,26 +473,49 @@ def _render_connectors_doc(workspace_root: Path) -> str:
 def _command_docs() -> dict[str, str]:
     """Return MVP command files for common OpenStudio workflows."""
     return {
-        "add-vav-reheat.md": (
+        "add-vav-reheat.md": _command_markdown(
+            name="add-vav-reheat",
+            description="Plan and execute a phased OpenStudio VAV reheat workflow.",
+            body=(
             "# Add VAV Reheat\n\n"
             "Use the OpenStudio AI VAV reheat parent workflow skill. Maintain workflow "
             "state through the blackboard contract, load only the child skill needed "
             "for the current phase, and use MCP tools for deterministic model lifecycle "
             "operations when appropriate.\n"
+            ),
         ),
-        "simulate.md": (
+        "simulate.md": _command_markdown(
+            name="simulate",
+            description="Run, poll, and collect artifacts from an OpenStudio simulation.",
+            body=(
             "# Simulate\n\n"
             "Use the `openstudio_ai` MCP simulation tools to run, poll, and collect "
             "artifacts from OpenStudio simulations. Do not run simulations through "
             "ad hoc shell commands when MCP tools are available.\n"
+            ),
         ),
-        "query-results.md": (
+        "query-results.md": _command_markdown(
+            name="query-results",
+            description="Query SQL-backed OpenStudio simulation results through MCP tools.",
+            body=(
             "# Query Results\n\n"
             "Use the `openstudio_ai` MCP result tools for SQL-backed annual, design-day, "
             "and summary result retrieval. Attribute assumptions and missing outputs "
             "in the final answer.\n"
+            ),
         ),
     }
+
+
+def _command_markdown(*, name: str, description: str, body: str) -> str:
+    """Render a Claude Code command file with required YAML frontmatter."""
+    return (
+        "---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        "---\n\n"
+        f"{body}"
+    )
 
 
 def _default_workspace_root() -> Path:
@@ -428,12 +549,12 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         required=True,
-        help="Directory where the plugin folder should be created.",
+        help="Directory where the local marketplace and plugin folder should be created.",
     )
     export.add_argument(
         "--plugin-name",
-        default="openstudio-ai",
-        help="Plugin folder name.",
+        default=DEFAULT_PLUGIN_NAME,
+        help="Plugin folder name and install name.",
     )
     export.add_argument(
         "--workspace-root",
@@ -477,6 +598,7 @@ def main() -> int:
             force=args.force,
         )
         mode = "Would export" if result.dry_run else "Exported"
+        print(f"{mode} marketplace: {result.marketplace_dir}")
         print(f"{mode} plugin: {result.plugin_dir}")
         for path in result.files:
             print(f"- {path}")
