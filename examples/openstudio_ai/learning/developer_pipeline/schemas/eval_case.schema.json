@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Eval Case",
+  "type": "object",
+  "required": ["eval_case_id", "category", "prompt", "expected_behavior"],
+  "properties": {
+    "eval_case_id": {"type": "string"},
+    "category": {"type": "string"},
+    "prompt": {"type": "string"},
+    "expected_behavior": {"type": "array", "items": {"type": "string"}},
+    "linked_asset_ids": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}
+

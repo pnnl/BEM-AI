@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Lesson",
+  "type": "object",
+  "required": ["status", "lesson_type", "summary", "source_event_ids"],
+  "properties": {
+    "status": {"enum": ["candidate", "reviewed", "validated", "promoted"]},
+    "lesson_type": {"type": "string"},
+    "summary": {"type": "string"},
+    "source_event_ids": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "object"},
+    "reviewer": {"type": "string"},
+    "eval_case_ids": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,13 @@
+trusted_asset_mode: reviewed_only
+required_fields:
+  - source_event_ids
+  - reviewer
+  - eval_case_ids
+allowed_targets:
+  - knowledge_base
+  - skill
+  - sdk_index
+  - mcp_tool
+  - mcp_measure
+  - eval
+

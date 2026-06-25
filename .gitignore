@@ -55,7 +55,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 examples/output/*
-examples/openstudio_mcp_demo/.sdk_doc_index.json
+examples/openstudio_ai/.env
 examples/openstudio_ai/.sdk_doc_index.json
 examples/openstudio_ai/.openstudio_ai_blackboards/
 

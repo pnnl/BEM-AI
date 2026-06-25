@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from automa_ai.common.agent_registry import A2AServerManager
 from automa_ai.common.mcp_registry import MCPServerConfig, MCPServerManager
 from automa_ai.config.agent_spec import YamlAgentSpec, load_a2a_server_from_yaml
-from examples.openstudio_ai.openstudio_mcp_server.server import serve
+from examples.openstudio_ai.openstudio_mcp.server import serve
 
 base_dir = Path(__file__).resolve().parent
 env_path = base_dir / ".env"

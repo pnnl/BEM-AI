@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI State Patch",
+  "type": "object",
+  "description": "Partial update returned by a child skill or tool and applied by the parent workflow.",
+  "additionalProperties": true
+}
+

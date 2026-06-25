@@ -7,6 +7,9 @@ inspection and model editing. The Python bootstrap starts the MCP and A2A
 servers, while the agent card, model, runtime settings, tools, MCP client
 connection, skills, and instructions live in YAML.
 
+For team ownership, export boundaries, and near-term development direction, see
+`DEVELOPER_GUIDANCE.md`.
+
 ## What Is `openstudio_mcp`?
 
 `openstudio_mcp` is a real MCP server (Anthropic `mcp`/`FastMCP`) that exposes OpenStudio workflows as MCP tools for AUTOMA-AI agents.
@@ -33,7 +36,7 @@ The intended split is:
 
 ## Architecture
 
-OpenStudio AI has four layers:
+OpenStudio AI has five layers:
 
 1. Agent layer
 - `examples/openstudio_ai/agent.py`
@@ -41,23 +44,34 @@ OpenStudio AI has four layers:
 - Connects to MCP and orchestrates MCP tool calls plus bounded `run_python`
   model-inspection/model-editing scripts.
 
-2. MCP server layer
-- `examples/openstudio_ai/openstudio_mcp_server/server.py`
+2. Harness and adapter layer
+- `examples/openstudio_ai/harness/`
+- `examples/openstudio_ai/adapters/`
+- Defines the portable package boundary for Codex, Claude Code, and future
+  agent hosts.
+
+3. MCP server layer
+- `examples/openstudio_ai/openstudio_mcp/server.py`
 - Registers model/sim/results/sdk-docs MCP tools.
 - Uses standard MCP success/error envelope.
 
-3. Runtime/state layer
-- `runtime/workspace_manager.py`: per-job sandbox folders and quota checks.
-- `runtime/job_manager.py`: `RUNNING/SUCCEEDED/FAILED` lifecycle.
-- `runtime/artifact_store.py`: immutable artifact IDs and metadata.
-- `runtime/measure_registry.py`: policy-based measure lookup and arg validation.
+4. Runtime/state layer
+- `openstudio_mcp/runtime/workspace_manager.py`: per-job sandbox folders and quota checks.
+- `openstudio_mcp/runtime/job_manager.py`: `RUNNING/SUCCEEDED/FAILED` lifecycle.
+- `openstudio_mcp/runtime/artifact_store.py`: immutable artifact IDs and metadata.
+- `openstudio_mcp/runtime/measure_registry.py`: policy-based measure lookup and arg validation.
+- `blackboard/`: local JSON state contracts and helper operations.
 - Local JSON blackboard: persistent session workflow state under
   `.openstudio_ai_blackboards/`.
 
-4. Governance/extension layer
+5. Governance, learning, and extension layer
 - `specs/openstudio_agent.yaml`
 - `prompts/openstudio_agent.md`
+- `prompts/harness_system_prompt.md`
+- `prompts/learning_contract.md`
 - `blackboard_schema.json`
+- `learning/`: developer and runtime learning pipeline contracts.
+- `evals/`: agent-behavior eval cases and promotion validation.
 - `policy/tool_allowlist.yaml`
 - `policy/run_gates.yaml`
 - `policy/measure_registry.yaml`
@@ -248,20 +262,29 @@ The spec points to:
 ## File map
 
 - `examples/openstudio_ai/agent.py`: YAML-backed MCP and A2A bootstrap.
+- `examples/openstudio_ai/adapters/`: host-specific Codex and Claude Code adapter contracts.
+- `examples/openstudio_ai/harness/`: host-agnostic package manifest, registry, and loader.
 - `examples/openstudio_ai/specs/openstudio_agent.yaml`: YAML agent spec.
 - `examples/openstudio_ai/prompts/openstudio_agent.md`: YAML agent instruction.
+- `examples/openstudio_ai/prompts/*_contract.md`: harness, blackboard, learning, and promotion contracts.
 - `examples/openstudio_ai/blackboard_schema.json`: source copy of the
   OpenStudio AI workflow-state schema.
+- `examples/openstudio_ai/blackboard/`: local JSON blackboard operations and schemas.
+- `examples/openstudio_ai/learning/`: developer and runtime learning pipeline scaffolds.
+- `examples/openstudio_ai/evals/`: agent workflow and asset-promotion eval area.
+- `examples/openstudio_ai/sdk_index/`: future structured SDK index and knowledge graph boundary.
 - `examples/openstudio_ai/skills/openstudio_sdk_model_editor.md`: run_python + SDK model-inspection/editing workflow.
 - `examples/openstudio_ai/knowledge/openstudio_sdk_recipes.md`: lightweight SDK knowledge-base entry point and routing summary.
 - `examples/openstudio_ai/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from OpenStudio standards and source-reviewed Python SDK usage.
 - `examples/openstudio_ai/OPENSTUDIO_SDK_EXPERIENCE.md`: human-readable source-review note for OpenStudio SDK usage patterns.
 - `examples/openstudio_ai/architecture_diagram.md`: Sponsor-friendly architecture/workflow diagrams.
 - `examples/openstudio_ai/ADVANCED_USER_GUIDE.md`: Advanced extension guide for measures, policies, and skills.
-- `examples/openstudio_ai/openstudio_mcp_server/server.py`: MCP server entrypoint.
-- `examples/openstudio_ai/openstudio_mcp_server/sdk_docs/`: local SDK HTML parser and lookup helper.
-- `examples/openstudio_ai/openstudio_mcp_server/tools/`: model/sim/results/sdk-docs tools.
-- `examples/openstudio_ai/openstudio_mcp_server/runtime/`: workspace, artifact, job managers.
+- `examples/openstudio_ai/openstudio_mcp/server.py`: MCP server entrypoint.
+- `examples/openstudio_ai/openstudio_mcp/sdk_docs/`: local SDK HTML parser and lookup helper.
+- `examples/openstudio_ai/openstudio_mcp/tools/`: model/sim/results/sdk-docs tools.
+- `examples/openstudio_ai/openstudio_mcp/runtime/`: workspace, artifact, job managers.
+- `examples/openstudio_ai/measures/approved/`: reviewed deterministic measures.
+- `examples/openstudio_ai/measures/candidates/`: runtime or developer-proposed measures pending review.
 - `examples/openstudio_ai/scripts/build_sdk_doc_index.py`: optional SDK doc index builder.
 - `examples/openstudio_ai/skills/hvac_sizing_assistant.md`: skill prompt contract.
 - `examples/openstudio_ai/policy/*.yaml`: allowlist and runtime gates.

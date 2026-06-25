@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Candidate Measure",
+  "type": "object",
+  "required": ["name", "status", "summary", "review_required"],
+  "properties": {
+    "name": {"type": "string"},
+    "status": {"enum": ["candidate", "reviewed", "validated", "promoted"]},
+    "summary": {"type": "string"},
+    "script_path": {"type": "string"},
+    "source_event_ids": {"type": "array", "items": {"type": "string"}},
+    "review_required": {"type": "boolean"},
+    "eval_case_ids": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}
+

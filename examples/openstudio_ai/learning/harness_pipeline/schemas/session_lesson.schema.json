@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Session Lesson",
+  "type": "object",
+  "required": ["status", "summary", "source"],
+  "properties": {
+    "status": {"const": "candidate"},
+    "summary": {"type": "string"},
+    "source": {"const": "harness_pipeline"},
+    "workflow_id": {"type": "string"},
+    "review_required": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}
+

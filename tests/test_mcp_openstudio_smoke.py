@@ -23,7 +23,7 @@ from examples.openstudio_ai.agent import (
     build_openstudio_mcp_config,
     load_openstudio_agent_spec,
 )
-from examples.openstudio_ai.openstudio_mcp_server.server import serve
+from examples.openstudio_ai.openstudio_mcp.server import serve
 
 
 MCP_HOST = "localhost"
@@ -52,7 +52,7 @@ def _find_local_epw() -> Path | None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def start_openstudio_mcp_server():
+def start_mcp():
     from multiprocessing import Process
     import time
 

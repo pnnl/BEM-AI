@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Candidate Skill",
+  "type": "object",
+  "required": ["name", "status", "scope", "source_event_ids"],
+  "properties": {
+    "name": {"type": "string"},
+    "status": {"enum": ["candidate", "reviewed", "validated", "promoted"]},
+    "scope": {"type": "string"},
+    "source_event_ids": {"type": "array", "items": {"type": "string"}},
+    "required_state": {"type": "array", "items": {"type": "string"}},
+    "outputs": {"type": "array", "items": {"type": "string"}},
+    "eval_case_ids": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}
+

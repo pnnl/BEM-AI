@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Workflow State",
+  "type": "object",
+  "required": ["workflow_id", "goal", "status", "completed_steps", "pending_steps"],
+  "properties": {
+    "workflow_id": {"type": "string"},
+    "goal": {"type": "string"},
+    "status": {"type": "string"},
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "completed_steps": {"type": "array", "items": {"type": "string"}},
+    "pending_steps": {"type": "array", "items": {"type": "string"}},
+    "assumptions": {"type": "array"},
+    "artifacts": {"type": "array"},
+    "failures": {"type": "array"}
+  },
+  "additionalProperties": true
+}
+

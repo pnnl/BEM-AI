@@ -1,0 +1,13 @@
+review_required_for:
+  - knowledge_base
+  - skill
+  - sdk_index
+  - mcp_tool
+  - mcp_measure
+  - eval
+review_statuses:
+  - candidate
+  - reviewed
+  - validated
+  - promoted
+

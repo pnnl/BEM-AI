@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Runtime Candidate Measure",
+  "type": "object",
+  "required": ["name", "status", "source", "review_required"],
+  "properties": {
+    "name": {"type": "string"},
+    "status": {"const": "candidate"},
+    "source": {"const": "harness_pipeline"},
+    "summary": {"type": "string"},
+    "script_excerpt": {"type": "string"},
+    "review_required": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,5 @@
+raw_event_retention_days: 90
+candidate_asset_retention_days: 365
+trusted_asset_retention_days: null
+store_runtime_candidates_locally: true
+

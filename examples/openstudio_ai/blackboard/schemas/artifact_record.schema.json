@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenStudio AI Artifact Record",
+  "type": "object",
+  "required": ["artifact_id", "kind", "path"],
+  "properties": {
+    "artifact_id": {"type": "string"},
+    "kind": {"type": "string"},
+    "path": {"type": "string"},
+    "created_by": {"type": "string"},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": true
+}
+
