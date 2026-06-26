@@ -103,9 +103,15 @@ def _planned_export_files(
         plugin_dir / "README.md",
         plugin_dir / "CONNECTORS.md",
         plugin_dir / "blackboard" / "schemas" / plan.blackboard_schema.name,
+        plugin_dir / "learning" / "README.md",
+        plugin_dir / "learning" / "candidates" / ".gitkeep",
     ]
     files.extend(plugin_dir / "instructions" / path.name for path in plan.system_prompt_files)
     files.extend(plugin_dir / "skills" / _skill_dir_name(path) / "SKILL.md" for path in plan.skill_paths)
+    files.extend(
+        plugin_dir / "learning" / "schemas" / path.name
+        for path in sorted((workspace_root / "learning" / "harness_pipeline" / "schemas").glob("*.json"))
+    )
 
     knowledge_root = workspace_root / "knowledge"
     if knowledge_root.exists():
@@ -123,6 +129,8 @@ def _write_plugin_package(plugin_dir: Path, plan: HostLaunchPlan, workspace_root
     (plugin_dir / "skills").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "instructions").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "blackboard" / "schemas").mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "learning" / "schemas").mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "learning" / "candidates").mkdir(parents=True, exist_ok=True)
 
     (plugin_dir / ".codex-plugin" / "plugin.json").write_text(
         _render_plugin_json(),
@@ -141,6 +149,13 @@ def _write_plugin_package(plugin_dir: Path, plan: HostLaunchPlan, workspace_root
         shutil.copy2(skill, target_dir / "SKILL.md")
 
     shutil.copy2(plan.blackboard_schema, plugin_dir / "blackboard" / "schemas" / plan.blackboard_schema.name)
+    shutil.copy2(
+        workspace_root / "learning" / "harness_pipeline" / "runtime_learning.md",
+        plugin_dir / "learning" / "README.md",
+    )
+    (plugin_dir / "learning" / "candidates" / ".gitkeep").write_text("", encoding="utf-8")
+    for schema in sorted((workspace_root / "learning" / "harness_pipeline" / "schemas").glob("*.json")):
+        shutil.copy2(schema, plugin_dir / "learning" / "schemas" / schema.name)
 
     knowledge_root = workspace_root / "knowledge"
     if knowledge_root.exists():
@@ -188,7 +203,7 @@ def _render_plugin_json() -> str:
 
 
 def _render_mcp_config(workspace_root: Path) -> str:
-    """Render Codex MCP config for the local-checkout MVP."""
+    """Render Codex MCP config for a local-checkout package."""
     return json.dumps(
         {
             "mcpServers": {
@@ -259,9 +274,10 @@ def _render_install_doc(export_root: Path, marketplace_path: Path, plugin_name: 
         "```\n\n"
         "## 3. Install Or View The Plugin\n\n"
         "Open the Codex plugin UI and install `openstudio-ai` from `openstudio-ai-local`.\n\n"
-        "## MVP Limitation\n\n"
+        "## Current Packaging Limit\n\n"
         "This export references the local BEM-AI checkout for the MCP server. Keep the "
-        "repository and Python environment available while testing.\n"
+        "repository and Python environment available until a packaged runtime "
+        "entrypoint is available.\n"
     )
 
 
@@ -281,8 +297,8 @@ def _render_plugin_readme(plan: HostLaunchPlan) -> str:
         "## Skills\n\n"
         f"{skill_names}\n\n"
         "## Runtime Note\n\n"
-        "This MVP plugin references the local OpenStudio AI checkout for its MCP server. "
-        "A later distributable package should vendor or install the MCP runtime.\n"
+        "This plugin currently references the local OpenStudio AI checkout for its "
+        "MCP server. A deployment package should vendor or install the MCP runtime.\n"
     )
 
 
@@ -295,7 +311,7 @@ def _render_connectors_doc(workspace_root: Path) -> str:
         "| --- | --- | --- |\n"
         "| `openstudio_ai` | local stdio MCP | OpenStudio model lifecycle, simulation, "
         "results, approved measures, and SDK documentation lookup |\n\n"
-        "The MVP `.mcp.json` points to the local checkout:\n\n"
+        "The current `.mcp.json` points to the local checkout:\n\n"
         f"- `{workspace_root}`\n"
     )
 

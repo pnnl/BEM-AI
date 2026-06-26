@@ -161,8 +161,9 @@ def _render_mcp_config(existing_path: Path, plan: HostLaunchPlan, workspace_root
     if existing_path.exists():
         existing = json.loads(existing_path.read_text(encoding="utf-8"))
     mcp_servers = dict(existing.get("mcpServers", {})) if isinstance(existing.get("mcpServers"), dict) else {}
-    # MVP behavior: use this Python environment and source checkout. A packaged
-    # release should replace this with an installed command or vendored runtime.
+    # Current local-export behavior: use this Python environment and source
+    # checkout. A packaged release should replace this with an installed command
+    # or vendored runtime.
     mcp_servers[SERVER_NAME] = {
         "command": sys.executable,
         "args": [
@@ -183,9 +184,10 @@ def _render_mcp_config(existing_path: Path, plan: HostLaunchPlan, workspace_root
 
 
 def _render_plugin_mcp_config(workspace_root: Path) -> str:
-    """Render plugin `.mcp.json` for the local-checkout MVP."""
+    """Render plugin `.mcp.json` for a local-checkout package."""
     # This is intentionally the same stdio MCP entrypoint as project install.
-    # Keeping it local lets sponsors test the idea before we solve packaging.
+    # The deployment roadmap replaces this local checkout path with a packaged
+    # runtime entrypoint.
     return json.dumps(
         {
             "mcpServers": {
@@ -295,10 +297,17 @@ def _planned_export_files(
         plugin_dir / "commands" / "add-vav-reheat.md",
         plugin_dir / "commands" / "simulate.md",
         plugin_dir / "commands" / "query-results.md",
+        plugin_dir / "commands" / "propose-measure.md",
         plugin_dir / "blackboard" / "schemas" / plan.blackboard_schema.name,
+        plugin_dir / "learning" / "README.md",
+        plugin_dir / "learning" / "candidates" / ".gitkeep",
     ]
     files.extend(plugin_dir / "instructions" / path.name for path in plan.system_prompt_files)
     files.extend(plugin_dir / "skills" / _skill_dir_name(path) / "SKILL.md" for path in plan.skill_paths)
+    files.extend(
+        plugin_dir / "learning" / "schemas" / path.name
+        for path in sorted((workspace_root / "learning" / "harness_pipeline" / "schemas").glob("*.json"))
+    )
     for root in [workspace_root / "knowledge"]:
         if root.exists():
             files.extend(plugin_dir / "knowledge" / path.relative_to(root) for path in root.rglob("*") if path.is_file())
@@ -367,9 +376,10 @@ def _render_install_doc(marketplace_dir: Path, plugin_name: str) -> str:
         f"/{plugin_name}:query-results\n"
         "```\n\n"
         "The plugin also contributes OpenStudio AI skills and an `openstudio_ai` MCP server.\n\n"
-        "## MVP Limitation\n\n"
+        "## Current Packaging Limit\n\n"
         "This export references the local BEM-AI checkout for the MCP server. Keep the "
-        "repository and Python environment available while testing.\n"
+        "repository and Python environment available until a packaged runtime "
+        "entrypoint is available.\n"
     )
 
 
@@ -380,6 +390,8 @@ def _write_plugin_package(plugin_dir: Path, plan: HostLaunchPlan, workspace_root
     (plugin_dir / "skills").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "instructions").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "blackboard" / "schemas").mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "learning" / "schemas").mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "learning" / "candidates").mkdir(parents=True, exist_ok=True)
 
     (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
         json.dumps(
@@ -416,6 +428,13 @@ def _write_plugin_package(plugin_dir: Path, plan: HostLaunchPlan, workspace_root
         shutil.copy2(skill, target_dir / "SKILL.md")
 
     shutil.copy2(plan.blackboard_schema, plugin_dir / "blackboard" / "schemas" / plan.blackboard_schema.name)
+    shutil.copy2(
+        workspace_root / "learning" / "harness_pipeline" / "runtime_learning.md",
+        plugin_dir / "learning" / "README.md",
+    )
+    (plugin_dir / "learning" / "candidates" / ".gitkeep").write_text("", encoding="utf-8")
+    for schema in sorted((workspace_root / "learning" / "harness_pipeline" / "schemas").glob("*.json")):
+        shutil.copy2(schema, plugin_dir / "learning" / "schemas" / schema.name)
 
     knowledge_root = workspace_root / "knowledge"
     if knowledge_root.exists():
@@ -449,9 +468,9 @@ def _render_plugin_readme(plan: HostLaunchPlan) -> str:
         "## Skills\n\n"
         f"{skill_names}\n\n"
         "## Runtime Note\n\n"
-        "This MVP plugin references the local OpenStudio AI checkout for its MCP "
-        "server. A later distributable package should vendor or install the MCP "
-        "runtime instead of relying on a source checkout.\n"
+        "This plugin currently references the local OpenStudio AI checkout for its "
+        "MCP server. A deployment package should vendor or install the MCP runtime "
+        "instead of relying on a source checkout.\n"
     )
 
 
@@ -464,14 +483,14 @@ def _render_connectors_doc(workspace_root: Path) -> str:
         "| --- | --- | --- |\n"
         "| `openstudio_ai` | local stdio MCP | OpenStudio model lifecycle, simulation, "
         "results, approved measures, and SDK documentation lookup |\n\n"
-        "The MVP `.mcp.json` points to the local checkout:\n\n"
+        "The current `.mcp.json` points to the local checkout:\n\n"
         f"- `{workspace_root}`\n\n"
         "OpenStudio and EnergyPlus availability depends on the local environment.\n"
     )
 
 
 def _command_docs() -> dict[str, str]:
-    """Return MVP command files for common OpenStudio workflows."""
+    """Return command files for common OpenStudio workflows."""
     return {
         "add-vav-reheat.md": _command_markdown(
             name="add-vav-reheat",
@@ -502,6 +521,18 @@ def _command_docs() -> dict[str, str]:
             "Use the `openstudio_ai` MCP result tools for SQL-backed annual, design-day, "
             "and summary result retrieval. Attribute assumptions and missing outputs "
             "in the final answer.\n"
+            ),
+        ),
+        "propose-measure.md": _command_markdown(
+            name="propose-measure",
+            description="Draft a candidate OpenStudio measure from a repeated script or workflow.",
+            body=(
+                "# Propose Measure\n\n"
+                "Summarize the repeated OpenStudio script or workflow as a candidate measure. "
+                "Write candidate JSON to `learning/candidates/` using "
+                "`learning/schemas/candidate_measure.schema.json`. Do not edit trusted "
+                "`knowledge/`, `skills/`, or approved measures directly. State that review "
+                "and eval validation are required before promotion.\n"
             ),
         ),
     }

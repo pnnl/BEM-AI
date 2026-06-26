@@ -66,6 +66,7 @@ Then use the namespaced commands:
 /openstudio-ai:add-vav-reheat
 /openstudio-ai:simulate
 /openstudio-ai:query-results
+/openstudio-ai:propose-measure
 ```
 
 ## Claude Code Project Install

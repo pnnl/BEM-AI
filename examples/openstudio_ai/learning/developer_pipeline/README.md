@@ -14,3 +14,13 @@ Stages:
 
 Trusted assets should only change through this pipeline.
 
+## Deterministic Runner
+
+```bash
+.venv/bin/python -m examples.openstudio_ai.learning.developer_pipeline.run_pipeline
+```
+
+The runner scans OpenStudio AI logs and writes candidate lesson JSON files to
+`learning/review_queue/`. It is deterministic so it can be tested and reviewed;
+the `developer_agent/` folder defines the agent-assisted version of the same
+workflow.

@@ -1,0 +1,33 @@
+spec_version: v1
+
+agent_card:
+  name: OpenStudio Developer Learning Agent
+  description: Agent-assisted curation workflow for OpenStudio AI learning candidates.
+  version: 0.1.0
+  capabilities:
+    streaming: true
+  supportedInterfaces:
+    - url: http://localhost:0/
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  skills:
+    - id: openstudio_learning_candidate_curation
+      name: OpenStudio Learning Candidate Curation
+      description: Reflects on telemetry and writes reviewable learning candidates.
+      tags: [openstudio, learning, curation]
+      examples:
+        - Review telemetry and propose candidate knowledge lessons.
+
+instructions:
+  path: ./prompts/developer_learning_agent.md
+
+model:
+  provider: ollama
+  name: llama3.1:8b
+
+runtime:
+  agent_type: langgraph-chat
+  transient_retry_attempts: 0
+  debug: false

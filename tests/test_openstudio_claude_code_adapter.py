@@ -80,10 +80,14 @@ def test_claude_code_adapter_exports_plugin_package(tmp_path: Path) -> None:
     assert (plugin_dir / "README.md").exists()
     assert (plugin_dir / "CONNECTORS.md").exists()
     assert (plugin_dir / "commands" / "add-vav-reheat.md").exists()
+    assert (plugin_dir / "commands" / "propose-measure.md").exists()
     assert (plugin_dir / "skills" / "openstudio-hvac-air-loop-creator" / "SKILL.md").exists()
     assert not (plugin_dir / "skills" / "HVAC-CHILD-SKILL-MANAGEMENT" / "SKILL.md").exists()
     assert (plugin_dir / "knowledge" / "openstudio_sdk_recipes.md").exists()
     assert (plugin_dir / "blackboard" / "schemas" / "workflow_state.schema.json").exists()
+    assert (plugin_dir / "learning" / "README.md").exists()
+    assert (plugin_dir / "learning" / "schemas" / "candidate_measure.schema.json").exists()
+    assert (plugin_dir / "learning" / "candidates" / ".gitkeep").exists()
 
     plugin_json = json.loads((plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert plugin_json["name"] == "openstudio-ai"
@@ -104,6 +108,11 @@ def test_claude_code_adapter_exports_command_frontmatter(tmp_path: Path) -> None
     assert "name: add-vav-reheat\n" in command
     assert "description: Plan and execute a phased OpenStudio VAV reheat workflow.\n" in command
     assert "\n---\n\n# Add VAV Reheat" in command
+    propose_measure = (tmp_path / "openstudio-ai" / "commands" / "propose-measure.md").read_text(
+        encoding="utf-8"
+    )
+    assert "name: propose-measure\n" in propose_measure
+    assert "learning/candidates/" in propose_measure
 
 
 def test_claude_code_adapter_exports_skill_frontmatter(tmp_path: Path) -> None:

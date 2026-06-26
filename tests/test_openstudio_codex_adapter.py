@@ -43,6 +43,9 @@ def test_codex_adapter_exports_plugin_package(tmp_path: Path) -> None:
     assert not (plugin_dir / "skills" / "HVAC-CHILD-SKILL-MANAGEMENT" / "SKILL.md").exists()
     assert (plugin_dir / "knowledge" / "openstudio_sdk_recipes.md").exists()
     assert (plugin_dir / "blackboard" / "schemas" / "workflow_state.schema.json").exists()
+    assert (plugin_dir / "learning" / "README.md").exists()
+    assert (plugin_dir / "learning" / "schemas" / "candidate_measure.schema.json").exists()
+    assert (plugin_dir / "learning" / "candidates" / ".gitkeep").exists()
     install_doc = (tmp_path / "INSTALL.md").read_text(encoding="utf-8")
     assert f"codex plugin marketplace add {tmp_path}" in install_doc
 
