@@ -46,6 +46,7 @@ openstudio-ai-plugin/
     ├── skills/
     ├── knowledge/
     ├── instructions/
+    ├── learning/
     └── blackboard/schemas/
 ```
 
@@ -133,6 +134,7 @@ openstudio-ai-codex-plugin/
         ├── skills/
         ├── knowledge/
         ├── instructions/
+        ├── learning/
         └── blackboard/schemas/
 ```
 

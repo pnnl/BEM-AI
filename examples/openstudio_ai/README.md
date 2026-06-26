@@ -1,159 +1,249 @@
 # OpenStudio AI
 
-OpenStudio AI is a YAML-defined AUTOMA-AI workspace connected to a real MCP
-server that exposes a minimal OpenStudio modeling/simulation lifecycle. It also
-gives the agent a bounded `run_python` workspace for OpenStudio Python SDK model
-inspection and model editing. The Python bootstrap starts the MCP and A2A
-servers, while the agent card, model, runtime settings, tools, MCP client
-connection, skills, and instructions live in YAML.
+OpenStudio AI is a deployable agent harness for building-energy modeling
+workflows. The project packages a trusted MCP runtime, reviewed knowledge,
+workflow skills, SDK lookup, runtime learning contracts, and host adapters for
+Claude Code, Codex, and future agent shells.
 
-For team ownership, export boundaries, and near-term development direction, see
-`DEVELOPER_GUIDANCE.md`.
+The current direction is:
 
-## What Is `openstudio_mcp`?
+```text
+OpenStudio AI runtime kernel
+  openstudio_mcp + SDK index + approved measures + future blackboard tools
+        |
+        v
+Host adapters
+  Claude Code plugin, Codex plugin, AUTOMA-AI YAML agent
+        |
+        v
+Engineering workflows
+  inspect/edit models, run simulations, query results, retrieve targeted SDK
+  and OpenStudio Standards knowledge, propose learning candidates
+```
 
-`openstudio_mcp` is a real MCP server (Anthropic `mcp`/`FastMCP`) that exposes OpenStudio workflows as MCP tools for AUTOMA-AI agents.
+For developer ownership and roadmap details, see:
 
-It provides:
+- `DEVELOPER_GUIDANCE.md`
+- `TASK_PLANNING_MEETING.md`
 
-- `model_*` tools for model lifecycle operations.
-- `sim_*` tools for asynchronous OpenStudio simulation execution.
-- `results_*` tools for SQL-backed post-processing and summarization.
-- `sdk_docs_*` tools for deterministic lookup against local OpenStudio SDK HTML
-  documentation.
+## Current Baseline
 
-The intended split is:
+OpenStudio AI currently includes:
 
-- MCP = curated, production workflow tools for simulations, artifacts, and
-  results retrieval.
-- `run_python` + OpenStudio Python SDK = flexible local model-inspection and
-  model-editing workspace.
-- `sdk_docs_*` = exact API lookup for SDK constructors, getters, setters,
-  parameter types, units, and warnings before drafting scripts.
-- Skills = reusable deterministic modeling workflows and guardrails.
-- Blackboard = persistent session state for long-running workflow assumptions,
-  checklist status, created objects, warnings, and validation results.
+- `openstudio_mcp/`, a real MCP server for model lifecycle, simulation,
+  results, SDK docs, and approved measures;
+- Claude Code plugin export;
+- Codex plugin export;
+- AUTOMA-AI YAML agent spec for local development and A2A operation;
+- generated HVAC child skills from one YAML spec per skill plus a shared Jinja
+  template;
+- reviewed knowledge folders and SDK wiki packs;
+- runtime learning schemas and candidate folders exported to host agents;
+- manual developer learning pipeline that distills logs into reviewable
+  candidates;
+- local JSON blackboard schema and operations for AUTOMA-AI workflows;
+- tests covering adapter export, learning, SDK docs, and MCP smoke behavior.
+
+The main deployment gap is runtime packaging: exported `.mcp.json` files still
+point to the local BEM-AI checkout and active Python environment. The next
+runtime milestone is an installed MCP entrypoint such as `openstudio-ai-mcp`.
+
+## Product Boundary
+
+OpenStudio AI has two surfaces.
+
+Runtime harness:
+
+- consumed by Claude Code, Codex, AUTOMA-AI, or another host;
+- includes MCP config, instructions, skills, reviewed knowledge, SDK lookup
+  assets, approved measures, learning schemas, and blackboard schemas;
+- should stay compact, trusted, and portable.
+
+Developer workbench:
+
+- used to build, test, review, validate, and promote assets;
+- includes source skill specs, Jinja templates, learning pipelines, evals,
+  review queues, scripts, candidate measures, and policy drafts;
+- is not exported wholesale to normal host-agent users.
 
 ## Architecture
 
-OpenStudio AI has five layers:
+### MCP Runtime Kernel
 
-1. Agent layer
-- `examples/openstudio_ai/agent.py`
-- Loads `specs/openstudio_agent.yaml` with `load_a2a_server_from_yaml(...)`.
-- Connects to MCP and orchestrates MCP tool calls plus bounded `run_python`
-  model-inspection/model-editing scripts.
+`openstudio_mcp/` is the deterministic runtime surface. It owns operations that
+should not be left to free-form agent scripting:
 
-2. Harness and adapter layer
-- `examples/openstudio_ai/harness/`
-- `examples/openstudio_ai/adapters/`
-- Defines the portable package boundary for Codex, Claude Code, and future
-  agent hosts.
+- `model_*`: model lifecycle, weather/design-day setup, measure application,
+  and validation;
+- `sim_*`: asynchronous sandboxed simulation execution and artifact tracking;
+- `results_*`: SQL-backed result queries and summaries;
+- `sdk_docs_*`: targeted OpenStudio SDK documentation lookup;
+- approved measures: reviewed deterministic workflows exposed through policy.
 
-3. MCP server layer
-- `examples/openstudio_ai/openstudio_mcp/server.py`
-- Registers model/sim/results/sdk-docs MCP tools.
-- Uses standard MCP success/error envelope.
+Near-term runtime work will package this as an installed command and make SDK
+index and approved measures resolve from installed runtime assets rather than
+from a developer checkout.
 
-4. Runtime/state layer
-- `openstudio_mcp/runtime/workspace_manager.py`: per-job sandbox folders and quota checks.
-- `openstudio_mcp/runtime/job_manager.py`: `RUNNING/SUCCEEDED/FAILED` lifecycle.
-- `openstudio_mcp/runtime/artifact_store.py`: immutable artifact IDs and metadata.
-- `openstudio_mcp/runtime/measure_registry.py`: policy-based measure lookup and arg validation.
-- `blackboard/`: local JSON state contracts and helper operations.
-- Local JSON blackboard: persistent session workflow state under
-  `.openstudio_ai_blackboards/`.
+### Host Adapters
 
-5. Governance, learning, and extension layer
+`adapters/` turns the host-agnostic harness into host-specific packages.
+
+Claude Code export:
+
+```bash
+.venv/bin/python -m examples.openstudio_ai.adapters.claude_code_adapter export-plugin \
+  --output-dir /tmp/openstudio-ai-plugin
+```
+
+Claude Code install flow:
+
+```text
+/plugin marketplace add /tmp/openstudio-ai-plugin
+/plugin install openstudio-ai@openstudio-ai-local
+/reload-plugins
+```
+
+Codex export:
+
+```bash
+.venv/bin/python -m examples.openstudio_ai.adapters.codex_adapter export-plugin \
+  --output-dir /tmp/openstudio-ai-codex-plugin
+```
+
+Codex install flow:
+
+```bash
+codex plugin marketplace add /tmp/openstudio-ai-codex-plugin
+```
+
+Exported packages include separate `skills/`, `knowledge/`, `instructions/`,
+`learning/`, and `blackboard/schemas/` folders. Skills and knowledge are not
+flattened into one large `CLAUDE.md`.
+
+### AUTOMA-AI Local Agent
+
+The local AUTOMA-AI development agent is defined by:
+
 - `specs/openstudio_agent.yaml`
+- `agent.py`
 - `prompts/openstudio_agent.md`
-- `prompts/harness_system_prompt.md`
-- `prompts/learning_contract.md`
-- `blackboard_schema.json`
-- `learning/`: developer and runtime learning pipeline contracts.
-- `evals/`: agent-behavior eval cases and promotion validation.
-- `policy/tool_allowlist.yaml`
-- `policy/run_gates.yaml`
-- `policy/measure_registry.yaml`
-- `skills/hvac_sizing_assistant.md`
-- `skills/openstudio_sdk_model_editor.md`
-- `knowledge/openstudio_sdk_recipes.md`
-- `knowledge/openstudio_sdk_wiki/`, including routing, domain packs, and review
-  prompts.
 
-## Capabilities
+It is useful for local development, A2A testing, telemetry, blackboard behavior,
+and MCP integration work. It is not the only target runtime anymore.
 
-### Model inspection and editing workspace
+### Skills And Knowledge
 
-- Use `run_python` only for local OpenStudio Python SDK scripts that inspect or
-  edit `.osm` files.
-- Edited models should be saved as copies under `outputs/` or another
-  user-approved path.
-- Do not use `run_python` for simulations, polling, SQL result retrieval,
-  subprocesses, shell commands, or network calls.
+Skills represent workflow instructions. The VAV workflow is split into a parent
+skill and smaller generated child skills so the agent can load only the phase it
+needs.
 
-### Persistent workflow state
+Knowledge represents reviewed context. The next knowledge milestone is to build
+token-light OpenStudio Standards HVAC system cards from:
 
-OpenStudio AI enables a local JSON blackboard in `specs/openstudio_agent.yaml`.
-For long-running workflows, the parent skill stores state under
-`workflows.<workflow_id>` and treats the blackboard as the source of truth.
+```text
+/Users/xuwe123/github/openstudio-standards/lib/openstudio-standards/prototypes/common/objects/Prototype.hvac_systems.rb
+```
 
-The system prompt defines these workflow operations:
+The target pattern is targeted retrieval:
 
-- `initialize_workflow`
-- `get_phase_state`
-- `update_state_patch`
-- `mark_step_complete`
+1. query the HVAC system inventory;
+2. retrieve one system card;
+3. retrieve only needed SDK methods;
+4. load only the child skill for the active phase;
+5. load broad docs only after targeted lookup fails.
 
-Child skills return narrow `state_patch` objects. The parent workflow applies
-those patches through `blackboard_write` with `expected_revision`, which keeps
-assumptions and checklist progress stable across long tasks.
+### Learning
 
-### Model tools
+OpenStudio AI has two learning paths.
 
-- `model_load(model_uri)`
-- `model_clone(model_id)`
-- `model_list_measures()`
-- `model_set_weather(model_id, epw_path)`
-- `model_set_design_days(model_id, ddy_id | derive_from_epw=true)` (compatibility step)
-- `model_apply_measure(model_id, measure_id, args)`
-- `model_validate(model_id)`
+Developer learning:
 
-### Simulation tools
+- manually triggered;
+- reads telemetry, failure logs, warnings, corrections, and review notes;
+- writes reviewable candidates to `learning/review_queue/`;
+- requires review, eval linkage, and explicit promotion before trusted assets
+  change.
 
-- `sim_run(model_id, run_mode, options)` returns `job_id` immediately.
-- `sim_status(job_id)` supports polling asynchronous simulation.
-- `sim_artifacts(job_id)` returns result artifact IDs.
+Run the current deterministic curation pass:
 
-### Results tools
+```bash
+.venv/bin/python -m examples.openstudio_ai.learning.developer_pipeline.run_pipeline
+```
 
-`results_query(sql_id, query_type, params)` supports:
+Runtime harness learning:
 
-- `annual_end_use_fuel`
-- `design_day_end_use_fuel`
-- `annual_eui`
-- `sizing_summary`
+- exported to Claude/Codex as instructions, schemas, and candidate folders;
+- lets host agents propose candidate recipes, session lessons, or measures;
+- never directly updates trusted `knowledge/`, `skills/`, `openstudio_mcp/`, or
+  `measures/approved/`.
 
-`results_summarize(data, format)` returns readable summary text/tables.
+Runtime learning can suggest. Developer learning can promote.
 
-### SDK documentation tools
+### Blackboard
 
-The optional `sdk_docs_*` tools inspect local Doxygen-generated OpenStudio SDK
-HTML documentation. Set `OPENSTUDIO_SDK_DOCS_DIR` to the directory containing
+The blackboard is currently an AUTOMA-AI-native local JSON workflow state layer.
+It helps parent workflow skills preserve assumptions, phase progress, created
+objects, warnings, and validation results across long tasks.
+
+For Claude/Codex exports, blackboard schemas and instructions are included, but
+blackboard is not yet a host-native shared state service. A future MCP-backed
+blackboard service should expose operations such as initialize, patch, get
+phase state, mark step complete, and snapshot.
+
+## Setup For Local Development
+
+1. Copy `sample.env` to `.env`.
+2. Set the model provider values used by `specs/openstudio_agent.yaml`.
+3. Set `OPENSTUDIO_PATH` to the local OpenStudio CLI executable path.
+4. Ensure the configured Python executable can import the OpenStudio Python SDK
+   when using SDK inspection/editing.
+5. Optional but recommended: set `OPENSTUDIO_SDK_DOCS_DIR` to local
+   Doxygen-generated OpenStudio SDK HTML documentation.
+
+The YAML spec reads local environment settings and configures:
+
+- MCP client connection;
+- bounded `run_python` workspace;
+- skills and knowledge roots;
+- telemetry JSONL path;
+- Python script failure log path;
+- local JSON blackboard path.
+
+## Run Locally
+
+Start the AUTOMA-AI agent and MCP server:
+
+```bash
+uv run python examples/openstudio_ai/agent.py
+```
+
+Optional Streamlit UI:
+
+```bash
+uv run streamlit run examples/openstudio_ai/ui.py
+```
+
+Combined launcher:
+
+```bash
+bash examples/openstudio_ai/run_all.sh
+```
+
+## SDK Documentation Tools
+
+The `sdk_docs_*` tools inspect local OpenStudio SDK HTML docs. Set
+`OPENSTUDIO_SDK_DOCS_DIR` to the directory containing
 `classopenstudio_1_1model_*.html` files.
 
-- `sdk_docs_route(query)`: identify likely SDK wiki packs and OpenStudio model
-  classes for an SDK scripting request.
-- `sdk_docs_find_classes(query)`: find model SDK classes by name or keyword.
-- `sdk_docs_list_methods(class_name, keyword)`: list methods on a class.
-- `sdk_docs_get_method(class_name, method_name, anchor=None,
-  signature_contains=None)`: return exact signature, docs, unit notes, and a
-  local source URL for a method. Use `anchor` or `signature_contains` when the
-  SDK docs show multiple overloads for the same method name.
-- `sdk_docs_search_methods(keyword, class_filter)`: search method names across
-  model classes.
+Available MCP tools include:
 
-You can build a local cache summary for inspection:
+- `sdk_docs_route`
+- `sdk_docs_find_classes`
+- `sdk_docs_list_methods`
+- `sdk_docs_get_method`
+- `sdk_docs_search_methods`
+
+Build an optional local cache summary:
 
 ```bash
 python3 examples/openstudio_ai/scripts/build_sdk_doc_index.py \
@@ -161,130 +251,95 @@ python3 examples/openstudio_ai/scripts/build_sdk_doc_index.py \
   --output examples/openstudio_ai/.sdk_doc_index.json
 ```
 
-The generated cache is ignored by git.
-
-## Setup
-
-1. Copy `sample.env` to `.env`.
-2. Update model and server settings as needed.
-3. Set `OPENSTUDIO_PATH` to the local OpenStudio CLI executable path.
-4. Ensure the Python executable configured in `specs/openstudio_agent.yaml` can
-   import the OpenStudio Python SDK when using SDK inspection/editing. If needed,
-   update `tools.tools[0].config.python_executable`.
-5. Set `OSSTD_LLM_API` in your `.env` to your API key — the YAML spec reads it via `${...}` interpolation. Update `model.name` and `model.base_url` directly in `specs/openstudio_agent.yaml` to match your provider.
-6. Optional but recommended: set `OPENSTUDIO_SDK_DOCS_DIR` to local OpenStudio
-   SDK HTML documentation so the agent can verify exact SDK APIs before writing
-   scripts.
-
-## YAML Agent Spec
-
-The agent is defined in:
-
-- `examples/openstudio_ai/specs/openstudio_agent.yaml`
-
-The spec points to:
-
-- `prompts/openstudio_agent.md` for the system instruction.
-- `skills/hvac_sizing_assistant.md` for the deterministic MCP sizing workflow.
-- `skills/openstudio_sdk_model_editor.md` for bounded SDK inspection/editing.
-- `knowledge/openstudio_sdk_wiki/` as dynamically loadable SDK example packs.
-- The `openstudio_mcp` MCP client connection.
-- A built-in `run_python` tool rooted at the OpenStudio AI directory.
-- `logs/telemetry.jsonl` for local JSONL agent telemetry. OpenStudio AI uses the
-  built-in recorder only and does not load telemetry recorder plugins.
-- `logs/python_script_failure_experience.jsonl` for failed Python script
-  executions that can be reviewed by a separate learning/summarization process.
-- `.openstudio_ai_blackboards/` for local JSON session blackboard documents.
-- The A2A 1.0 card shape with `supportedInterfaces`.
-
-`agent.py` applies environment-specific overrides from `.env` at startup:
-
-- `CHATBOT_SERVER_URL`
-- `CHAT_BOT_MODEL_NAME`
-- `CHAT_BOT_MODEL_BASE_URL`
-- `OPENSTUDIO_MCP_HOST`
-- `OPENSTUDIO_MCP_PORT`
-- `OPENSTUDIO_SDK_DOCS_DIR`
-
-## Run
-
-- Start agent server + MCP server:
-  - `uv run python examples/openstudio_ai/agent.py`
-- Optional Streamlit UI:
-  - `uv run streamlit run examples/openstudio_ai/ui.py`
-  - The UI includes a right-side telemetry panel that reads
-    `logs/telemetry.jsonl` and renders recent spans/events as an expandable
-    trace tree.
-- Combined launcher:
-  - `bash examples/openstudio_ai/run_all.sh`
-
-## Troubleshooting
-
-- If MCP tools are unavailable, confirm MCP server startup log in `examples/openstudio_ai/logs/server.log`.
-- If chat responses stall, confirm the configured LLM endpoint/model is available.
-- If `sim_run` fails, verify `OPENSTUDIO_PATH` points to a valid OpenStudio executable and ensure the model contains a valid `OS:WeatherFile` path (or pass one via `model_set_weather` / `sim_run` options with `epw_path`).
-- Simulation runtime files are generated under `.openstudio_mcp_workspace/<job_id>/` (including `run/eplusout.sql`).
-- If `model_apply_measure` fails, verify `policy/measure_registry.yaml` contains an allowed entry and the script exists under `measures/`.
-
-## Results Query Types
-
-`results_query` now reads real data from `eplusout.sql` and supports:
-
-- `annual_end_use_fuel`: Annual end-use by fuel matrix from `AnnualBuildingUtilityPerformanceSummary -> End Uses`.
-- `design_day_end_use_fuel`: Design-day energy by end-use/fuel from `ReportMeterDataDictionary` + `ReportMeterData`.
-- `annual_eui`: Total site energy and EUI (kBtu/ft²) derived from SQL tabular outputs.
-- `sizing_summary`: Consolidated payload including all three query outputs above.
+The long-term plan is to move from broad SDK context packs to compact SDK method
+and Standards HVAC indexes queried through MCP.
 
 ## Measures
 
-- Measure registry policy: `examples/openstudio_ai/policy/measure_registry.yaml`
-- Built-in measure: `add_daylighting` (`examples/openstudio_ai/measures/add_daylighting.py`)
-- Discover measures at runtime with `model_list_measures`.
-- `model_apply_measure` resolves `measure_id` via policy, validates args/defaults, executes with:
-  - `openstudio execute_python_script <entrypoint>`
-  - environment variables `OSM_INPUT_PATH`, `OSM_OUTPUT_PATH`, `MEASURE_ARGS_JSON`
-- On success, a new model artifact/state is created and returned as `model_id`.
+Approved deterministic workflows live under `measures/approved/` and are
+registered through policy.
 
-### Measure interface contract
+Key files:
 
-`model_apply_measure` is policy-driven:
+- `policy/measure_registry.yaml`
+- `measures/approved/`
+- `measures/candidates/`
+- `openstudio_mcp/runtime/measure_registry.py`
 
-1. Resolve `measure_id` from `measure_registry.yaml`.
-2. Validate/default `args` using registered schema.
-3. Execute script using:
-   - `openstudio execute_python_script <entrypoint>`
-4. Pass runtime env vars:
-   - `OSM_INPUT_PATH`
-   - `OSM_OUTPUT_PATH`
-   - `MEASURE_ARGS_JSON`
-5. Register a new immutable model artifact and return its `model_id`.
+Runtime proposal is allowed through learning candidates, but publication into
+approved measures requires review and validation.
 
-## File map
+## Verification
 
-- `examples/openstudio_ai/agent.py`: YAML-backed MCP and A2A bootstrap.
-- `examples/openstudio_ai/adapters/`: host-specific Codex and Claude Code adapter contracts.
-- `examples/openstudio_ai/harness/`: host-agnostic package manifest, registry, and loader.
-- `examples/openstudio_ai/specs/openstudio_agent.yaml`: YAML agent spec.
-- `examples/openstudio_ai/prompts/openstudio_agent.md`: YAML agent instruction.
-- `examples/openstudio_ai/prompts/*_contract.md`: harness, blackboard, learning, and promotion contracts.
-- `examples/openstudio_ai/blackboard_schema.json`: source copy of the
-  OpenStudio AI workflow-state schema.
-- `examples/openstudio_ai/blackboard/`: local JSON blackboard operations and schemas.
-- `examples/openstudio_ai/learning/`: developer and runtime learning pipeline scaffolds.
-- `examples/openstudio_ai/evals/`: agent workflow and asset-promotion eval area.
-- `examples/openstudio_ai/sdk_index/`: future structured SDK index and knowledge graph boundary.
-- `examples/openstudio_ai/skills/openstudio_sdk_model_editor.md`: run_python + SDK model-inspection/editing workflow.
-- `examples/openstudio_ai/knowledge/openstudio_sdk_recipes.md`: lightweight SDK knowledge-base entry point and routing summary.
-- `examples/openstudio_ai/knowledge/openstudio_sdk_wiki/`: loadable SDK context packs distilled from OpenStudio standards and source-reviewed Python SDK usage.
-- `examples/openstudio_ai/OPENSTUDIO_SDK_EXPERIENCE.md`: human-readable source-review note for OpenStudio SDK usage patterns.
-- `examples/openstudio_ai/architecture_diagram.md`: Sponsor-friendly architecture/workflow diagrams.
-- `examples/openstudio_ai/ADVANCED_USER_GUIDE.md`: Advanced extension guide for measures, policies, and skills.
-- `examples/openstudio_ai/openstudio_mcp/server.py`: MCP server entrypoint.
-- `examples/openstudio_ai/openstudio_mcp/sdk_docs/`: local SDK HTML parser and lookup helper.
-- `examples/openstudio_ai/openstudio_mcp/tools/`: model/sim/results/sdk-docs tools.
-- `examples/openstudio_ai/openstudio_mcp/runtime/`: workspace, artifact, job managers.
-- `examples/openstudio_ai/measures/approved/`: reviewed deterministic measures.
-- `examples/openstudio_ai/measures/candidates/`: runtime or developer-proposed measures pending review.
-- `examples/openstudio_ai/scripts/build_sdk_doc_index.py`: optional SDK doc index builder.
-- `examples/openstudio_ai/skills/hvac_sizing_assistant.md`: skill prompt contract.
-- `examples/openstudio_ai/policy/*.yaml`: allowlist and runtime gates.
+Focused test set for the current OpenStudio AI harness:
+
+```bash
+.venv/bin/python -m pytest -q \
+  tests/test_openstudio_learning_pipeline.py \
+  tests/test_openstudio_codex_adapter.py \
+  tests/test_openstudio_claude_code_adapter.py \
+  tests/test_openstudio_sdk_docs.py \
+  tests/test_mcp_openstudio_smoke.py
+```
+
+## Troubleshooting
+
+- If MCP tools are unavailable, confirm the MCP server startup log under
+  `examples/openstudio_ai/logs/`.
+- If plugin export works but the host cannot start MCP, remember the current
+  export points to the local checkout and active Python environment.
+- If `sim_run` fails, verify `OPENSTUDIO_PATH` points to a valid OpenStudio
+  executable and the model has a valid weather file or one is supplied through
+  MCP setup.
+- Simulation runtime files are generated under
+  `.openstudio_mcp_workspace/<job_id>/`.
+- If SDK lookup fails, verify `OPENSTUDIO_SDK_DOCS_DIR` or the future packaged
+  SDK index path.
+- If measure application fails, verify `policy/measure_registry.yaml` and the
+  approved measure entrypoint.
+
+## File Map
+
+- `agent.py`: local AUTOMA-AI YAML-backed MCP and A2A bootstrap.
+- `adapters/`: Claude Code and Codex export/install logic.
+- `harness/`: host-agnostic package manifest, registry, and loader.
+- `specs/openstudio_agent.yaml`: local AUTOMA-AI agent spec.
+- `prompts/`: system prompt and harness, blackboard, learning, and promotion
+  contracts.
+- `openstudio_mcp/`: MCP runtime kernel.
+- `openstudio_mcp/tools/`: model, simulation, results, and SDK docs tools.
+- `openstudio_mcp/runtime/`: workspace, artifact, job, and measure registry
+  managers.
+- `skills/`: parent skills, generated child skills, specs, and templates.
+- `knowledge/`: reviewed knowledge base and SDK wiki packs.
+- `sdk_index/`: structured SDK and Standards knowledge index boundary.
+- `blackboard/`: AUTOMA-AI local JSON blackboard helpers and schemas.
+- `learning/`: developer pipeline, developer agent contract, runtime pipeline,
+  schemas, and review queue.
+- `evals/`: workflow, planning, promotion, and regression eval area.
+- `measures/approved/`: reviewed deterministic measures.
+- `measures/candidates/`: proposed measures pending review.
+- `policy/`: allowlists, run gates, measure registry, and promotion policy.
+- `TASK_PLANNING_MEETING.md`: near-term tickets for MCP distribution and
+  SDK/knowledge/token optimization.
+- `DEVELOPER_GUIDANCE.md`: developer-facing product boundary and roadmap.
+
+## Near-Term Roadmap
+
+Runtime distribution:
+
+- add installed MCP entrypoint;
+- update adapters to support local vs installed runtime mode;
+- add `openstudio-ai doctor`;
+- add export validation;
+- package SDK index and approved measures as runtime assets;
+- design MCP-backed blackboard tools.
+
+SDK and knowledge optimization:
+
+- extract HVAC system inventory from OpenStudio Standards;
+- build function trace graph for `model_add_hvac_system`;
+- create token-light HVAC system cards;
+- expose Standards HVAC queries through MCP;
+- add SDK method micro-index;
+- evaluate token savings against broad-context loading.
