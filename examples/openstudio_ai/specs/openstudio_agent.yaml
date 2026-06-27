@@ -33,8 +33,8 @@ instructions:
 
 model:
   provider: claude
-  name: claude-opus-4-7-project
-  base_url: https://ai-incubator-api.pnnl.gov
+  name: your-claude-model
+  base_url: https://your-llm-provider-base-url
   api_key: ${OSSTD_LLM_API}
 
 runtime:
