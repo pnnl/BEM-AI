@@ -120,7 +120,11 @@ def test_openstudio_runtime_state_store_prunes_unprotected_workspaces(
     )
     service.model_states["active-model"] = OpenStudioModelState(
         model_id="active-model",
-        metadata={"model_uri": active_model.as_uri(), "weather": None},
+        metadata={
+            "model_uri": active_model.as_uri(),
+            "weather": None,
+            "workspace_id": "measure-active",
+        },
     )
 
     preview = service.runtime_prune_preview()
@@ -141,6 +145,19 @@ def test_openstudio_runtime_state_store_prunes_unprotected_workspaces(
 
     assert usage["ok"] is True
     assert usage["db_path"].endswith("openstudio_ai_runtime.sqlite")
+    workspaces = {item["workspace_id"]: item for item in usage["workspaces"]}
+    assert workspaces["measure-stale"]["status"] == "pruned"
+    assert workspaces["measure-stale"]["size_bytes"] == 0
+
+
+def test_openstudio_workspace_manager_does_not_size_external_paths(
+    tmp_path: Path,
+) -> None:
+    service = OpenStudioService(workspace_root=tmp_path / "workspace")
+    external = tmp_path / "outside.txt"
+    external.write_text("outside workspace", encoding="utf-8")
+
+    assert service.workspace_manager.path_size(external) == 0
 
 
 def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:

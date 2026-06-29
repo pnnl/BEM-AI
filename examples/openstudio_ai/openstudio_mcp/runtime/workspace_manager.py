@@ -45,12 +45,15 @@ class WorkspaceManager:
         return self.path_size(self.workspace_path(workspace_id))
 
     def path_size(self, path: Path) -> int:
-        if not path.exists():
+        resolved = path.resolve()
+        if self.root_dir not in resolved.parents and resolved != self.root_dir:
             return 0
-        if path.is_file():
-            return path.stat().st_size
+        if not resolved.exists():
+            return 0
+        if resolved.is_file():
+            return resolved.stat().st_size
         total_bytes = 0
-        for item in path.rglob("*"):
+        for item in resolved.rglob("*"):
             if item.is_file():
                 total_bytes += item.stat().st_size
         return total_bytes

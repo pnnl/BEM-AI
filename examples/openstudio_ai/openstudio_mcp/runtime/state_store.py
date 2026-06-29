@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def utc_now() -> str:
@@ -194,9 +194,9 @@ class RuntimeStateStore:
                     path = excluded.path,
                     updated_at = excluded.updated_at,
                     last_accessed_at = excluded.last_accessed_at,
-                    job_id = COALESCE(excluded.job_id, workspaces.job_id),
-                    model_id = COALESCE(excluded.model_id, workspaces.model_id),
-                    artifact_id = COALESCE(excluded.artifact_id, workspaces.artifact_id),
+                    job_id = excluded.job_id,
+                    model_id = excluded.model_id,
+                    artifact_id = excluded.artifact_id,
                     size_bytes = excluded.size_bytes,
                     metadata_json = excluded.metadata_json
                 """,
@@ -228,6 +228,18 @@ class RuntimeStateStore:
             conn.execute(
                 f"UPDATE workspaces SET {', '.join(assignments)} WHERE workspace_id = ?",
                 values,
+            )
+
+    def update_workspace_artifact(self, workspace_id: str, artifact_id: str) -> None:
+        """Link the primary artifact for an existing workspace record."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE workspaces
+                SET artifact_id = ?, updated_at = ?, last_accessed_at = ?
+                WHERE workspace_id = ?
+                """,
+                (artifact_id, utc_now(), utc_now(), workspace_id),
             )
 
     def mark_workspace_status(self, workspace_id: str, status: str) -> None:
@@ -347,16 +359,3 @@ class RuntimeStateStore:
             pinned=bool(row["pinned"]),
             metadata=json.loads(row["metadata_json"]),
         )
-
-
-def sum_file_sizes(paths: Iterable[Path]) -> int:
-    """Return total bytes for existing files under the given paths."""
-    total = 0
-    for root in paths:
-        if root.is_file():
-            total += root.stat().st_size
-        elif root.exists():
-            for path in root.rglob("*"):
-                if path.is_file():
-                    total += path.stat().st_size
-    return total

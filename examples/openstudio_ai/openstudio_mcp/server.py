@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -156,6 +157,7 @@ class OpenStudioService:
             metadata={
                 "model_uri": args.model_uri,
                 "weather": None,
+                "workspace_id": None,
             },
         )
         return success_payload(
@@ -299,6 +301,7 @@ class OpenStudioService:
             metadata={
                 "model_uri": output_osm.as_uri(),
                 "weather": model_state.metadata.get("weather"),
+                "workspace_id": workspace_id,
             },
         )
         self._register_workspace(
@@ -737,18 +740,11 @@ class OpenStudioService:
         )
 
         self.workspace_manager.ensure_quota(job_id)
-        self._register_workspace(
-            workspace_id=job_id,
-            kind="simulation",
-            job_id=job_id,
-            model_id=model_id,
-            artifact_id=osm_art.artifact_id,
-            metadata={
-                "run_mode": (
-                    options.get("run_mode") if isinstance(options, dict) else None
-                )
-            },
+        self.state_store.touch_workspace(
+            job_id,
+            size_bytes=self.workspace_manager.workspace_size(job_id),
         )
+        self.state_store.update_workspace_artifact(job_id, osm_art.artifact_id)
         return {
             "artifacts": {
                 "osm_id": osm_art.artifact_id,
@@ -856,6 +852,7 @@ class OpenStudioService:
             path = Path(item["path"])
             size_bytes = self.workspace_manager.path_size(path)
             self.workspace_manager.cleanup_workspace(workspace_id)
+            self.state_store.touch_workspace(workspace_id, size_bytes=0)
             self.state_store.mark_workspace_status(workspace_id, "pruned")
             artifact_id = item.get("artifact_id")
             if isinstance(artifact_id, str) and artifact_id:
@@ -906,8 +903,13 @@ class OpenStudioService:
         )
         self.state_store.mark_workspace_status(workspace_id, status)
 
-    def _refresh_registered_workspace_sizes(self) -> None:
+    def _refresh_registered_workspace_sizes(self, max_age_seconds: int = 60) -> None:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        ).isoformat()
         for record in self.state_store.list_workspaces():
+            if record.updated_at >= cutoff:
+                continue
             self.state_store.touch_workspace(
                 record.workspace_id,
                 size_bytes=self.workspace_manager.path_size(Path(record.path)),
@@ -916,19 +918,9 @@ class OpenStudioService:
     def _active_workspace_ids(self) -> set[str]:
         active: set[str] = set()
         for model_state in self.model_states.values():
-            model_uri = str(model_state.metadata.get("model_uri") or "")
-            if not model_uri:
-                continue
-            try:
-                path = self._resolve_model_path(model_uri)
-            except Exception:
-                continue
-            try:
-                rel = path.resolve().relative_to(self.workspace_root)
-            except ValueError:
-                continue
-            if rel.parts:
-                active.add(rel.parts[0])
+            workspace_id = model_state.metadata.get("workspace_id")
+            if isinstance(workspace_id, str) and workspace_id:
+                active.add(workspace_id)
         return active
 
     def _touch_workspace_for_path(self, path: Path) -> None:
@@ -950,7 +942,11 @@ class OpenStudioService:
             return []
         paths = []
         for path in self.workspace_root.iterdir():
-            if not path.is_dir() or path.name in registered:
+            if (
+                not path.is_dir()
+                or path.name.startswith(".")
+                or path.name in registered
+            ):
                 continue
             paths.append(path)
         return paths
