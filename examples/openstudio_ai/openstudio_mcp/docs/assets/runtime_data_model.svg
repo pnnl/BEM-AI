@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="620" viewBox="0 0 1180 620" role="img" aria-labelledby="title desc">
+  <title id="title">OpenStudio MCP Runtime Data Model</title>
+  <desc id="desc">Diagram showing SQLite metadata tables tracking filesystem artifacts and workspaces.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+      .table { fill: #fff7ed; stroke: #c2410c; stroke-width: 1.6; rx: 8; }
+      .file { fill: #f1f5f9; stroke: #475569; stroke-width: 1.6; rx: 8; }
+      .tool { fill: #ecfdf5; stroke: #047857; stroke-width: 1.6; rx: 8; }
+      .title { font: 22px Arial, sans-serif; font-weight: 700; fill: #0f172a; }
+      .heading { font: 17px Arial, sans-serif; font-weight: 700; fill: #0f172a; }
+      .text { font: 14px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 12px Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 1.7; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1180" height="620" />
+  <text class="title" x="40" y="46">OpenStudio MCP Runtime Data Model</text>
+  <text class="small" x="40" y="72">SQLite stores small metadata. The filesystem stores large OSM, SQL, and log files.</text>
+
+  <rect class="panel" x="40" y="105" width="500" height="430" />
+  <text class="heading" x="65" y="138">SQLite Registry</text>
+  <text class="small" x="65" y="160">.openstudio_mcp_workspace/openstudio_ai_runtime.sqlite</text>
+
+  <rect class="table" x="75" y="195" width="190" height="110" />
+  <text class="heading" x="100" y="225">artifacts</text>
+  <text class="small" x="100" y="250">artifact_id, kind</text>
+  <text class="small" x="100" y="270">parent_id, metadata</text>
+  <text class="small" x="100" y="290">status, pinned</text>
+
+  <rect class="table" x="310" y="195" width="190" height="110" />
+  <text class="heading" x="350" y="225">jobs</text>
+  <text class="small" x="335" y="250">job_id, model_id</text>
+  <text class="small" x="335" y="270">state, artifacts</text>
+  <text class="small" x="335" y="290">created/updated</text>
+
+  <rect class="table" x="75" y="350" width="425" height="120" />
+  <text class="heading" x="230" y="382">workspaces</text>
+  <text class="small" x="115" y="410">workspace_id, kind, path, status, size_bytes</text>
+  <text class="small" x="115" y="432">job_id, model_id, artifact_id, timestamps</text>
+  <text class="small" x="115" y="454">pinned, metadata</text>
+
+  <rect class="panel" x="640" y="105" width="500" height="430" />
+  <text class="heading" x="665" y="138">Filesystem Workspace Root</text>
+  <text class="small" x="665" y="160">.openstudio_mcp_workspace/</text>
+
+  <rect class="file" x="675" y="195" width="195" height="115" />
+  <text class="heading" x="710" y="225">measure-...</text>
+  <text class="small" x="705" y="252">in.osm</text>
+  <text class="small" x="705" y="274">out.osm</text>
+  <text class="small" x="705" y="296">measure logs</text>
+
+  <rect class="file" x="910" y="195" width="195" height="115" />
+  <text class="heading" x="940" y="225">simulation job</text>
+  <text class="small" x="940" y="252">in.osm, EPW</text>
+  <text class="small" x="940" y="274">run/eplusout.sql</text>
+  <text class="small" x="940" y="296">stdout/stderr, err</text>
+
+  <rect class="tool" x="675" y="370" width="430" height="95" />
+  <text class="heading" x="765" y="402">Runtime management tools</text>
+  <text class="small" x="720" y="428">runtime_storage_usage -> refresh and report sizes</text>
+  <text class="small" x="720" y="448">runtime_prune_preview -> classify only, no deletion</text>
+  <text class="small" x="720" y="468">runtime_prune -> delete selected safe candidates</text>
+
+  <path class="arrow" d="M500 250 H675" />
+  <path class="arrow" d="M500 410 H675" />
+  <path class="arrow dash" d="M890 370 V310" />
+  <path class="arrow dash" d="M890 370 H1010 V310" />
+
+  <text class="small" x="545" y="232">metadata tracks</text>
+  <text class="small" x="545" y="392">registry protects</text>
+  <text class="small" x="804" y="338">size/access updates</text>
+  <text class="small" x="930" y="338">safe deletion only</text>
+</svg>

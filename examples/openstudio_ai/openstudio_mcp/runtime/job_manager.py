@@ -7,7 +7,10 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from examples.openstudio_ai.openstudio_mcp.runtime.artifact_store import ArtifactStore
-from examples.openstudio_ai.openstudio_mcp.runtime.workspace_manager import WorkspaceManager
+from examples.openstudio_ai.openstudio_mcp.runtime.state_store import RuntimeStateStore
+from examples.openstudio_ai.openstudio_mcp.runtime.workspace_manager import (
+    WorkspaceManager,
+)
 
 JobState = Literal["RUNNING", "SUCCEEDED", "FAILED"]
 
@@ -29,12 +32,20 @@ class JobRecord:
 
 
 class JobManager:
-    def __init__(self, workspace_manager: WorkspaceManager, artifact_store: ArtifactStore):
+    def __init__(
+        self,
+        workspace_manager: WorkspaceManager,
+        artifact_store: ArtifactStore,
+        state_store: RuntimeStateStore | None = None,
+    ):
         self.workspace_manager = workspace_manager
         self.artifact_store = artifact_store
+        self.state_store = state_store
         self._jobs: dict[str, JobRecord] = {}
 
-    def create_job(self, *, model_id: str, run_mode: str, options: dict[str, Any]) -> JobRecord:
+    def create_job(
+        self, *, model_id: str, run_mode: str, options: dict[str, Any]
+    ) -> JobRecord:
         now = datetime.now(timezone.utc).isoformat()
         job = JobRecord(
             job_id=str(uuid4()),
@@ -50,6 +61,7 @@ class JobManager:
         )
         self._jobs[job.job_id] = job
         self.workspace_manager.create_workspace(job.job_id)
+        self._persist(job)
         return job
 
     def get(self, job_id: str) -> JobRecord | None:
@@ -61,6 +73,7 @@ class JobManager:
         if progress is not None:
             job.progress = progress
         job.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(job)
 
     def mark_succeeded(
         self,
@@ -77,6 +90,7 @@ class JobManager:
         job.severe_count = severe_count
         job.artifacts = dict(artifacts)
         job.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(job)
 
     async def complete_stub_simulation(self, job_id: str, *, model_id: str) -> None:
         job = self._jobs[job_id]
@@ -113,6 +127,7 @@ class JobManager:
             "logs_id": logs.artifact_id,
             "report_id": report.artifact_id,
         }
+        self._persist(job)
 
     def fail(self, job_id: str, *, error: dict[str, Any]) -> None:
         job = self._jobs[job_id]
@@ -120,3 +135,25 @@ class JobManager:
         job.progress = 100
         job.error = error
         job.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(job)
+
+    def running_job_ids(self) -> set[str]:
+        return {job_id for job_id, job in self._jobs.items() if job.state == "RUNNING"}
+
+    def _persist(self, job: JobRecord) -> None:
+        if self.state_store is None:
+            return
+        self.state_store.upsert_job(
+            job_id=job.job_id,
+            model_id=job.model_id,
+            run_mode=job.run_mode,
+            options=job.options,
+            state=job.state,
+            progress=job.progress,
+            warnings_count=job.warnings_count,
+            severe_count=job.severe_count,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            artifacts=job.artifacts,
+            error=job.error,
+        )

@@ -20,11 +20,17 @@ from mcp.server import FastMCP
 
 from examples.openstudio_ai.openstudio_mcp.runtime.artifact_store import ArtifactStore
 from examples.openstudio_ai.openstudio_mcp.runtime.job_manager import JobManager
-from examples.openstudio_ai.openstudio_mcp.runtime.measure_registry import MeasureRegistry
-from examples.openstudio_ai.openstudio_mcp.runtime.workspace_manager import WorkspaceManager
+from examples.openstudio_ai.openstudio_mcp.runtime.measure_registry import (
+    MeasureRegistry,
+)
+from examples.openstudio_ai.openstudio_mcp.runtime.state_store import RuntimeStateStore
+from examples.openstudio_ai.openstudio_mcp.runtime.workspace_manager import (
+    WorkspaceManager,
+)
 from examples.openstudio_ai.openstudio_mcp.sdk_docs import OpenStudioSdkDocLookup
 from examples.openstudio_ai.openstudio_mcp.tools.model import register_model_tools
 from examples.openstudio_ai.openstudio_mcp.tools.results import register_results_tools
+from examples.openstudio_ai.openstudio_mcp.tools.runtime import register_runtime_tools
 from examples.openstudio_ai.openstudio_mcp.tools.schemas import (
     ModelApplyMeasureArgs,
     ModelCloneArgs,
@@ -115,9 +121,15 @@ class OpenStudioModelState:
 
 class OpenStudioService:
     def __init__(self, workspace_root: str | Path):
-        self.artifacts = ArtifactStore()
-        self.workspace_manager = WorkspaceManager(workspace_root)
-        self.job_manager = JobManager(self.workspace_manager, self.artifacts)
+        self.workspace_root = Path(workspace_root).resolve()
+        self.state_store = RuntimeStateStore(
+            self.workspace_root / "openstudio_ai_runtime.sqlite"
+        )
+        self.artifacts = ArtifactStore(self.state_store)
+        self.workspace_manager = WorkspaceManager(self.workspace_root)
+        self.job_manager = JobManager(
+            self.workspace_manager, self.artifacts, self.state_store
+        )
         self.measure_registry = MeasureRegistry(
             policy_path=BASE_DIR / "policy" / "measure_registry.yaml",
             base_dir=BASE_DIR,
@@ -146,7 +158,9 @@ class OpenStudioService:
                 "weather": None,
             },
         )
-        return success_payload(model_id=artifact.artifact_id, metadata=artifact.to_dict())
+        return success_payload(
+            model_id=artifact.artifact_id, metadata=artifact.to_dict()
+        )
 
     def model_clone(self, args: ModelCloneArgs) -> dict[str, Any]:
         base = self._get_model_state(args.model_id)
@@ -188,14 +202,24 @@ class OpenStudioService:
 
         # Step 2: resolve measure policy and normalize user args from schema/defaults.
         measure_spec = self.measure_registry.get(args.measure_id)
-        normalized_args = self.measure_registry.normalize_args(args.measure_id, args.args)
-        source_model_path = self._resolve_model_path(model_state.metadata.get("model_uri", ""))
+        normalized_args = self.measure_registry.normalize_args(
+            args.measure_id, args.args
+        )
+        source_model_path = self._resolve_model_path(
+            model_state.metadata.get("model_uri", "")
+        )
         if not source_model_path.exists():
             raise ValueError(f"Model file does not exist: {source_model_path}")
 
         # Step 3: create an isolated workspace and stage input/output model paths.
         workspace_id = f"measure-{uuid4()}"
         workspace = self.workspace_manager.create_workspace(workspace_id)
+        self._register_workspace(
+            workspace_id=workspace_id,
+            kind="measure",
+            model_id=args.model_id,
+            metadata={"measure_id": args.measure_id},
+        )
         input_osm = workspace / "in.osm"
         output_osm = workspace / "out.osm"
         stdout_path = workspace / "measure.stdout.log"
@@ -223,7 +247,11 @@ class OpenStudioService:
                 raise ValueError(
                     "OPENSTUDIO_PATH is not set to an executable OpenStudio path."
                 )
-            cmd = [openstudio_cmd, "execute_python_script", str(measure_spec.entrypoint)]
+            cmd = [
+                openstudio_cmd,
+                "execute_python_script",
+                str(measure_spec.entrypoint),
+            ]
 
         try:
             completed = subprocess.run(
@@ -236,7 +264,9 @@ class OpenStudioService:
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ValueError(f"Measure timed out after {measure_spec.timeout_seconds}s: {args.measure_id}") from exc
+            raise ValueError(
+                f"Measure timed out after {measure_spec.timeout_seconds}s: {args.measure_id}"
+            ) from exc
 
         # Step 5: persist logs and verify the measure produced an output OSM.
         stdout_path.write_text(completed.stdout or "", encoding="utf-8")
@@ -271,11 +301,26 @@ class OpenStudioService:
                 "weather": model_state.metadata.get("weather"),
             },
         )
+        self._register_workspace(
+            workspace_id=workspace_id,
+            kind="measure",
+            model_id=output_artifact.artifact_id,
+            artifact_id=output_artifact.artifact_id,
+            metadata={"measure_id": args.measure_id, "source_model_id": args.model_id},
+        )
         self.workspace_manager.ensure_quota(workspace_id)
 
         # Step 7: return human-readable changes/warnings from measure stdout JSON summary.
-        summary_changes = summary.get("changes", []) if isinstance(summary.get("changes"), list) else []
-        summary_warnings = summary.get("warnings", []) if isinstance(summary.get("warnings"), list) else []
+        summary_changes = (
+            summary.get("changes", [])
+            if isinstance(summary.get("changes"), list)
+            else []
+        )
+        summary_warnings = (
+            summary.get("warnings", [])
+            if isinstance(summary.get("warnings"), list)
+            else []
+        )
         changes = summary_changes or [f"Applied measure {args.measure_id}"]
         return success_payload(
             model_id=output_artifact.artifact_id,
@@ -329,11 +374,21 @@ class OpenStudioService:
         if not self.openstudio_path:
             raise ValueError("OPENSTUDIO_PATH is not set in environment.")
         if not Path(self.openstudio_path).exists():
-            raise ValueError(f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}")
+            raise ValueError(
+                f"OPENSTUDIO_PATH is not executable path: {self.openstudio_path}"
+            )
         job = self.job_manager.create_job(
             model_id=args.model_id,
             run_mode=args.run_mode,
             options=args.options,
+        )
+        self._register_workspace(
+            workspace_id=job.job_id,
+            kind="simulation",
+            job_id=job.job_id,
+            model_id=args.model_id,
+            metadata={"run_mode": args.run_mode},
+            status="running",
         )
         return success_payload(job_id=job.job_id)
 
@@ -344,7 +399,11 @@ class OpenStudioService:
         model_id: str,
         options: dict[str, Any],
     ) -> None:
-        task = asyncio.create_task(self._run_simulation_async(job_id=job_id, model_id=model_id, options=options))
+        task = asyncio.create_task(
+            self._run_simulation_async(
+                job_id=job_id, model_id=model_id, options=options
+            )
+        )
         self._sim_tasks[job_id] = task
 
     async def _run_simulation_async(
@@ -368,6 +427,7 @@ class OpenStudioService:
                 warnings_count=result.get("warnings_count", 0),
                 severe_count=result.get("severe_count", 0),
             )
+            self._mark_workspace_status(job_id, "succeeded")
         except Exception as exc:
             self.job_manager.fail(
                 job_id,
@@ -378,6 +438,7 @@ class OpenStudioService:
                     retryable=False,
                 )["error"],
             )
+            self._mark_workspace_status(job_id, "failed")
         finally:
             self._sim_tasks.pop(job_id, None)
 
@@ -385,6 +446,7 @@ class OpenStudioService:
         job = self.job_manager.get(args.job_id)
         if not job:
             raise KeyError(f"Unknown job_id: {args.job_id}")
+        self.state_store.touch_workspace(args.job_id)
         return success_payload(
             state=job.state,
             progress=job.progress,
@@ -399,6 +461,7 @@ class OpenStudioService:
             raise KeyError(f"Unknown job_id: {args.job_id}")
         if job.state != "SUCCEEDED":
             raise ValueError(f"Artifacts unavailable while state={job.state}")
+        self.state_store.touch_workspace(args.job_id)
         return success_payload(**job.artifacts)
 
     def results_query(self, args: ResultsQueryArgs) -> dict[str, Any]:
@@ -411,6 +474,7 @@ class OpenStudioService:
         sql_path = Path(sql_path_raw).resolve()
         if not sql_path.exists():
             raise ValueError(f"SQL file not found: {sql_path}")
+        self._touch_workspace_for_path(sql_path)
 
         with sqlite3.connect(str(sql_path)) as conn:
             if args.query_type == "annual_end_use_fuel":
@@ -422,7 +486,9 @@ class OpenStudioService:
             elif args.query_type == "sizing_summary":
                 data = {
                     "annual_end_use_fuel_gj": self._query_annual_end_use_by_fuel(conn),
-                    "design_day_end_use_fuel_j": self._query_design_day_end_use_by_fuel(conn),
+                    "design_day_end_use_fuel_j": self._query_design_day_end_use_by_fuel(
+                        conn
+                    ),
                     "annual_eui": self._query_annual_eui(conn),
                 }
             else:
@@ -433,7 +499,9 @@ class OpenStudioService:
         if isinstance(args.data, dict):
             keys = sorted(args.data.keys())
             summary_text = f"Sizing summary generated for keys: {', '.join(keys)}"
-            tables = [{"name": "top_level", "columns": ["key"], "rows": [[k] for k in keys]}]
+            tables = [
+                {"name": "top_level", "columns": ["key"], "rows": [[k] for k in keys]}
+            ]
         else:
             summary_text = "Sizing summary generated."
             tables = []
@@ -505,7 +573,9 @@ class OpenStudioService:
             return Path(decoded_path).resolve()
         return Path(model_uri).resolve()
 
-    def _resolve_weather_path(self, model_state: OpenStudioModelState, options: dict[str, Any]) -> Path:
+    def _resolve_weather_path(
+        self, model_state: OpenStudioModelState, options: dict[str, Any]
+    ) -> Path:
         weather_opt = options.get("epw_path") if isinstance(options, dict) else None
         model_path = self._resolve_model_path(model_state.metadata.get("model_uri", ""))
         weather_candidate = weather_opt or model_state.metadata.get("weather")
@@ -516,12 +586,16 @@ class OpenStudioService:
                 "Weather file is required. Use model_set_weather, pass options.epw_path, "
                 "or include OS:WeatherFile path in the model."
             )
-        weather_path = self._resolve_path_with_model_context(str(weather_candidate), model_path)
+        weather_path = self._resolve_path_with_model_context(
+            str(weather_candidate), model_path
+        )
         if not weather_path.exists():
             raise ValueError(f"Weather file does not exist: {weather_path}")
         return weather_path
 
-    def _resolve_path_with_model_context(self, candidate: str, model_path: Path) -> Path:
+    def _resolve_path_with_model_context(
+        self, candidate: str, model_path: Path
+    ) -> Path:
         if candidate.startswith("file://"):
             return self._resolve_model_path(candidate)
         path = Path(candidate).expanduser()
@@ -600,15 +674,27 @@ class OpenStudioService:
         end_path = run_dir / "eplusout.end"
 
         if not sql_path.exists():
-            err_text = err_path.read_text(encoding="utf-8", errors="ignore") if err_path.exists() else ""
+            err_text = (
+                err_path.read_text(encoding="utf-8", errors="ignore")
+                if err_path.exists()
+                else ""
+            )
             raise ValueError(
                 "Simulation did not produce eplusout.sql. "
                 f"Error log: {err_text[:4000]}"
             )
 
-        end_text = end_path.read_text(encoding="utf-8", errors="ignore") if end_path.exists() else ""
+        end_text = (
+            end_path.read_text(encoding="utf-8", errors="ignore")
+            if end_path.exists()
+            else ""
+        )
         if "EnergyPlus Completed Successfully" not in end_text:
-            err_text = err_path.read_text(encoding="utf-8", errors="ignore") if err_path.exists() else ""
+            err_text = (
+                err_path.read_text(encoding="utf-8", errors="ignore")
+                if err_path.exists()
+                else ""
+            )
             raise ValueError(
                 "EnergyPlus did not report successful completion. "
                 f"Error log: {err_text[:4000]}"
@@ -644,10 +730,25 @@ class OpenStudioService:
         report_art = self.artifacts.create(
             kind="report",
             parent_id=sql_art.artifact_id,
-            metadata={"job_id": job_id, "path": str(end_path) if end_path.exists() else None},
+            metadata={
+                "job_id": job_id,
+                "path": str(end_path) if end_path.exists() else None,
+            },
         )
 
         self.workspace_manager.ensure_quota(job_id)
+        self._register_workspace(
+            workspace_id=job_id,
+            kind="simulation",
+            job_id=job_id,
+            model_id=model_id,
+            artifact_id=osm_art.artifact_id,
+            metadata={
+                "run_mode": (
+                    options.get("run_mode") if isinstance(options, dict) else None
+                )
+            },
+        )
         return {
             "artifacts": {
                 "osm_id": osm_art.artifact_id,
@@ -658,6 +759,201 @@ class OpenStudioService:
             "severe_count": severe_count,
             "warnings_count": warning_count,
         }
+
+    def runtime_storage_usage(self) -> dict[str, Any]:
+        self._refresh_registered_workspace_sizes()
+        usage = self.state_store.workspace_usage()
+        usage["unregistered_workspaces"] = [
+            {
+                "workspace_id": path.name,
+                "path": str(path),
+                "size_bytes": self.workspace_manager.path_size(path),
+            }
+            for path in self._unregistered_workspace_paths()
+        ]
+        return success_payload(**usage)
+
+    def runtime_prune_preview(
+        self,
+        *,
+        include_measure_workspaces: bool = True,
+        include_failed_simulations: bool = True,
+        include_successful_simulations: bool = False,
+    ) -> dict[str, Any]:
+        self._refresh_registered_workspace_sizes()
+        candidates: list[dict[str, Any]] = []
+        protected: list[dict[str, Any]] = []
+        active_workspace_ids = self._active_workspace_ids()
+        running_job_ids = self.job_manager.running_job_ids()
+
+        for record in self.state_store.list_workspaces():
+            path = Path(record.path)
+            item = record.to_dict()
+            if record.status == "pruned" or not path.exists():
+                continue
+            if record.pinned:
+                item["protection_reason"] = "pinned"
+                protected.append(item)
+                continue
+            if record.workspace_id in active_workspace_ids:
+                item["protection_reason"] = "active_model_state"
+                protected.append(item)
+                continue
+            if record.job_id in running_job_ids or record.status == "running":
+                item["protection_reason"] = "running_job"
+                protected.append(item)
+                continue
+
+            prune_reason = None
+            if include_measure_workspaces and record.kind == "measure":
+                prune_reason = "unprotected_measure_workspace"
+            elif (
+                include_failed_simulations
+                and record.kind == "simulation"
+                and record.status == "failed"
+            ):
+                prune_reason = "failed_simulation_workspace"
+            elif (
+                include_successful_simulations
+                and record.kind == "simulation"
+                and record.status == "succeeded"
+            ):
+                prune_reason = "successful_simulation_workspace"
+
+            if prune_reason is None:
+                item["protection_reason"] = "retention_policy"
+                protected.append(item)
+            else:
+                item["prune_reason"] = prune_reason
+                candidates.append(item)
+
+        return success_payload(
+            candidates=candidates,
+            protected=protected,
+            reclaimable_bytes=sum(item["size_bytes"] for item in candidates),
+        )
+
+    def runtime_prune(
+        self,
+        *,
+        workspace_ids: list[str] | None = None,
+        include_measure_workspaces: bool = True,
+        include_failed_simulations: bool = True,
+        include_successful_simulations: bool = False,
+    ) -> dict[str, Any]:
+        preview = self.runtime_prune_preview(
+            include_measure_workspaces=include_measure_workspaces,
+            include_failed_simulations=include_failed_simulations,
+            include_successful_simulations=include_successful_simulations,
+        )
+        selected = {
+            item["workspace_id"]: item
+            for item in preview["candidates"]
+            if workspace_ids is None or item["workspace_id"] in set(workspace_ids)
+        }
+        deleted: list[dict[str, Any]] = []
+        for workspace_id, item in selected.items():
+            path = Path(item["path"])
+            size_bytes = self.workspace_manager.path_size(path)
+            self.workspace_manager.cleanup_workspace(workspace_id)
+            self.state_store.mark_workspace_status(workspace_id, "pruned")
+            artifact_id = item.get("artifact_id")
+            if isinstance(artifact_id, str) and artifact_id:
+                self.state_store.mark_artifact_status(artifact_id, "pruned")
+            deleted.append(
+                {
+                    "workspace_id": workspace_id,
+                    "path": str(path),
+                    "size_bytes": size_bytes,
+                    "prune_reason": item.get("prune_reason"),
+                }
+            )
+        return success_payload(
+            deleted=deleted,
+            reclaimed_bytes=sum(item["size_bytes"] for item in deleted),
+            skipped_count=len(preview["candidates"]) - len(deleted),
+        )
+
+    def _register_workspace(
+        self,
+        *,
+        workspace_id: str,
+        kind: str,
+        job_id: str | None = None,
+        model_id: str | None = None,
+        artifact_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        status: str | None = None,
+    ) -> None:
+        size_bytes = self.workspace_manager.workspace_size(workspace_id)
+        self.state_store.upsert_workspace(
+            workspace_id=workspace_id,
+            kind=kind,
+            path=self.workspace_manager.workspace_path(workspace_id),
+            job_id=job_id,
+            model_id=model_id,
+            artifact_id=artifact_id,
+            metadata=metadata or {},
+            size_bytes=size_bytes,
+        )
+        if status is not None:
+            self.state_store.mark_workspace_status(workspace_id, status)
+
+    def _mark_workspace_status(self, workspace_id: str, status: str) -> None:
+        self.state_store.touch_workspace(
+            workspace_id,
+            size_bytes=self.workspace_manager.workspace_size(workspace_id),
+        )
+        self.state_store.mark_workspace_status(workspace_id, status)
+
+    def _refresh_registered_workspace_sizes(self) -> None:
+        for record in self.state_store.list_workspaces():
+            self.state_store.touch_workspace(
+                record.workspace_id,
+                size_bytes=self.workspace_manager.path_size(Path(record.path)),
+            )
+
+    def _active_workspace_ids(self) -> set[str]:
+        active: set[str] = set()
+        for model_state in self.model_states.values():
+            model_uri = str(model_state.metadata.get("model_uri") or "")
+            if not model_uri:
+                continue
+            try:
+                path = self._resolve_model_path(model_uri)
+            except Exception:
+                continue
+            try:
+                rel = path.resolve().relative_to(self.workspace_root)
+            except ValueError:
+                continue
+            if rel.parts:
+                active.add(rel.parts[0])
+        return active
+
+    def _touch_workspace_for_path(self, path: Path) -> None:
+        try:
+            rel = path.resolve().relative_to(self.workspace_root)
+        except ValueError:
+            return
+        if rel.parts:
+            self.state_store.touch_workspace(
+                rel.parts[0],
+                size_bytes=self.workspace_manager.workspace_size(rel.parts[0]),
+            )
+
+    def _unregistered_workspace_paths(self) -> list[Path]:
+        registered = {
+            record.workspace_id for record in self.state_store.list_workspaces()
+        }
+        if not self.workspace_root.exists():
+            return []
+        paths = []
+        for path in self.workspace_root.iterdir():
+            if not path.is_dir() or path.name in registered:
+                continue
+            paths.append(path)
+        return paths
 
     @staticmethod
     def _parse_float(value: Any) -> float:
@@ -673,7 +969,9 @@ class OpenStudioService:
         except ValueError:
             return 0.0
 
-    def _query_annual_end_use_by_fuel(self, conn: sqlite3.Connection) -> dict[str, float]:
+    def _query_annual_end_use_by_fuel(
+        self, conn: sqlite3.Connection
+    ) -> dict[str, float]:
         query = """
             SELECT Value
             FROM TabularDataWithStrings
@@ -692,7 +990,9 @@ class OpenStudioService:
                 results[key] = self._parse_float(row[0]) if row else 0.0
         return results
 
-    def _query_design_day_end_use_by_fuel(self, conn: sqlite3.Connection) -> dict[str, float]:
+    def _query_design_day_end_use_by_fuel(
+        self, conn: sqlite3.Connection
+    ) -> dict[str, float]:
         idx_query = """
             SELECT ReportMeterDataDictionaryIndex
             FROM ReportMeterDataDictionary
@@ -787,6 +1087,7 @@ def create_server(
     register_sim_tools(mcp, service)
     register_results_tools(mcp, service)
     register_sdk_doc_tools(mcp, service)
+    register_runtime_tools(mcp, service)
 
     return mcp
 
@@ -805,7 +1106,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="OpenStudio MCP server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=10210)
-    parser.add_argument("--transport", default="stdio", choices=["stdio", "sse", "streamable-http"])
+    parser.add_argument(
+        "--transport", default="stdio", choices=["stdio", "sse", "streamable-http"]
+    )
     parser.add_argument("--workspace-root", default=None)
     args = parser.parse_args()
     serve(

@@ -84,6 +84,16 @@ Near-term runtime work will package this as an installed command and make SDK
 index and approved measures resolve from installed runtime assets rather than
 from a developer checkout.
 
+The MCP server now maintains a lightweight local SQLite registry under the
+configured workspace root. The registry stores metadata for artifacts, jobs,
+and workspaces so MCP tools can report storage usage and safely prune old local
+workspace files without storing OSM/SQL/log blobs in SQLite.
+
+Storage pruning is not automatic. The user or agent must initiate cleanup by
+calling `runtime_storage_usage`, reviewing `runtime_prune_preview`, and then
+calling `runtime_prune` only after approval. The detailed process diagrams live
+in `openstudio_mcp/README.md`.
+
 ### Host Adapters
 
 `adapters/` turns the host-agnostic harness into host-specific packages.
@@ -297,6 +307,8 @@ Focused test set for the current OpenStudio AI harness:
   SDK index path.
 - If measure application fails, verify `policy/measure_registry.yaml` and the
   approved measure entrypoint.
+- If local storage grows too large, use `runtime_storage_usage` and
+  `runtime_prune_preview` before calling `runtime_prune`.
 
 ## File Map
 

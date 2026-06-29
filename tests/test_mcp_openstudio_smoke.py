@@ -24,6 +24,10 @@ from examples.openstudio_ai.agent import (
     load_openstudio_agent_spec,
 )
 from examples.openstudio_ai.openstudio_mcp.server import serve
+from examples.openstudio_ai.openstudio_mcp.server import (
+    OpenStudioModelState,
+    OpenStudioService,
+)
 
 
 MCP_HOST = "localhost"
@@ -41,8 +45,11 @@ MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/sse"
 
 def _find_local_epw() -> Path | None:
     candidates = [
-        Path("examples/openstudio_ai/resource/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw"),
-        Path.home() / "github/openstudio-standards/data/weather/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw",
+        Path(
+            "examples/openstudio_ai/resource/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw"
+        ),
+        Path.home()
+        / "github/openstudio-standards/data/weather/USA_FL_Tampa-MacDill.AFB.747880_TMY3.epw",
     ]
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
@@ -74,6 +81,9 @@ async def test_openstudio_mcp_smoke_list_and_call_model_load() -> None:
             assert "model_clone" in names
             assert "model_list_measures" in names
             assert "sim_run" in names
+            assert "runtime_storage_usage" in names
+            assert "runtime_prune_preview" in names
+            assert "runtime_prune" in names
 
             result = await session.call_tool(
                 name="model_load",
@@ -83,6 +93,54 @@ async def test_openstudio_mcp_smoke_list_and_call_model_load() -> None:
             assert isinstance(payload, dict)
             assert payload["ok"] is True
             assert isinstance(payload["model_id"], str)
+
+
+def test_openstudio_runtime_state_store_prunes_unprotected_workspaces(
+    tmp_path: Path,
+) -> None:
+    service = OpenStudioService(workspace_root=tmp_path)
+
+    stale_workspace = service.workspace_manager.create_workspace("measure-stale")
+    (stale_workspace / "out.osm").write_text("stale model", encoding="utf-8")
+    service._register_workspace(
+        workspace_id="measure-stale",
+        kind="measure",
+        model_id="stale-model",
+        metadata={"measure_id": "test"},
+    )
+
+    active_workspace = service.workspace_manager.create_workspace("measure-active")
+    active_model = active_workspace / "out.osm"
+    active_model.write_text("active model", encoding="utf-8")
+    service._register_workspace(
+        workspace_id="measure-active",
+        kind="measure",
+        model_id="active-model",
+        metadata={"measure_id": "test"},
+    )
+    service.model_states["active-model"] = OpenStudioModelState(
+        model_id="active-model",
+        metadata={"model_uri": active_model.as_uri(), "weather": None},
+    )
+
+    preview = service.runtime_prune_preview()
+
+    assert preview["ok"] is True
+    assert {item["workspace_id"] for item in preview["candidates"]} == {"measure-stale"}
+    protected = {item["workspace_id"]: item for item in preview["protected"]}
+    assert protected["measure-active"]["protection_reason"] == "active_model_state"
+
+    pruned = service.runtime_prune()
+
+    assert pruned["ok"] is True
+    assert pruned["reclaimed_bytes"] > 0
+    assert not stale_workspace.exists()
+    assert active_workspace.exists()
+
+    usage = service.runtime_storage_usage()
+
+    assert usage["ok"] is True
+    assert usage["db_path"].endswith("openstudio_ai_runtime.sqlite")
 
 
 def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
@@ -101,15 +159,10 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     workspace_root = factory_kwargs["tools_config"]["tools"][0]["config"][
         "workspace_root"
     ]
-    assert Path(workspace_root).resolve() == Path(
-        "examples/openstudio_ai"
-    ).resolve()
+    assert Path(workspace_root).resolve() == Path("examples/openstudio_ai").resolve()
     assert factory_kwargs["skills_config"]["enabled"] is True
     assert "hvac_sizing_assistant" in factory_kwargs["skills_config"]["registry"]
-    assert (
-        "openstudio_sdk_model_editor"
-        in factory_kwargs["skills_config"]["registry"]
-    )
+    assert "openstudio_sdk_model_editor" in factory_kwargs["skills_config"]["registry"]
     assert "openstudio_sdk_wiki" in factory_kwargs["skills_config"]["registry"]
     skill_manager = SkillManager.from_config(factory_kwargs["skills_config"])
     available_context = set(skill_manager.available_skills())
@@ -139,16 +192,19 @@ def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
     assert server.name == "OpenStudio AI Model Workspace Agent"
 
 
-def test_openstudio_ai_blackboard_config_supports_workflow_state(tmp_path: Path) -> None:
+def test_openstudio_ai_blackboard_config_supports_workflow_state(
+    tmp_path: Path,
+) -> None:
     spec = load_openstudio_agent_spec(build_openstudio_mcp_config())
     factory_kwargs = spec.to_factory_kwargs()
     blackboard_config = deepcopy(factory_kwargs["blackboard_config"])
 
     assert blackboard_config["enabled"] is True
     assert blackboard_config["store"]["backend"] == "local_json"
-    assert Path(blackboard_config["store"]["base_dir"]).resolve() == Path(
-        "examples/openstudio_ai/.openstudio_ai_blackboards"
-    ).resolve()
+    assert (
+        Path(blackboard_config["store"]["base_dir"]).resolve()
+        == Path("examples/openstudio_ai/.openstudio_ai_blackboards").resolve()
+    )
     assert blackboard_config["schema_name"] == "openstudio_ai_workflow"
     assert blackboard_config["initial_data"] == {
         "active_workflow_id": None,
@@ -157,9 +213,7 @@ def test_openstudio_ai_blackboard_config_supports_workflow_state(tmp_path: Path)
         "handoff_notes": [],
     }
     assert (
-        blackboard_config["schema"]["properties"]["workflows"][
-            "additionalProperties"
-        ]
+        blackboard_config["schema"]["properties"]["workflows"]["additionalProperties"]
         is True
     )
     assert (
@@ -284,9 +338,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
         pytest.skip("OPENSTUDIO_PATH is not configured to a valid executable.")
 
     sample_model_uri = (
-        Path("examples/openstudio_ai/resource/sample.osm")
-        .resolve()
-        .as_uri()
+        Path("examples/openstudio_ai/resource/sample.osm").resolve().as_uri()
     )
     async with sse_client(MCP_URL) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
@@ -325,7 +377,10 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
             assert isinstance(apply_payload["model_id"], str)
             assert apply_payload["model_id"] != original_model_id
             assert isinstance(apply_payload.get("changes", []), list)
-            assert any("daylight" in str(item).lower() for item in apply_payload.get("changes", []))
+            assert any(
+                "daylight" in str(item).lower()
+                for item in apply_payload.get("changes", [])
+            )
 
             validate_result = await session.call_tool(
                 name="model_validate",
@@ -339,9 +394,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
 @pytest.mark.asyncio
 async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
     sample_model_uri = (
-        Path("examples/openstudio_ai/resource/sample.osm")
-        .resolve()
-        .as_uri()
+        Path("examples/openstudio_ai/resource/sample.osm").resolve().as_uri()
     )
     async with sse_client(MCP_URL) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
@@ -404,12 +457,14 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
         pytest.skip("Local EPW file not found for real simulation test.")
 
     sample_model_uri = (
-        Path("examples/openstudio_ai/resource/sample.osm")
-        .resolve()
-        .as_uri()
+        Path("examples/openstudio_ai/resource/sample.osm").resolve().as_uri()
     )
     workspace_root = Path(".openstudio_mcp_workspace").resolve()
-    existing_sqls = {str(p.resolve()) for p in workspace_root.rglob("run/eplusout.sql")} if workspace_root.exists() else set()
+    existing_sqls = (
+        {str(p.resolve()) for p in workspace_root.rglob("run/eplusout.sql")}
+        if workspace_root.exists()
+        else set()
+    )
     started_at = time.time()
 
     async with sse_client(MCP_URL) as (read_stream, write_stream):

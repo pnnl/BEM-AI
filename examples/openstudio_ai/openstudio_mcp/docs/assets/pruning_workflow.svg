@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860" role="img" aria-labelledby="title desc">
+  <title id="title">OpenStudio MCP Explicit Pruning Workflow</title>
+  <desc id="desc">Diagram showing agent initiated storage usage, prune preview, approval, and explicit prune behavior.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .lane { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 1.6; rx: 8; }
+      .agent { fill: #e0f2fe; stroke: #0369a1; }
+      .mcp { fill: #ecfdf5; stroke: #047857; }
+      .store { fill: #fef3c7; stroke: #b45309; }
+      .fs { fill: #f1f5f9; stroke: #475569; }
+      .decision { fill: #fce7f3; stroke: #be185d; }
+      .text { font: 15px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 12px Arial, sans-serif; fill: #334155; }
+      .title { font: 22px Arial, sans-serif; font-weight: 700; fill: #0f172a; }
+      .laneTitle { font: 16px Arial, sans-serif; font-weight: 700; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 1.7; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 6 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="860" />
+  <text class="title" x="40" y="44">OpenStudio MCP Storage Pruning Workflow</text>
+  <text class="small" x="40" y="70">Current behavior: pruning is not automatic. The agent or user must request preview and approve pruning.</text>
+
+  <rect class="lane" x="40" y="100" width="250" height="700" />
+  <text class="laneTitle" x="60" y="128">Agent / User</text>
+
+  <rect class="lane" x="330" y="100" width="330" height="700" />
+  <text class="laneTitle" x="350" y="128">MCP Runtime Tools</text>
+
+  <rect class="lane" x="700" y="100" width="250" height="700" />
+  <text class="laneTitle" x="720" y="128">SQLite Registry</text>
+
+  <rect class="lane" x="990" y="100" width="250" height="700" />
+  <text class="laneTitle" x="1010" y="128">Filesystem</text>
+
+  <rect class="box agent" x="70" y="165" width="190" height="70" rx="8" />
+  <text class="text" x="93" y="194">Normal workflow</text>
+  <text class="small" x="93" y="216">model, measure, sim tools</text>
+
+  <rect class="box mcp" x="365" y="155" width="260" height="90" rx="8" />
+  <text class="text" x="392" y="184">Create/update runtime records</text>
+  <text class="small" x="392" y="207">artifacts, jobs, workspaces</text>
+  <text class="small" x="392" y="226">size and access timestamps</text>
+
+  <rect class="box store" x="735" y="150" width="180" height="100" rx="8" />
+  <text class="text" x="765" y="180">Metadata only</text>
+  <text class="small" x="758" y="203">artifact lineage</text>
+  <text class="small" x="758" y="222">job state</text>
+  <text class="small" x="758" y="241">workspace status</text>
+
+  <rect class="box fs" x="1020" y="150" width="190" height="100" rx="8" />
+  <text class="text" x="1052" y="180">Heavy files</text>
+  <text class="small" x="1040" y="203">OSM copies</text>
+  <text class="small" x="1040" y="222">SQL outputs</text>
+  <text class="small" x="1040" y="241">logs and run folders</text>
+
+  <rect class="box agent" x="70" y="320" width="190" height="80" rx="8" />
+  <text class="text" x="91" y="350">Cleanup requested</text>
+  <text class="small" x="91" y="373">by user or agent</text>
+
+  <rect class="box mcp" x="365" y="300" width="260" height="70" rx="8" />
+  <text class="text" x="390" y="330">runtime_storage_usage</text>
+  <text class="small" x="390" y="352">refresh sizes from disk</text>
+
+  <rect class="box mcp" x="365" y="420" width="260" height="80" rx="8" />
+  <text class="text" x="390" y="451">runtime_prune_preview</text>
+  <text class="small" x="390" y="474">classify protected vs candidates</text>
+
+  <rect class="box store" x="735" y="360" width="180" height="150" rx="8" />
+  <text class="text" x="760" y="390">Protection checks</text>
+  <text class="small" x="755" y="416">active model state</text>
+  <text class="small" x="755" y="438">running jobs</text>
+  <text class="small" x="755" y="460">pinned records</text>
+  <text class="small" x="755" y="482">successful sims by default</text>
+
+  <rect class="box decision" x="70" y="530" width="190" height="86" rx="8" />
+  <text class="text" x="92" y="562">Approve deletion?</text>
+  <text class="small" x="92" y="586">preview is non-destructive</text>
+
+  <rect class="box mcp" x="365" y="545" width="260" height="80" rx="8" />
+  <text class="text" x="410" y="576">runtime_prune</text>
+  <text class="small" x="390" y="599">recompute preview, then delete</text>
+
+  <rect class="box fs" x="1020" y="535" width="190" height="95" rx="8" />
+  <text class="text" x="1040" y="566">Delete selected</text>
+  <text class="small" x="1040" y="589">safe candidate folders</text>
+  <text class="small" x="1040" y="609">from workspace root</text>
+
+  <rect class="box store" x="735" y="650" width="180" height="95" rx="8" />
+  <text class="text" x="762" y="681">Mark pruned</text>
+  <text class="small" x="756" y="704">workspace status</text>
+  <text class="small" x="756" y="724">linked artifact status</text>
+
+  <rect class="box agent" x="70" y="680" width="190" height="70" rx="8" />
+  <text class="text" x="92" y="710">Return result</text>
+  <text class="small" x="92" y="732">deleted paths, reclaimed bytes</text>
+
+  <path class="arrow" d="M260 200 H365" />
+  <path class="arrow" d="M625 200 H735" />
+  <path class="arrow" d="M915 200 H1020" />
+  <path class="arrow" d="M165 235 V320" />
+  <path class="arrow" d="M260 360 H365" />
+  <path class="arrow" d="M495 370 V420" />
+  <path class="arrow" d="M625 460 H735" />
+  <path class="arrow" d="M365 470 H260 V530" />
+  <path class="arrow" d="M260 573 H365" />
+  <path class="arrow" d="M625 585 H1020" />
+  <path class="arrow" d="M1115 630 V700 H915" />
+  <path class="arrow" d="M735 700 H260 V715 H70" />
+  <path class="arrow dash" d="M70 616 V680" />
+  <text class="small" x="92" y="650">No approval: stop</text>
+</svg>

@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from examples.openstudio_ai.openstudio_mcp.runtime.state_store import RuntimeStateStore
+
 
 @dataclass(frozen=True)
 class ArtifactRecord:
@@ -20,10 +22,11 @@ class ArtifactRecord:
 
 
 class ArtifactStore:
-    """In-memory immutable artifact store for infra tests and local development."""
+    """Artifact registry with in-memory cache and optional SQLite persistence."""
 
-    def __init__(self):
+    def __init__(self, state_store: RuntimeStateStore | None = None):
         self._items: dict[str, ArtifactRecord] = {}
+        self.state_store = state_store
 
     def create(
         self,
@@ -42,10 +45,39 @@ class ArtifactStore:
             metadata=dict(metadata),
         )
         self._items[artifact.artifact_id] = artifact
+        if self.state_store is not None:
+            self.state_store.upsert_artifact(
+                artifact_id=artifact.artifact_id,
+                created_at=artifact.created_at,
+                parent_id=artifact.parent_id,
+                kind=artifact.kind,
+                tool_trace_id=artifact.tool_trace_id,
+                metadata=artifact.metadata,
+            )
         return artifact
 
     def get(self, artifact_id: str) -> ArtifactRecord | None:
-        return self._items.get(artifact_id)
+        item = self._items.get(artifact_id)
+        if item is not None:
+            if self.state_store is not None:
+                self.state_store.touch_artifact(artifact_id)
+            return item
+        if self.state_store is None:
+            return None
+        persisted = self.state_store.get_artifact(artifact_id)
+        if persisted is None or persisted["status"] != "available":
+            return None
+        artifact = ArtifactRecord(
+            artifact_id=persisted["artifact_id"],
+            created_at=persisted["created_at"],
+            parent_id=persisted["parent_id"],
+            kind=persisted["kind"],
+            tool_trace_id=persisted["tool_trace_id"],
+            metadata=persisted["metadata"],
+        )
+        self._items[artifact.artifact_id] = artifact
+        self.state_store.touch_artifact(artifact_id)
+        return artifact
 
     def must_get(self, artifact_id: str) -> ArtifactRecord:
         item = self.get(artifact_id)
