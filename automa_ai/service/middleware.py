@@ -25,10 +25,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ):
         super().__init__(app)
         self.auth_provider = auth_provider
-        self.public_paths = set(public_paths or [])
+        self.public_paths = {path.rstrip("/") or "/" for path in (public_paths or [])}
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if self.auth_provider is None or request.url.path in self.public_paths:
+        path = request.url.path.rstrip("/") or "/"
+        if self.auth_provider is None or path in self.public_paths:
             return await call_next(request)
         try:
             principal = self.auth_provider.authenticate(

@@ -109,6 +109,8 @@ async def test_executor_prefers_trusted_identity_over_client_metadata():
     assert captured["user_id"] == "trusted-user"
     assert captured["metadata"]["auth.trusted"] is True
     assert captured["metadata"]["subject"] == "subject-123"
+    assert captured["metadata"]["userId"] == "trusted-user"
+    assert captured["metadata"]["user_id"] == "trusted-user"
     assert captured["metadata"]["tenant_id"] == "trusted-tenant"
     assert captured["metadata"]["groups"] == ["operators"]
     assert captured["metadata"]["scopes"] == ["automa:invoke"]

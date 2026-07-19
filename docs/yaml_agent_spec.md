@@ -403,7 +403,10 @@ service:
   `region` and `user_pool_id` are provided.
 - `jwks_url`: JWKS endpoint. Required for `jwt`; derived for `cognito` when
   `region` and `user_pool_id` are provided.
-- `audience`: Optional JWT audience.
+- `audience`: Optional expected audience. For generic `jwt`, this is passed to
+  JWT audience validation. For `cognito`, this is the app client ID; access
+  tokens are checked against `client_id`, and ID tokens are checked against
+  `aud`.
 - `algorithms`: Allowed JWT algorithms. Defaults to `[RS256]`.
 - `required_scopes`: Optional list. The token must contain at least one.
 - `required_groups`: Optional list. The token must contain at least one.

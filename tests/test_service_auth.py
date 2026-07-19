@@ -14,7 +14,12 @@ from automa_ai.config.service import (
     ServiceConfig,
     ServiceIdentityConfig,
 )
-from automa_ai.service.auth import AuthError, AuthProvider, principal_from_claims
+from automa_ai.service.auth import (
+    AuthError,
+    AuthProvider,
+    CognitoAuthProvider,
+    principal_from_claims,
+)
 from automa_ai.service.identity import Principal
 from automa_ai.service.middleware import (
     AuthMiddleware,
@@ -66,6 +71,83 @@ def test_principal_from_claims_uses_configured_claims() -> None:
     assert principal.tenant_id == "tenant-1"
     assert principal.groups == ["operators"]
     assert principal.scopes == ["automa:invoke", "other:scope"]
+
+
+class FakeSigningKey:
+    key = "fake-key"
+
+
+class FakeJWKClient:
+    def get_signing_key_from_jwt(self, token: str):
+        return FakeSigningKey()
+
+
+def test_cognito_access_token_validates_client_id_not_audience(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decode_kwargs = {}
+
+    def fake_decode(token, signing_key, **kwargs):
+        decode_kwargs.update(kwargs)
+        return {
+            "sub": "subject",
+            "token_use": "access",
+            "client_id": "client-id",
+            "scope": "automa:invoke",
+        }
+
+    import jwt
+
+    monkeypatch.setattr(jwt, "decode", fake_decode)
+    provider = CognitoAuthProvider(
+        ServiceAuthConfig(
+            enabled=True,
+            provider="cognito",
+            issuer="https://issuer",
+            jwks_url="https://issuer/.well-known/jwks.json",
+            audience="client-id",
+            required_scopes=["automa:invoke"],
+        ),
+        ServiceIdentityConfig(),
+        jwk_client=FakeJWKClient(),
+    )
+
+    principal = provider.authenticate("Bearer token")
+
+    assert principal.user_id == "subject"
+    assert principal.scopes == ["automa:invoke"]
+    assert decode_kwargs["options"] == {"verify_aud": False}
+    assert "audience" not in decode_kwargs
+
+
+def test_cognito_access_token_rejects_wrong_client_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_decode(token, signing_key, **kwargs):
+        return {
+            "sub": "subject",
+            "token_use": "access",
+            "client_id": "wrong-client",
+            "scope": "automa:invoke",
+        }
+
+    import jwt
+
+    monkeypatch.setattr(jwt, "decode", fake_decode)
+    provider = CognitoAuthProvider(
+        ServiceAuthConfig(
+            enabled=True,
+            provider="cognito",
+            issuer="https://issuer",
+            jwks_url="https://issuer/.well-known/jwks.json",
+            audience="client-id",
+        ),
+        ServiceIdentityConfig(),
+        jwk_client=FakeJWKClient(),
+    )
+
+    with pytest.raises(AuthError, match="client_id"):
+        provider.authenticate("Bearer token")
 
 
 class StaticAuthProvider(AuthProvider):
@@ -130,6 +212,25 @@ def test_auth_middleware_allows_public_paths() -> None:
     )
 
     response = TestClient(app).get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_auth_middleware_allows_public_paths_with_trailing_slash() -> None:
+    async def endpoint(request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/health/", endpoint)])
+    app.add_middleware(
+        AuthMiddleware,
+        auth_provider=StaticAuthProvider(
+            error=AuthError("Missing Authorization header.", status_code=401)
+        ),
+        public_paths=["/health"],
+    )
+
+    response = TestClient(app).get("/health/")
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}

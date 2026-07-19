@@ -259,7 +259,10 @@ class GenericAgentExecutor(AgentExecutor):
         if principal is None:
             return metadata
         merged = dict(metadata)
-        merged.update(principal.to_metadata())
+        trusted = principal.to_metadata()
+        merged.update(trusted)
+        if "user_id" in trusted:
+            merged["userId"] = trusted["user_id"]
         return merged
 
     async def cancel(
