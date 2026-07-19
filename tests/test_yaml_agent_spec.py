@@ -217,6 +217,37 @@ hooks:
     )
 
 
+def test_yaml_agent_spec_loads_service_auth_config() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        _base_yaml()
+        + """
+service:
+  auth:
+    enabled: true
+    provider: cognito
+    region: us-west-2
+    user_pool_id: us-west-2_abc123
+    audience: client-id
+    required_scopes: [automa:invoke]
+  identity:
+    user_id_claim: sub
+    tenant_id_claim: custom:tenant_id
+    groups_claim: cognito:groups
+"""
+    )
+
+    assert spec.service.auth.enabled is True
+    assert spec.service.auth.provider == "cognito"
+    assert spec.service.auth.resolved_issuer == (
+        "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123"
+    )
+    assert spec.service.auth.resolved_jwks_url == (
+        "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123"
+        "/.well-known/jwks.json"
+    )
+    assert spec.service.identity.tenant_id_claim == "custom:tenant_id"
+
+
 def test_yaml_agent_spec_passes_redis_plain_checkpointer_options() -> None:
     spec = YamlAgentSpec.from_yaml_text(
         _base_yaml()
@@ -627,8 +658,9 @@ server:
     assert server.port == 32123
     assert server.base_url_path == "/agent"
     assert server.health_check_path == "/ready"
+    assert server.service_config.auth.enabled is False
     card_data = MessageToDict(server.card, preserving_proto_field_name=False)
-    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:32123/agent"
+    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:32123/agent/"
 
 
 def test_load_a2a_server_from_existing_spec(tmp_path: Path) -> None:

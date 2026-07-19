@@ -371,6 +371,58 @@ Optional object for the `A2AAgentServer` wrapper.
 The server host and port are not configured here. They come from the agent card's
 primary supported interface URL.
 
+### `service`
+
+Optional object for production service-boundary behavior. This is separate from
+`server`: `server` controls the A2A wrapper mount/log paths, while `service`
+controls request authentication and trusted identity propagation.
+
+```yaml
+service:
+  auth:
+    enabled: true
+    provider: cognito
+    region: us-west-2
+    user_pool_id: us-west-2_abc123
+    audience: my-app-client-id
+    required_scopes:
+      - automa:invoke
+  identity:
+    user_id_claim: sub
+    tenant_id_claim: custom:tenant_id
+    groups_claim: cognito:groups
+    scopes_claim: scope
+```
+
+`auth` supports:
+
+- `enabled`: Enables service-boundary bearer-token validation. Defaults to
+  `false`.
+- `provider`: `jwt` or `cognito`. Defaults to `jwt`.
+- `issuer`: JWT issuer. Required for `jwt`; optional for `cognito` when
+  `region` and `user_pool_id` are provided.
+- `jwks_url`: JWKS endpoint. Required for `jwt`; derived for `cognito` when
+  `region` and `user_pool_id` are provided.
+- `audience`: Optional JWT audience.
+- `algorithms`: Allowed JWT algorithms. Defaults to `[RS256]`.
+- `required_scopes`: Optional list. The token must contain at least one.
+- `required_groups`: Optional list. The token must contain at least one.
+- `region` / `user_pool_id`: Cognito convenience fields used to derive issuer
+  and JWKS URL.
+
+`identity` maps verified JWT claims into trusted runtime metadata:
+
+- `user_id_claim`: Defaults to `sub`.
+- `tenant_id_claim`: Optional.
+- `groups_claim`: Defaults to `groups`; use `cognito:groups` for Cognito.
+- `scopes_claim`: Defaults to `scope`.
+
+When auth is enabled, the A2A server validates the HTTP `Authorization: Bearer`
+token before requests reach the agent. Verified identity is injected into
+agent metadata as `auth.trusted`, `subject`, `user_id`, optional `tenant_id`,
+`groups`, and `scopes`. These trusted values override client-supplied metadata
+with the same names.
+
 ### `mcp`
 
 Optional object for MCP tool connections used by the agent.

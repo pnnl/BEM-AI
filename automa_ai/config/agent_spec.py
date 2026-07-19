@@ -21,6 +21,7 @@ from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.common.agent_registry import A2AAgentServer
 from automa_ai.common.mcp_registry import MCPServerConfig
+from automa_ai.config.service import ServiceConfig
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -180,6 +181,7 @@ class YamlAgentSpec(BaseModel):
     model: ModelSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     server: ServerSpec = Field(default_factory=ServerSpec)
+    service: ServiceConfig = Field(default_factory=ServiceConfig)
 
     mcp: MCPConfigSpec | None = None
     subagents: list[SubAgentYamlSpec] = Field(default_factory=list)
@@ -321,6 +323,7 @@ class YamlAgentSpec(BaseModel):
             log_dir=self.server.log_dir,
             base_url_path=self.server.base_url_path,
             health_check_path=self.server.health_check_path,
+            service_config=self.service,
         )
 
 

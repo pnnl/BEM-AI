@@ -25,6 +25,7 @@ from google.protobuf.json_format import MessageToDict
 
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
+from automa_ai.service.middleware import PRINCIPAL_STATE_KEY
 
 
 def _extract_attachments_from_message(message) -> list[dict]:
@@ -119,6 +120,7 @@ class GenericAgentExecutor(AgentExecutor):
             metadata = MessageToDict(context.message.metadata)
         except Exception:
             metadata = {}
+        metadata = self._merge_trusted_identity(context, metadata)
 
         query = context.get_user_input()
         attachments = _extract_attachments_from_message(context.message)
@@ -245,6 +247,20 @@ class GenericAgentExecutor(AgentExecutor):
 
     def _validate_request(self, context: RequestContext) -> bool:
         return False
+
+    def _merge_trusted_identity(
+        self,
+        context: RequestContext,
+        metadata: dict,
+    ) -> dict:
+        call_context = getattr(context, "call_context", None)
+        state = getattr(call_context, "state", {}) if call_context is not None else {}
+        principal = state.get(PRINCIPAL_STATE_KEY) if isinstance(state, dict) else None
+        if principal is None:
+            return metadata
+        merged = dict(metadata)
+        merged.update(principal.to_metadata())
+        return merged
 
     async def cancel(
         self, request: RequestContext, event_queue: EventQueue

@@ -9,8 +9,13 @@ from a2a.types import Message, Part, Role
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
+from automa_ai.service.identity import Principal
+from automa_ai.service.middleware import PRINCIPAL_STATE_KEY
 
-def _make_message(metadata_dict: dict | None = None, text: str = "Test query") -> Message:
+
+def _make_message(
+    metadata_dict: dict | None = None, text: str = "Test query"
+) -> Message:
     """Build an A2A Message with optional protobuf Struct metadata."""
     message = Message()
     message.role = Role.ROLE_USER
@@ -22,9 +27,9 @@ def _make_message(metadata_dict: dict | None = None, text: str = "Test query") -
     return message
 
 
-def _make_context(metadata: dict | None = None,
-                  user_input: str = "Test query",
-                  current_task=None) -> Mock:
+def _make_context(
+    metadata: dict | None = None, user_input: str = "Test query", current_task=None
+) -> Mock:
     """Build a mocked RequestContext suitable for executor.execute()."""
     context = Mock(spec=RequestContext)
     context.message = _make_message(metadata, text=user_input)
@@ -73,3 +78,37 @@ async def test_executor_extracts_user_id_from_metadata():
     assert captured["metadata"] == {"userId": "executor-test-user"}
     assert captured["query"] == "Test query"
     event_queue.enqueue_event.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_executor_prefers_trusted_identity_over_client_metadata():
+    agent, captured = _make_capturing_agent()
+    executor = GenericAgentExecutor(agent)
+
+    context = _make_context(
+        metadata={
+            "userId": "client-user",
+            "user_id": "client-user-id",
+            "tenant_id": "client-tenant",
+        }
+    )
+    context.call_context = Mock()
+    context.call_context.state = {
+        PRINCIPAL_STATE_KEY: Principal(
+            subject="subject-123",
+            user_id="trusted-user",
+            tenant_id="trusted-tenant",
+            groups=["operators"],
+            scopes=["automa:invoke"],
+        )
+    }
+    event_queue = AsyncMock(spec=EventQueue)
+
+    await executor.execute(context, event_queue)
+
+    assert captured["user_id"] == "trusted-user"
+    assert captured["metadata"]["auth.trusted"] is True
+    assert captured["metadata"]["subject"] == "subject-123"
+    assert captured["metadata"]["tenant_id"] == "trusted-tenant"
+    assert captured["metadata"]["groups"] == ["operators"]
+    assert captured["metadata"]["scopes"] == ["automa:invoke"]

@@ -76,6 +76,7 @@ def test_default_executor_builder_is_picklable_for_spawn():
 
 def test_server_run_closes_sync_agent(monkeypatch):
     calls: list[str] = []
+    context_builders = []
 
     class DummyAgent:
         agent_name = "dummy"
@@ -96,7 +97,8 @@ def test_server_run_closes_sync_agent(monkeypatch):
     monkeypatch.setattr(
         agent_registry,
         "create_jsonrpc_routes",
-        lambda *args, **kwargs: [],
+        lambda *args, **kwargs: context_builders.append(kwargs.get("context_builder"))
+        or [],
     )
     monkeypatch.setattr(agent_registry.uvicorn, "run", lambda *args, **kwargs: None)
 
@@ -104,6 +106,9 @@ def test_server_run_closes_sync_agent(monkeypatch):
     server.run()
 
     assert calls == ["closed"]
+    assert isinstance(
+        context_builders[0], agent_registry.AutomaServerCallContextBuilder
+    )
 
 
 def test_close_agent_supports_async_close():

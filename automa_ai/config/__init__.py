@@ -2,6 +2,11 @@
 
 from automa_ai.config.blackboard import BlackboardConfig
 from automa_ai.config.checkpointer import CheckpointerConfig
+from automa_ai.config.service import (
+    ServiceAuthConfig,
+    ServiceConfig,
+    ServiceIdentityConfig,
+)
 from automa_ai.config.telemetry import TelemetryConfig
 from automa_ai.config.token_budget import (
     TokenBudgetConfig,
@@ -15,6 +20,9 @@ __all__ = [
     "ToolsConfig",
     "BlackboardConfig",
     "CheckpointerConfig",
+    "ServiceAuthConfig",
+    "ServiceConfig",
+    "ServiceIdentityConfig",
     "TelemetryConfig",
     "TokenBudgetConfig",
     "TokenBudgetWindowConfig",
