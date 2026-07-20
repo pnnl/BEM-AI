@@ -517,6 +517,59 @@ Resolved subagent cards must use the A2A 1.0 `supportedInterfaces` shape. The
 loader validates cards loaded from `spec_path`, `card_path`, and inline
 `agent_card` entries before creating runtime `SubAgentSpec` objects.
 
+#### API-key authentication for a remote subagent
+
+Use `auth` to send an API key to one remote A2A agent. This is client-side
+configuration and is separate from `service.auth`, which protects requests
+arriving at the current agent server. The remote Agent Card must declare the
+referenced API-key scheme with `location: header` and a header `name`;
+credentials must be supplied through an environment variable, never in the
+card.
+
+```yaml
+subagents:
+  - name: CE Expert
+    card_path: ./agents/ce_expert_remote_card.json
+    auth:
+      type: api_key
+      scheme: permitce_api_key
+      api_key: ${CE_EXPERT_API_KEY}
+```
+
+For example, the referenced remote card declares the gateway contract:
+
+```yaml
+securitySchemes:
+  permitce_api_key:
+    apiKeySecurityScheme:
+      location: header
+      name: x-api-key
+```
+
+AUTOMA-AI validates the scheme during YAML loading and adds the declared header
+to every streaming and non-streaming A2A request. It does not copy the secret
+into A2A task metadata, prompts, or the Agent Card.
+
+#### Custom request headers for a gateway or legacy service
+
+Use `request_headers` when a remote service requires a gateway-specific
+authentication contract that is not declared in its Agent Card. This remains a
+native A2A invocation; AUTOMA-AI passes the configured values to the A2A client
+as transport headers. `auth` and `request_headers` are mutually exclusive.
+
+```yaml
+subagents:
+  - name: CE Expert
+    card_path: ./agents/ce_expert_remote_card.json
+    request_headers:
+      x-api-key: ${CE_EXPERT_API_KEY}
+      x-gateway-client: ce-backend
+```
+
+Environment placeholders are resolved for all `request_headers` values. Header
+values are treated as secrets and are not copied into task metadata or prompts.
+
+
 ### `tools`
 
 Optional object or list passed through to `AgentFactory(..., tools_config=...)`.

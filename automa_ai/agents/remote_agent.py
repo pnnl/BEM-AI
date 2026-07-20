@@ -9,7 +9,7 @@ import re
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from a2a.client import Client, ClientConfig, create_client
+from a2a.client import Client, ClientCallContext, ClientConfig, create_client
 from a2a.helpers.proto_helpers import get_message_text, new_text_message
 from a2a.types import (
     AgentCard,
@@ -106,6 +106,7 @@ class SubAgentSpec:
     name: str
     description: str
     agent_card: AgentCard | dict[str, Any]
+    request_headers: dict[str, str] | None = None
 
     @property
     def tool_name(self) -> str:
@@ -262,6 +263,7 @@ def make_subagent_tool(
         agent_name=spec.tool_name,
         subagent_card=spec.resolved_agent_card,
         description=spec.description,
+        request_headers=spec.request_headers,
     )
 
     adapter = A2AToolAdapter(subagent=subagent, emit_event=emitter)
@@ -278,9 +280,7 @@ def make_subagent_tool(
         agent_card: AgentCard = adapter.subagent.agent_card
         context_id = get_subagent_context_id()
         if agent_card.capabilities.streaming:
-            async for chunk in adapter.stream(
-                delegated_task, context_id=context_id
-            ):
+            async for chunk in adapter.stream(delegated_task, context_id=context_id):
                 chunks.append(chunk)
         else:
             result = await adapter.run(delegated_task, context_id=context_id)
@@ -296,8 +296,7 @@ def make_subagent_tool(
             }
         return {
             "final": (
-                "No result produced by the subagent "
-                f"{adapter.subagent.agent_name}"
+                "No result produced by the subagent " f"{adapter.subagent.agent_name}"
             ),
             "chunks": "",
             "task_id": "",
@@ -319,6 +318,7 @@ class RemoteAgent(BaseAgent):
         agent_name: str,
         subagent_card: AgentCard,
         description: str,
+        request_headers: dict[str, str] | None = None,
     ):
         super().__init__(
             agent_name=agent_name,
@@ -327,6 +327,7 @@ class RemoteAgent(BaseAgent):
         )
 
         self._httpx_client = httpx.AsyncClient(timeout=httpx.Timeout(None))
+        self._request_headers = dict(request_headers or {})
         self.agent_card = subagent_card
         self._streaming_client: Client | None = None
         self._non_streaming_client: Client | None = None
@@ -348,11 +349,13 @@ class RemoteAgent(BaseAgent):
                     streaming=False,
                 ),
             )
-        return (
-            self._streaming_client
-            if streaming
-            else self._non_streaming_client
-        )
+        return self._streaming_client if streaming else self._non_streaming_client
+
+    def _request_context(self) -> ClientCallContext | None:
+        """Expose subagent credentials through the A2A client transport API."""
+        if not self._request_headers:
+            return None
+        return ClientCallContext(service_parameters=dict(self._request_headers))
 
     def _build_request(
         self,
@@ -384,9 +387,7 @@ class RemoteAgent(BaseAgent):
         if message_metadata:
             a2a_message.metadata.update(message_metadata)
 
-        return SendMessageRequest(
-            message=a2a_message
-        )
+        return SendMessageRequest(message=a2a_message)
 
     @staticmethod
     def _unwrap_response(
@@ -410,7 +411,6 @@ class RemoteAgent(BaseAgent):
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Task | Message:
-        client = await self._get_client(streaming=False)
         request = self._build_request(
             message,
             context_id=context_id,
@@ -419,8 +419,13 @@ class RemoteAgent(BaseAgent):
             metadata=metadata,
         )
 
+        client = await self._get_client(streaming=False)
+
         last_response: Message | Task | None = None
-        async for chunk in client.send_message(request):
+        async for chunk in client.send_message(
+            request,
+            context=self._request_context(),
+        ):
             event = self._unwrap_response(chunk)
             if isinstance(event, (Message, Task)):
                 last_response = event
@@ -442,7 +447,6 @@ class RemoteAgent(BaseAgent):
         Message | Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
         None,
     ]:
-        client = await self._get_client(streaming=True)
         request = self._build_request(
             message,
             context_id=context_id,
@@ -451,7 +455,12 @@ class RemoteAgent(BaseAgent):
             metadata=metadata,
         )
 
-        async for chunk in client.send_message(request):
+        client = await self._get_client(streaming=True)
+
+        async for chunk in client.send_message(
+            request,
+            context=self._request_context(),
+        ):
             event = self._unwrap_response(chunk)
             if event is not None:
                 yield event
