@@ -522,9 +522,9 @@ loader validates cards loaded from `spec_path`, `card_path`, and inline
 Use `auth` to send an API key to one remote A2A agent. This is client-side
 configuration and is separate from `service.auth`, which protects requests
 arriving at the current agent server. The remote Agent Card must declare the
-referenced API-key scheme with `location: header` and a header `name`;
-credentials must be supplied through an environment variable, never in the
-card.
+referenced API-key scheme with `location: header` and a header `name`.
+Use an environment variable rather than a literal value to avoid committing
+credentials to source control or the card.
 
 ```yaml
 subagents:

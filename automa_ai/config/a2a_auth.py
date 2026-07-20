@@ -54,4 +54,14 @@ class A2AClientAuthConfig(BaseModel):
                 f"A2A API-key scheme '{self.scheme}' must declare a header name."
             )
 
-        return {header_name: self.api_key.get_secret_value()}
+        api_key = self.api_key.get_secret_value()
+        if "\r" in header_name or "\n" in header_name:
+            raise ValueError(
+                f"A2A API-key scheme '{self.scheme}' declares an invalid header name."
+            )
+        if "\r" in api_key or "\n" in api_key:
+            raise ValueError(
+                "A2A API key must not contain carriage returns or newlines."
+            )
+
+        return {header_name: api_key}

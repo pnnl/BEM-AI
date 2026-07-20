@@ -56,6 +56,30 @@ def test_api_key_auth_rejects_card_without_matching_scheme() -> None:
         auth.request_headers(card)
 
 
+@pytest.mark.parametrize(
+    ("header_name", "api_key", "match"),
+    [
+        ("x-api-key\r\nx-injected: value", "test-api-key", "invalid header name"),
+        ("x-api-key", "test-api-key\r\nx-injected: value", "must not contain"),
+    ],
+)
+def test_api_key_auth_rejects_header_injection_values(
+    header_name: str,
+    api_key: str,
+    match: str,
+) -> None:
+    card = _remote_card()
+    card["securitySchemes"]["permitce_api_key"]["apiKeySecurityScheme"][
+        "name"
+    ] = header_name
+
+    with pytest.raises(ValueError, match=match):
+        A2AClientAuthConfig(
+            scheme="permitce_api_key",
+            api_key=api_key,
+        ).request_headers(card)
+
+
 @pytest.mark.asyncio
 async def test_remote_agent_passes_configured_headers_through_a2a_context() -> None:
     agent = RemoteAgent(
@@ -209,3 +233,41 @@ subagents:
       x-api-key: test-api-key
 """
         )
+
+
+def test_custom_request_headers_reject_header_injection_value() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        """
+spec_version: v1
+agent_card:
+  name: Coordinator
+  description: Coordinates remote agents.
+  version: 1.0.0
+  defaultInputModes: [text]
+  defaultOutputModes: [text]
+  capabilities: {streaming: true}
+  supportedInterfaces:
+    - url: http://localhost:32123
+      protocolBinding: JSONRPC
+      protocolVersion: "1.0"
+instructions: {text: Coordinate the request.}
+model: {provider: ollama, name: llama3.1:8b}
+subagents:
+  - agent_card:
+      name: CE Expert
+      description: Remote CE analysis.
+      version: 1.0.0
+      defaultInputModes: [text]
+      defaultOutputModes: [text]
+      capabilities: {streaming: true}
+      supportedInterfaces:
+        - url: https://example.com/ce-expert/invoke/
+          protocolBinding: JSONRPC
+          protocolVersion: "1.0"
+    request_headers:
+      x-api-key: "test-api-key\\r\\nx-injected: value"
+"""
+    )
+
+    with pytest.raises(ValueError, match="invalid header value"):
+        spec.to_factory_kwargs()

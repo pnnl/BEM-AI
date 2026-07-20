@@ -177,7 +177,12 @@ class SubAgentYamlSpec(BaseModel):
                 raise ValueError(
                     "subagent request_headers contains an invalid header name."
                 )
-            headers[name] = value.get_secret_value()
+            header_value = value.get_secret_value()
+            if "\r" in header_value or "\n" in header_value:
+                raise ValueError(
+                    "subagent request_headers contains an invalid header value."
+                )
+            headers[name] = header_value
         return headers
 
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
