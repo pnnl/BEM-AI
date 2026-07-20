@@ -1,6 +1,7 @@
 """Configuration models for automa_ai."""
 
 from automa_ai.config.blackboard import BlackboardConfig
+from automa_ai.config.a2a_auth import A2AClientAuthConfig
 from automa_ai.config.checkpointer import CheckpointerConfig
 from automa_ai.config.service import (
     ServiceAuthConfig,
@@ -18,6 +19,7 @@ from automa_ai.config.tools import ToolSpec, ToolsConfig
 __all__ = [
     "ToolSpec",
     "ToolsConfig",
+    "A2AClientAuthConfig",
     "BlackboardConfig",
     "CheckpointerConfig",
     "ServiceAuthConfig",
