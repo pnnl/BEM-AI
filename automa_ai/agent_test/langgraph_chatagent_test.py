@@ -248,6 +248,7 @@ async def test_invoke_uses_agent_scoped_checkpoint_thread_id():
         "configurable": {
             "thread_id": "test-agent:session-1",
             "automa_context_id": "session-1",
+            "metadata": {},
         }
     }
 
