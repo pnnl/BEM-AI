@@ -253,10 +253,12 @@ class GenericAgentExecutor(AgentExecutor):
         context: RequestContext,
         metadata: dict,
     ) -> dict:
+        from automa_ai.service.identity import Principal
+
         call_context = getattr(context, "call_context", None)
         state = getattr(call_context, "state", {}) if call_context is not None else {}
         principal = state.get(PRINCIPAL_STATE_KEY) if isinstance(state, dict) else None
-        if principal is None:
+        if not isinstance(principal, Principal):
             return metadata
         merged = dict(metadata)
         trusted = principal.to_metadata()
