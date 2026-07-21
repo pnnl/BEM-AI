@@ -49,13 +49,14 @@ class A2AClientAuthConfig(BaseModel):
             )
 
         header_name = api_key_scheme.get("name")
-        if not isinstance(header_name, str) or not header_name.strip():
+        if not isinstance(header_name, str):
             raise ValueError(
                 f"A2A API-key scheme '{self.scheme}' must declare a header name."
             )
+        header_name = header_name.strip()
 
         api_key = self.api_key.get_secret_value()
-        if "\r" in header_name or "\n" in header_name:
+        if not header_name or any(char.isspace() for char in header_name):
             raise ValueError(
                 f"A2A API-key scheme '{self.scheme}' declares an invalid header name."
             )

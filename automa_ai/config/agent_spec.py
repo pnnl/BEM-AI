@@ -19,7 +19,10 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer, normalize_a2a_card_for_server
+from automa_ai.common.agent_registry import (
+    A2AAgentServer,
+    normalize_a2a_card_for_server,
+)
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.config.a2a_auth import A2AClientAuthConfig
 from automa_ai.config.service import ServiceConfig
@@ -200,7 +203,8 @@ class SubAgentYamlSpec(BaseModel):
 
         headers: dict[str, str] = {}
         for name, value in self.request_headers.items():
-            if not name.strip() or "\r" in name or "\n" in name:
+            header_name = name.strip()
+            if not header_name or any(char.isspace() for char in header_name):
                 raise ValueError(
                     "subagent request_headers contains an invalid header name."
                 )
@@ -209,7 +213,7 @@ class SubAgentYamlSpec(BaseModel):
                 raise ValueError(
                     "subagent request_headers contains an invalid header value."
                 )
-            headers[name] = header_value
+            headers[header_name] = header_value
         return headers
 
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:

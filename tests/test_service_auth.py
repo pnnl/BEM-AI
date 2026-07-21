@@ -45,6 +45,18 @@ def test_cognito_auth_config_derives_issuer_and_jwks_url() -> None:
     )
 
 
+def test_auth_config_derives_jwks_url_without_duplicate_slash() -> None:
+    config = ServiceAuthConfig(
+        provider="cognito",
+        issuer="https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123/",
+    )
+
+    assert config.resolved_jwks_url == (
+        "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_abc123"
+        "/.well-known/jwks.json"
+    )
+
+
 def test_jwt_auth_config_requires_jwks_when_enabled() -> None:
     with pytest.raises(ValueError, match="jwks_url"):
         ServiceAuthConfig(enabled=True, provider="jwt", issuer="https://issuer")

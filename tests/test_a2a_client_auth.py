@@ -6,7 +6,7 @@ from google.protobuf.json_format import ParseDict
 from a2a.types import AgentCard
 from automa_ai.agents.remote_agent import RemoteAgent
 from automa_ai.config.a2a_auth import A2AClientAuthConfig
-from automa_ai.config.agent_spec import YamlAgentSpec
+from automa_ai.config.agent_spec import SubAgentYamlSpec, YamlAgentSpec
 
 
 def _remote_card() -> dict:
@@ -44,6 +44,18 @@ def test_api_key_auth_uses_header_declared_by_agent_card() -> None:
     assert auth.request_headers(_remote_card()) == {"x-api-key": "test-api-key"}
 
 
+def test_api_key_auth_normalizes_card_header_name() -> None:
+    card = _remote_card()
+    card["securitySchemes"]["permitce_api_key"]["apiKeySecurityScheme"][
+        "name"
+    ] = " x-api-key "
+
+    assert A2AClientAuthConfig(
+        scheme="permitce_api_key",
+        api_key="test-api-key",
+    ).request_headers(card) == {"x-api-key": "test-api-key"}
+
+
 def test_api_key_auth_rejects_card_without_matching_scheme() -> None:
     auth = A2AClientAuthConfig(
         scheme="permitce_api_key",
@@ -60,6 +72,7 @@ def test_api_key_auth_rejects_card_without_matching_scheme() -> None:
     ("header_name", "api_key", "match"),
     [
         ("x-api-key\r\nx-injected: value", "test-api-key", "invalid header name"),
+        ("x api-key", "test-api-key", "invalid header name"),
         ("x-api-key", "test-api-key\r\nx-injected: value", "must not contain"),
     ],
 )
@@ -189,6 +202,27 @@ subagents:
         "x-api-key": "test-api-key",
         "x-gateway-client": "ce-backend",
     }
+
+
+def test_yaml_subagent_normalizes_custom_request_header_names() -> None:
+    subagent = SubAgentYamlSpec(
+        agent_card=_remote_card(),
+        request_headers={" x-api-key ": "test-api-key"},
+    )
+
+    assert subagent.resolve_request_headers(_remote_card()) == {
+        "x-api-key": "test-api-key"
+    }
+
+
+def test_yaml_subagent_rejects_custom_request_header_name_with_whitespace() -> None:
+    subagent = SubAgentYamlSpec(
+        agent_card=_remote_card(),
+        request_headers={"x api-key": "test-api-key"},
+    )
+
+    with pytest.raises(ValueError, match="invalid header name"):
+        subagent.resolve_request_headers(_remote_card())
 
 
 def test_yaml_subagent_rejects_auth_and_custom_request_headers() -> None:

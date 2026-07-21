@@ -70,7 +70,7 @@ class ServiceAuthConfig(BaseModel):
         if self.jwks_url:
             return self.jwks_url
         issuer = self.resolved_issuer
-        return f"{issuer}/.well-known/jwks.json" if issuer else None
+        return f"{issuer.rstrip('/')}/.well-known/jwks.json" if issuer else None
 
 
 class ServiceConfig(BaseModel):
