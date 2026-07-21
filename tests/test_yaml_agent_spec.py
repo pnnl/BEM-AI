@@ -390,6 +390,44 @@ subagents:
     assert kwargs["subagent_config"][0].agent_card["name"] == "Math Agent"
 
 
+def test_yaml_subagent_spec_path_uses_server_advertised_url(tmp_path: Path) -> None:
+    subagent_path = tmp_path / "subagent.yaml"
+    subagent_path.write_text(
+        """
+spec_version: v1
+agent:
+  name: Routed Subagent
+  description: Serves from an overridden mount path.
+a2a:
+  url: http://localhost:32124/original
+server:
+  base_url_path: /delegated
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+""",
+        encoding="utf-8",
+    )
+    coordinator_path = tmp_path / "coordinator.yaml"
+    coordinator_path.write_text(
+        _base_yaml()
+        + """
+subagents:
+  - spec_path: ./subagent.yaml
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(coordinator_path)
+    subagent_card = spec.to_factory_kwargs()["subagent_config"][0].agent_card
+
+    assert subagent_card["supportedInterfaces"][0]["url"] == (
+        "http://localhost:32124/delegated/"
+    )
+
+
 def test_yaml_agent_spec_loads_subagent_from_card_path(tmp_path: Path) -> None:
     card_path = tmp_path / "math_card.json"
     card_path.write_text(
