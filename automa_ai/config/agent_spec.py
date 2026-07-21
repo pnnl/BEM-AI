@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.agent_registry import A2AAgentServer, normalize_a2a_card_for_server
 from automa_ai.common.mcp_registry import MCPServerConfig
 
 
@@ -170,7 +170,7 @@ class SubAgentYamlSpec(BaseModel):
 
         if self.spec_path is not None:
             spec_path = _resolve_path(self.spec_path, base_dir=base_dir)
-            return YamlAgentSpec.from_yaml_file(spec_path).a2a_card()
+            return YamlAgentSpec.from_yaml_file(spec_path).advertised_a2a_card()
 
         assert self.card_path is not None
         card_path = _resolve_path(self.card_path, base_dir=base_dir)
@@ -321,6 +321,13 @@ class YamlAgentSpec(BaseModel):
             card["skills"] = deepcopy(self.a2a.skills)
         _validate_a2a_card(card, label="a2a")
         return card
+
+    def advertised_a2a_card(self) -> dict[str, Any]:
+        """Return the public A2A card exactly as this spec's server advertises it."""
+        return normalize_a2a_card_for_server(
+            self.a2a_card(),
+            base_url_path=self.server.base_url_path,
+        )
 
     def to_factory_kwargs(self) -> dict[str, Any]:
         """Map this YAML spec onto the existing ``AgentFactory`` constructor.
