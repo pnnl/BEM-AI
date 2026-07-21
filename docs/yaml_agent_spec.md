@@ -1,6 +1,7 @@
 # YAML Agent Spec
 
-The YAML agent spec lets one YAML file define one AUTOMA-AI agent and boot it as
+The YAML agent spec lets one YAML file define one AUTOMA-AI agent. It can run
+in-process through `AgentFactory` or, when an `a2a` section is supplied, boot as
 an A2A server with a small Python bootstrap. It is a thin declarative layer over
 the existing `AgentFactory` and `A2AAgentServer` APIs.
 
@@ -15,18 +16,17 @@ Create `agent.yaml`:
 ```yaml
 spec_version: v1
 
-agent_card:
+agent:
   name: Demo Agent
   description: A YAML-defined AUTOMA-AI agent.
   version: 0.1.0
+
+a2a:
+  url: http://localhost:30000
   defaultInputModes: [text]
   defaultOutputModes: [text]
   capabilities:
     streaming: true
-  supportedInterfaces:
-    - url: http://localhost:30000
-      protocolBinding: JSONRPC
-      protocolVersion: "1.0"
 
 instructions:
   text: |
@@ -86,8 +86,7 @@ Run it:
 python run_agent.py
 ```
 
-The A2A server host and port come from
-`agent_card.supportedInterfaces[0].url`.
+The A2A server host and port come from `a2a.url`.
 
 ## API Shape
 
@@ -126,12 +125,34 @@ intermediate spec explicitly:
 from automa_ai.config.agent_spec import YamlAgentSpec, load_a2a_server_from_yaml
 
 spec = YamlAgentSpec.from_yaml_file("agent.yaml")
-print(spec.agent_card["name"])
+print(spec.runtime_card()["name"])
 
 server = load_a2a_server_from_yaml(spec)
 ```
 
 Both builder helpers accept either a YAML path or an existing `YamlAgentSpec`.
+
+## Standalone Agent Example
+
+Standalone agents need no A2A discovery URL or public agent card:
+
+```yaml
+spec_version: v1
+
+agent:
+  name: Plan Page Extractor
+  description: Renders and analyzes architecture plan pages.
+
+instructions:
+  path: ../prompts/plan_page_extractor.md
+
+model:
+  provider: bedrock
+  name: us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+Load it with `load_agent_factory_from_yaml(...)`. Calling
+`load_a2a_server_from_yaml(...)` without `a2a` produces an actionable error.
 
 ## Instruction Files
 
@@ -161,19 +182,18 @@ current shell directory.
 ```yaml
 spec_version: v1
 
-agent_card:
+agent:
   name: OpenStudio MCP Sizing Agent
   description: AgentFactory-based agent wired to OpenStudio MCP tools.
   version: 0.1.0
+
+a2a:
+  url: http://localhost:9999
   defaultInputModes: [text]
   defaultOutputModes: [text]
   capabilities:
     streaming: true
     pushNotifications: false
-  supportedInterfaces:
-    - url: http://localhost:9999
-      protocolBinding: JSONRPC
-      protocolVersion: "1.0"
   skills:
     - id: hvac_sizing_assistant
       name: OpenStudio HVAC Sizing Assistant
@@ -279,9 +299,32 @@ budget:
 
 Required string. Currently only `v1` is supported.
 
-### `agent_card`
+### `agent`
 
-Required object. This is the public A2A 1.0 agent card, passed as a plain
+Preferred required object for a new YAML spec. It is runtime identity, not A2A
+discovery metadata.
+
+- `name`: Display name used by the runtime.
+- `description`: Short description of what the agent does.
+- `version`: Optional runtime version string.
+
+### `a2a`
+
+Optional object that makes an `agent` spec bootable through
+`load_a2a_server_from_yaml(...)`.
+
+- `url`: Required A2A endpoint URL.
+- `protocolBinding`: Optional protocol binding; defaults to `JSONRPC`.
+- `protocolVersion`: Optional protocol version; defaults to `1.0`.
+- `version`, `defaultInputModes`, `defaultOutputModes`, `capabilities`, and
+  `skills`: Optional A2A public-card metadata.
+
+The loader generates `supportedInterfaces` from `a2a.url`.
+
+### Legacy `agent_card`
+
+Supported for backward compatibility. Use it instead of `agent`, not alongside
+it. A legacy card remains a full public A2A 1.0 agent card passed as a plain
 dictionary into the runtime.
 
 Required fields:
@@ -332,7 +375,8 @@ raises an error if a referenced environment variable is not set. This applies to
 keys such as `api_key`, `*_api_key`, `*_token`, `*_password`, `*_secret`,
 `*_access_key`, and `*_private_key` in model settings and nested configs such as
 tools or retrievers. Placeholders in user-facing fields such as
-`instructions.text` and `agent_card.description` remain literal text.
+`instructions.text`, `agent.description`, and `agent_card.description` remain
+literal text.
 
 ```yaml
 model:
@@ -363,13 +407,14 @@ Optional object for the `A2AAgentServer` wrapper.
 
 - `log_dir`: Log directory. Defaults to `./logs`.
 - `base_url_path`: Optional mount path override. If omitted, the path from
-  `agent_card.supportedInterfaces[0].url` is used. If provided, the server
+  `a2a.url` or legacy `agent_card.supportedInterfaces[0].url` is used. If
+  provided, the server
   mounts the A2A routes at this path and advertises the same path in the
   returned agent card.
 - `health_check_path`: Health endpoint path. Defaults to `/health`.
 
-The server host and port are not configured here. They come from the agent card's
-primary supported interface URL.
+The server host and port are not configured here. They come from `a2a.url` or
+the legacy agent card's primary supported interface URL.
 
 ### `mcp`
 
@@ -405,6 +450,7 @@ Optional list. Each entry becomes a `SubAgentSpec` and exposes a delegation tool
 to the coordinator agent. Each entry must provide exactly one card source:
 
 - `spec_path`: Path to another YAML agent spec. The loader reads that spec's
+  generated A2A card; the referenced spec must define `a2a` or a legacy
   `agent_card`.
 - `card_path`: Path to a standalone JSON agent card.
 - `agent_card`: Inline A2A 1.0 agent card.
@@ -859,6 +905,12 @@ answer from one generated with missing retrieval or memory context. `before_turn
 and input assembly failures still abort the turn and trigger `on_turn_error`.
 
 ## Troubleshooting
+
+`A2A server loading requires 'a2a' configuration or a legacy 'agent_card'.`
+
+The YAML defines a standalone agent. Load it with
+`load_agent_factory_from_yaml(...)`, or add an `a2a` section before loading an
+A2A server.
 
 `agent_card.supportedInterfaces must contain at least one interface.`
 
