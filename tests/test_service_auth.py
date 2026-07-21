@@ -20,11 +20,11 @@ from automa_ai.service.auth import (
     CognitoAuthProvider,
     principal_from_claims,
 )
+from automa_ai.service.constants import IDENTITY_METADATA_STATE_KEY, PRINCIPAL_STATE_KEY
 from automa_ai.service.identity import Principal
 from automa_ai.service.middleware import (
     AuthMiddleware,
     AutomaServerCallContextBuilder,
-    PRINCIPAL_STATE_KEY,
 )
 
 
@@ -60,6 +60,17 @@ def test_auth_config_derives_jwks_url_without_duplicate_slash() -> None:
 def test_jwt_auth_config_requires_jwks_when_enabled() -> None:
     with pytest.raises(ValueError, match="jwks_url"):
         ServiceAuthConfig(enabled=True, provider="jwt", issuer="https://issuer")
+
+
+def test_auth_config_requires_algorithm_when_enabled() -> None:
+    with pytest.raises(ValueError, match="at least one JWT algorithm"):
+        ServiceAuthConfig(
+            enabled=True,
+            provider="jwt",
+            issuer="https://issuer",
+            jwks_url="https://issuer/.well-known/jwks.json",
+            algorithms=[],
+        )
 
 
 def test_principal_from_claims_uses_configured_claims() -> None:
@@ -180,7 +191,7 @@ def test_auth_middleware_attaches_principal_to_request_state() -> None:
     principal = Principal(subject="sub", user_id="user")
 
     async def endpoint(request):
-        return JSONResponse(request.state.automa_principal.to_metadata())
+        return JSONResponse(getattr(request.state, PRINCIPAL_STATE_KEY).to_metadata())
 
     app = Starlette(routes=[Route("/", endpoint)])
     app.add_middleware(AuthMiddleware, auth_provider=StaticAuthProvider(principal))
@@ -253,16 +264,20 @@ def test_context_builder_copies_principal_from_request_state() -> None:
     request.headers = Headers({})
     request.scope = {}
     request.state = Mock()
-    request.state.automa_principal = Principal(
-        subject="sub",
-        user_id="user",
-        tenant_id="tenant",
+    setattr(
+        request.state,
+        PRINCIPAL_STATE_KEY,
+        Principal(
+            subject="sub",
+            user_id="user",
+            tenant_id="tenant",
+        ),
     )
 
     context = AutomaServerCallContextBuilder().build(request)
 
     assert context.state[PRINCIPAL_STATE_KEY].user_id == "user"
-    assert context.state["automa_identity"]["auth.trusted"] is True
+    assert context.state[IDENTITY_METADATA_STATE_KEY]["auth.trusted"] is True
     assert context.tenant == "tenant"
 
 

@@ -8,10 +8,8 @@ from a2a.server.context import ServerCallContext
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 
 from automa_ai.service.auth import AuthError, AuthProvider
+from automa_ai.service.constants import IDENTITY_METADATA_STATE_KEY, PRINCIPAL_STATE_KEY
 from automa_ai.service.identity import Principal
-
-
-PRINCIPAL_STATE_KEY = "automa_principal"
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -43,7 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
                 status_code=exc.status_code,
             )
-        request.state.automa_principal = principal
+        setattr(request.state, PRINCIPAL_STATE_KEY, principal)
         return await call_next(request)
 
 
@@ -52,9 +50,9 @@ class AutomaServerCallContextBuilder(DefaultServerCallContextBuilder):
 
     def build(self, request: Request) -> ServerCallContext:
         context = super().build(request)
-        principal = getattr(request.state, "automa_principal", None)
+        principal = getattr(request.state, PRINCIPAL_STATE_KEY, None)
         if isinstance(principal, Principal):
             context.state[PRINCIPAL_STATE_KEY] = principal
-            context.state["automa_identity"] = principal.to_metadata()
+            context.state[IDENTITY_METADATA_STATE_KEY] = principal.to_metadata()
             context.tenant = principal.tenant_id or ""
         return context

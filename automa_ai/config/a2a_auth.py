@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+
+_HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+def normalize_http_header_name(header_name: str) -> str:
+    """Return a normalized HTTP header name or raise for an invalid field name."""
+    normalized_name = header_name.strip()
+    if not _HTTP_HEADER_NAME_RE.fullmatch(normalized_name):
+        raise ValueError("invalid header name")
+    return normalized_name
 
 
 class A2AClientAuthConfig(BaseModel):
@@ -53,13 +65,13 @@ class A2AClientAuthConfig(BaseModel):
             raise ValueError(
                 f"A2A API-key scheme '{self.scheme}' must declare a header name."
             )
-        header_name = header_name.strip()
-
         api_key = self.api_key.get_secret_value()
-        if not header_name or any(char.isspace() for char in header_name):
+        try:
+            header_name = normalize_http_header_name(header_name)
+        except ValueError as error:
             raise ValueError(
                 f"A2A API-key scheme '{self.scheme}' declares an invalid header name."
-            )
+            ) from error
         if "\r" in api_key or "\n" in api_key:
             raise ValueError(
                 "A2A API key must not contain carriage returns or newlines."

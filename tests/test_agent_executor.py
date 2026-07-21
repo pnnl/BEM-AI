@@ -10,7 +10,7 @@ from a2a.types import Message, Part, Role
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.service.identity import Principal
-from automa_ai.service.middleware import PRINCIPAL_STATE_KEY
+from automa_ai.service.constants import PRINCIPAL_STATE_KEY
 
 
 def _make_message(

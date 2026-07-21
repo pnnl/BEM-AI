@@ -25,7 +25,7 @@ from google.protobuf.json_format import MessageToDict
 
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.setup_logging import setup_file_logger
-from automa_ai.service.middleware import PRINCIPAL_STATE_KEY
+from automa_ai.service.constants import PRINCIPAL_STATE_KEY
 
 
 def _extract_attachments_from_message(message) -> list[dict]:

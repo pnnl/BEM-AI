@@ -24,7 +24,7 @@ from automa_ai.common.agent_registry import (
     normalize_a2a_card_for_server,
 )
 from automa_ai.common.mcp_registry import MCPServerConfig
-from automa_ai.config.a2a_auth import A2AClientAuthConfig
+from automa_ai.config.a2a_auth import A2AClientAuthConfig, normalize_http_header_name
 from automa_ai.config.service import ServiceConfig
 
 
@@ -203,11 +203,12 @@ class SubAgentYamlSpec(BaseModel):
 
         headers: dict[str, str] = {}
         for name, value in self.request_headers.items():
-            header_name = name.strip()
-            if not header_name or any(char.isspace() for char in header_name):
+            try:
+                header_name = normalize_http_header_name(name)
+            except ValueError as error:
                 raise ValueError(
                     "subagent request_headers contains an invalid header name."
-                )
+                ) from error
             header_value = value.get_secret_value()
             if "\r" in header_value or "\n" in header_value:
                 raise ValueError(

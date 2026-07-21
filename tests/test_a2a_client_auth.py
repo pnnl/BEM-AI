@@ -73,6 +73,7 @@ def test_api_key_auth_rejects_card_without_matching_scheme() -> None:
     [
         ("x-api-key\r\nx-injected: value", "test-api-key", "invalid header name"),
         ("x api-key", "test-api-key", "invalid header name"),
+        ("x-api-key:", "test-api-key", "invalid header name"),
         ("x-api-key", "test-api-key\r\nx-injected: value", "must not contain"),
     ],
 )
@@ -215,10 +216,13 @@ def test_yaml_subagent_normalizes_custom_request_header_names() -> None:
     }
 
 
-def test_yaml_subagent_rejects_custom_request_header_name_with_whitespace() -> None:
+@pytest.mark.parametrize("header_name", ["x api-key", "x-api-key:"])
+def test_yaml_subagent_rejects_invalid_custom_request_header_name(
+    header_name: str,
+) -> None:
     subagent = SubAgentYamlSpec(
         agent_card=_remote_card(),
-        request_headers={"x api-key": "test-api-key"},
+        request_headers={header_name: "test-api-key"},
     )
 
     with pytest.raises(ValueError, match="invalid header name"):

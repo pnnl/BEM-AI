@@ -40,6 +40,9 @@ class ServiceAuthConfig(BaseModel):
         if not self.enabled:
             return self
 
+        if not self.algorithms:
+            raise ValueError("Service auth requires at least one JWT algorithm.")
+
         if self.provider == "cognito":
             if self.region and self.user_pool_id:
                 return self
