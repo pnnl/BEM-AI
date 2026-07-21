@@ -481,6 +481,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     turn.context_id,
                     turn.user_id,
                     turn.task_id,
+                    metadata=metadata,
                 )
                 self.telemetry.event(
                     "message",
@@ -614,6 +615,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                 turn.context_id,
                 turn.user_id,
                 turn.task_id,
+                metadata=metadata
             )
             logger.info(
                 "Running planner agent stream for session %s %s with input %s",
@@ -1085,6 +1087,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         context_id: str,
         user_id: str | None = None,
         task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if (
             AgentCoreMemorySaver is not None
@@ -1105,6 +1108,8 @@ class GenericLangGraphChatAgent(BaseAgent):
             configurable["actor_id"] = user_id
         if task_id is not None:
             configurable["task_id"] = task_id
+        if metadata is not None:
+            configurable["metadata"] = metadata
 
         config: dict[str, Any] = {"configurable": configurable}
         if self.telemetry.enabled:

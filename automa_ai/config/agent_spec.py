@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.agent_registry import A2AAgentServer, normalize_a2a_card_for_server
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.config.a2a_auth import A2AClientAuthConfig
 from automa_ai.config.service import ServiceConfig
@@ -92,6 +92,33 @@ class RuntimeSpec(BaseModel):
     debug: bool = False
 
 
+class AgentIdentitySpec(BaseModel):
+    """Runtime identity for an agent that is not necessarily A2A-served."""
+
+    name: str
+    description: str
+    version: str | None = None
+
+
+class A2ASpec(BaseModel):
+    """Optional public A2A configuration for a YAML-defined agent."""
+
+    url: str
+    protocol_binding: str = Field(default="JSONRPC", alias="protocolBinding")
+    protocol_version: str = Field(default="1.0", alias="protocolVersion")
+    version: str | None = None
+    default_input_modes: list[str] = Field(
+        default_factory=lambda: ["text"], alias="defaultInputModes"
+    )
+    default_output_modes: list[str] = Field(
+        default_factory=lambda: ["text"], alias="defaultOutputModes"
+    )
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    skills: list[dict[str, Any]] | None = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class ServerSpec(BaseModel):
     """A2A server wrapper options."""
 
@@ -153,7 +180,7 @@ class SubAgentYamlSpec(BaseModel):
 
         if self.spec_path is not None:
             spec_path = _resolve_path(self.spec_path, base_dir=base_dir)
-            return deepcopy(YamlAgentSpec.from_yaml_file(spec_path).agent_card)
+            return YamlAgentSpec.from_yaml_file(spec_path).advertised_a2a_card()
 
         assert self.card_path is not None
         card_path = _resolve_path(self.card_path, base_dir=base_dir)
@@ -207,10 +234,12 @@ class SubAgentYamlSpec(BaseModel):
 
 
 class YamlAgentSpec(BaseModel):
-    """One YAML file describing one AUTOMA-AI agent server."""
+    """One YAML file describing one AUTOMA-AI agent, optionally A2A-served."""
 
     spec_version: Literal["v1"] = "v1"
-    agent_card: dict[str, Any]
+    agent: AgentIdentitySpec | None = None
+    a2a: A2ASpec | None = None
+    agent_card: dict[str, Any] | None = None
     instructions: InstructionsSpec
     model: ModelSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
@@ -234,8 +263,13 @@ class YamlAgentSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_agent_card(self) -> "YamlAgentSpec":
-        _validate_a2a_card(self.agent_card, label="agent_card")
+    def _validate_identity_and_a2a(self) -> "YamlAgentSpec":
+        if self.a2a is not None and self.agent is None:
+            raise ValueError("'a2a' requires the new 'agent' section.")
+        if (self.agent is None) == (self.agent_card is None):
+            raise ValueError("requires exactly one of 'agent' or 'agent_card'.")
+        if self.agent_card is not None:
+            _validate_a2a_card(self.agent_card, label="agent_card")
         return self
 
     @classmethod
@@ -279,6 +313,58 @@ class YamlAgentSpec(BaseModel):
         """Return the final system instructions passed into ``AgentFactory``."""
         return self.instructions.resolve(base_dir=self._base_dir)
 
+    def runtime_card(self) -> dict[str, Any]:
+        """Return the card-shaped runtime metadata required by ``AgentFactory``."""
+        if self.agent_card is not None:
+            return deepcopy(self.agent_card)
+
+        assert self.agent is not None
+        card: dict[str, Any] = {
+            "name": self.agent.name,
+            "description": self.agent.description,
+        }
+        if self.agent.version is not None:
+            card["version"] = self.agent.version
+        return card
+
+    def a2a_card(self) -> dict[str, Any]:
+        """Build the public A2A card, or fail when this is a standalone agent."""
+        if self.agent_card is not None:
+            return deepcopy(self.agent_card)
+        if self.a2a is None:
+            raise ValueError(
+                "A2A server loading requires 'a2a' configuration or a legacy "
+                "'agent_card'. Use load_agent_factory_from_yaml() for standalone agents."
+            )
+
+        assert self.agent is not None
+        card: dict[str, Any] = {
+            "name": self.agent.name,
+            "description": self.agent.description,
+            "version": self.a2a.version or self.agent.version or "0.1.0",
+            "defaultInputModes": self.a2a.default_input_modes,
+            "defaultOutputModes": self.a2a.default_output_modes,
+            "capabilities": deepcopy(self.a2a.capabilities),
+            "supportedInterfaces": [
+                {
+                    "url": self.a2a.url,
+                    "protocolBinding": self.a2a.protocol_binding,
+                    "protocolVersion": self.a2a.protocol_version,
+                }
+            ],
+        }
+        if self.a2a.skills is not None:
+            card["skills"] = deepcopy(self.a2a.skills)
+        _validate_a2a_card(card, label="a2a")
+        return card
+
+    def advertised_a2a_card(self) -> dict[str, Any]:
+        """Return the public A2A card exactly as this spec's server advertises it."""
+        return normalize_a2a_card_for_server(
+            self.a2a_card(),
+            base_url_path=self.server.base_url_path,
+        )
+
     def to_factory_kwargs(self) -> dict[str, Any]:
         """Map this YAML spec onto the existing ``AgentFactory`` constructor.
 
@@ -303,7 +389,7 @@ class YamlAgentSpec(BaseModel):
             }
 
         return {
-            "card": deepcopy(self.agent_card),
+            "card": self.runtime_card(),
             "instructions": self.resolve_instructions(),
             "model_name": self.model.name,
             "agent_type": self.runtime.agent_type,
@@ -349,11 +435,12 @@ class YamlAgentSpec(BaseModel):
         """Build a single ``A2AAgentServer`` from the YAML spec.
 
         Host, port, and default base path are derived by ``A2AAgentServer`` from
-        ``agent_card.supportedInterfaces[0].url``.
+        ``supportedInterfaces[0].url`` on the public A2A card.
         """
+        card = self.a2a_card()
         return A2AAgentServer(
             agent_builder=self.to_agent_factory(),
-            card=deepcopy(self.agent_card),
+            card=card,
             log_dir=self.server.log_dir,
             base_url_path=self.server.base_url_path,
             health_check_path=self.server.health_check_path,

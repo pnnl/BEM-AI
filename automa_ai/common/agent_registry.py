@@ -105,6 +105,30 @@ def _replace_agent_url_path(url: str, base_url_path: str | None) -> str:
     )
 
 
+def normalize_a2a_card_for_server(
+    card: AgentCard | Dict[str, Any],
+    base_url_path: str | None = None,
+) -> Dict[str, Any]:
+    """Return the public card with the interface URL advertised by the server.
+
+    ``base_url_path`` overrides the path embedded in the primary interface URL.
+    This is shared by server bootstrap and YAML subagent resolution so clients
+    receive the same endpoint that the server mounts and advertises.
+    """
+    card_data = _normalize_card_data(card)
+    primary_url = _get_primary_interface_url(card_data)
+    parsed_url = _parse_agent_url(primary_url)
+    effective_base_path = _normalize_base_path(
+        base_url_path if base_url_path is not None else parsed_url.path
+    )
+    if effective_base_path:
+        _get_primary_interface(card_data)["url"] = _replace_agent_url_path(
+            primary_url,
+            effective_base_path,
+        )
+    return card_data
+
+
 def _close_agent(agent: BaseAgent) -> None:
     close_fn = getattr(agent, "aclose", None) or getattr(agent, "close", None)
     if not callable(close_fn):
@@ -135,19 +159,13 @@ class A2AAgentServer:
     ):
         self.agent_builder = agent_builder
         self.executor_builder = executor_builder or _build_generic_agent_executor
-        self._card_data = _normalize_card_data(card)
+        self._card_data = normalize_a2a_card_for_server(card, base_url_path)
         self.name = self._card_data["name"]
         parsed_url = _parse_agent_url(_get_primary_interface_url(self._card_data))
         self.host_name, self.port = parsed_url.hostname, parsed_url.port
         self.base_url_path = _normalize_base_path(
             base_url_path if base_url_path is not None else parsed_url.path
         )
-        if self.base_url_path:
-            primary_interface = _get_primary_interface(self._card_data)
-            primary_interface["url"] = _replace_agent_url_path(
-                primary_interface["url"],
-                self.base_url_path,
-            )
         self.log_dir = log_dir
         self.server: Optional[uvicorn.Server] = None
         self.shutdown_event = asyncio.Event()

@@ -421,6 +421,44 @@ subagents:
     assert kwargs["subagent_config"][0].agent_card["name"] == "Math Agent"
 
 
+def test_yaml_subagent_spec_path_uses_server_advertised_url(tmp_path: Path) -> None:
+    subagent_path = tmp_path / "subagent.yaml"
+    subagent_path.write_text(
+        """
+spec_version: v1
+agent:
+  name: Routed Subagent
+  description: Serves from an overridden mount path.
+a2a:
+  url: http://localhost:32124/original
+server:
+  base_url_path: /delegated
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+""",
+        encoding="utf-8",
+    )
+    coordinator_path = tmp_path / "coordinator.yaml"
+    coordinator_path.write_text(
+        _base_yaml()
+        + """
+subagents:
+  - spec_path: ./subagent.yaml
+""",
+        encoding="utf-8",
+    )
+
+    spec = YamlAgentSpec.from_yaml_file(coordinator_path)
+    subagent_card = spec.to_factory_kwargs()["subagent_config"][0].agent_card
+
+    assert subagent_card["supportedInterfaces"][0]["url"] == (
+        "http://localhost:32124/delegated/"
+    )
+
+
 def test_yaml_agent_spec_loads_subagent_from_card_path(tmp_path: Path) -> None:
     card_path = tmp_path / "math_card.json"
     card_path.write_text(
@@ -636,6 +674,106 @@ def test_load_agent_factory_from_existing_spec(tmp_path: Path) -> None:
 
     assert factory.model_name == "llama3.1:8b"
     assert factory.instructions == "be helpful"
+
+
+def test_load_standalone_agent_factory_from_yaml() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        """
+spec_version: v1
+agent:
+  name: standalone-agent
+  description: Runs in-process without A2A discovery.
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+"""
+    )
+
+    factory = load_agent_factory_from_yaml(spec)
+
+    assert factory._card_data == {
+        "name": "standalone-agent",
+        "description": "Runs in-process without A2A discovery.",
+    }
+    assert factory.card.name == "standalone-agent"
+
+
+def test_load_a2a_server_from_new_agent_and_a2a_spec() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        """
+spec_version: v1
+agent:
+  name: a2a-agent
+  description: Runs through A2A.
+  version: 2.0.0
+a2a:
+  url: http://localhost:32124/agent
+  capabilities:
+    streaming: true
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+"""
+    )
+
+    server = load_a2a_server_from_yaml(spec)
+
+    assert server.name == "a2a-agent"
+    assert server.port == 32124
+    card_data = MessageToDict(server.card, preserving_proto_field_name=False)
+    assert card_data["supportedInterfaces"][0]["url"] == "http://localhost:32124/agent/"
+    assert card_data["capabilities"]["streaming"] is True
+
+
+def test_load_a2a_server_rejects_standalone_agent() -> None:
+    spec = YamlAgentSpec.from_yaml_text(
+        """
+spec_version: v1
+agent:
+  name: standalone-agent
+  description: Runs in-process without A2A discovery.
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+"""
+    )
+
+    with pytest.raises(ValueError, match="requires 'a2a' configuration"):
+        load_a2a_server_from_yaml(spec)
+
+
+def test_yaml_agent_spec_rejects_agent_and_legacy_card() -> None:
+    with pytest.raises(ValueError, match="exactly one of 'agent' or 'agent_card'"):
+        YamlAgentSpec.from_yaml_text(
+            _base_yaml()
+            + """
+agent:
+  name: duplicate-identity
+  description: This cannot coexist with agent_card.
+"""
+        )
+
+
+def test_yaml_agent_spec_rejects_a2a_without_agent() -> None:
+    with pytest.raises(ValueError, match="requires the new 'agent' section"):
+        YamlAgentSpec.from_yaml_text(
+            """
+spec_version: v1
+a2a:
+  url: http://localhost:32124
+instructions:
+  text: be helpful
+model:
+  provider: ollama
+  name: llama3.1:8b
+"""
+        )
 
 
 def test_load_a2a_server_from_yaml_uses_supported_interface(tmp_path: Path) -> None:

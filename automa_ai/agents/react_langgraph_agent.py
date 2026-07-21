@@ -123,7 +123,7 @@ class GenericLangGraphReactAgent(BaseAgent):
         user_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ):
-        config = self._build_runnable_config(context_id, user_id)
+        config = self._build_runnable_config(context_id, user_id, metadata=metadata)
         # queue for tool/subagent streaming
         subagent_event_queue: Queue[StreamEvent] = Queue()
 
@@ -182,7 +182,7 @@ class GenericLangGraphReactAgent(BaseAgent):
         # Assemble message
         inputs = {"messages": [{"role": "user", "content": augmented_query}]}
 
-        config = self._build_runnable_config(context_id, user_id)
+        config = self._build_runnable_config(context_id, user_id, metadata=metadata)
         self.logger.info(
             f"Running planner agent stream for session {context_id} {task_id} with input {query}"
         )
@@ -419,10 +419,13 @@ class GenericLangGraphReactAgent(BaseAgent):
         self,
         context_id: str,
         user_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         configurable = {"thread_id": context_id}
 
         if user_id is not None:
             configurable["actor_id"] = user_id
+        if metadata is not None:
+            configurable["metadata"] = metadata
 
         return {"configurable": configurable}
