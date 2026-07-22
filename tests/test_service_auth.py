@@ -18,6 +18,7 @@ from automa_ai.service.auth import (
     AuthError,
     AuthProvider,
     CognitoAuthProvider,
+    JWTAuthProvider,
     principal_from_claims,
 )
 from automa_ai.service.constants import IDENTITY_METADATA_STATE_KEY, PRINCIPAL_STATE_KEY
@@ -103,6 +104,64 @@ class FakeSigningKey:
 class FakeJWKClient:
     def get_signing_key_from_jwt(self, token: str):
         return FakeSigningKey()
+
+
+def test_jwt_provider_disables_audience_validation_when_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decode_kwargs = {}
+
+    def fake_decode(token, signing_key, **kwargs):
+        decode_kwargs.update(kwargs)
+        return {"sub": "subject", "aud": "unexpected-audience"}
+
+    import jwt
+
+    monkeypatch.setattr(jwt, "decode", fake_decode)
+    provider = JWTAuthProvider(
+        ServiceAuthConfig(
+            enabled=True,
+            issuer="https://issuer",
+            jwks_url="https://issuer/.well-known/jwks.json",
+        ),
+        ServiceIdentityConfig(),
+        jwk_client=FakeJWKClient(),
+    )
+
+    principal = provider.authenticate("Bearer token")
+
+    assert principal.user_id == "subject"
+    assert decode_kwargs["options"] == {"verify_aud": False}
+    assert "audience" not in decode_kwargs
+
+
+def test_jwt_provider_validates_configured_audience(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decode_kwargs = {}
+
+    def fake_decode(token, signing_key, **kwargs):
+        decode_kwargs.update(kwargs)
+        return {"sub": "subject", "aud": "configured-audience"}
+
+    import jwt
+
+    monkeypatch.setattr(jwt, "decode", fake_decode)
+    provider = JWTAuthProvider(
+        ServiceAuthConfig(
+            enabled=True,
+            issuer="https://issuer",
+            jwks_url="https://issuer/.well-known/jwks.json",
+            audience="configured-audience",
+        ),
+        ServiceIdentityConfig(),
+        jwk_client=FakeJWKClient(),
+    )
+
+    provider.authenticate("Bearer token")
+
+    assert decode_kwargs["audience"] == "configured-audience"
+    assert "options" not in decode_kwargs
 
 
 def test_cognito_access_token_validates_client_id_not_audience(

@@ -69,14 +69,16 @@ class JWTAuthProvider(AuthProvider):
 
         try:
             signing_key = self.jwk_client.get_signing_key_from_jwt(token).key
-            return jwt.decode(
-                token,
-                signing_key,
-                algorithms=self.auth_config.algorithms,
-                audience=self.auth_config.audience,
-                issuer=self.auth_config.resolved_issuer,
-                leeway=self.auth_config.leeway_seconds,
-            )
+            decode_kwargs: dict[str, Any] = {
+                "algorithms": self.auth_config.algorithms,
+                "issuer": self.auth_config.resolved_issuer,
+                "leeway": self.auth_config.leeway_seconds,
+            }
+            if self.auth_config.audience is not None:
+                decode_kwargs["audience"] = self.auth_config.audience
+            else:
+                decode_kwargs["options"] = {"verify_aud": False}
+            return jwt.decode(token, signing_key, **decode_kwargs)
         except InvalidTokenError as exc:
             raise AuthError("Invalid bearer token.", status_code=401) from exc
         except Exception as exc:
