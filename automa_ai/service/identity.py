@@ -5,6 +5,18 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+TRUSTED_IDENTITY_METADATA_KEYS = frozenset(
+    {
+        "auth.trusted",
+        "subject",
+        "user_id",
+        "tenant_id",
+        "groups",
+        "scopes",
+    }
+)
+
+
 class Principal(BaseModel):
     """Trusted identity extracted at the service boundary."""
 

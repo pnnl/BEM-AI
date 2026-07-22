@@ -81,6 +81,31 @@ async def test_executor_extracts_user_id_from_metadata():
 
 
 @pytest.mark.asyncio
+async def test_executor_removes_untrusted_identity_metadata():
+    agent, captured = _make_capturing_agent()
+    executor = GenericAgentExecutor(agent)
+
+    context = _make_context(
+        metadata={
+            "auth.trusted": True,
+            "subject": "spoofed-subject",
+            "user_id": "spoofed-user",
+            "tenant_id": "spoofed-tenant",
+            "groups": ["admins"],
+            "scopes": ["automa:admin"],
+            "userId": "legacy-client-user",
+            "safe": "value",
+        }
+    )
+    event_queue = AsyncMock(spec=EventQueue)
+
+    await executor.execute(context, event_queue)
+
+    assert captured["user_id"] == "legacy-client-user"
+    assert captured["metadata"] == {"userId": "legacy-client-user", "safe": "value"}
+
+
+@pytest.mark.asyncio
 async def test_executor_prefers_trusted_identity_over_client_metadata():
     agent, captured = _make_capturing_agent()
     executor = GenericAgentExecutor(agent)
