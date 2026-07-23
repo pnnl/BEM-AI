@@ -64,9 +64,10 @@ class ServiceAuthConfig(BaseModel):
             issuer = self.issuer.strip().rstrip("/")
             return issuer or None
         if self.provider == "cognito" and self.region and self.user_pool_id:
-            return (
-                f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}"
-            )
+            region = self.region.strip()
+            user_pool_id = self.user_pool_id.strip()
+            if region and user_pool_id:
+                return f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}"
         return None
 
     @property
