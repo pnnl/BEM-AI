@@ -20,7 +20,8 @@ from a2a.types import (
     UnsupportedOperationError,
     InvalidParamsError,
 )
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Struct
 
 
 from automa_ai.common.base_agent import BaseAgent
@@ -126,6 +127,7 @@ class GenericAgentExecutor(AgentExecutor):
         attachments = _extract_attachments_from_message(context.message)
         if attachments:
             metadata["attachments"] = attachments
+        context.message.metadata.CopyFrom(ParseDict(metadata, Struct()))
         task = context.current_task
 
         if not task:

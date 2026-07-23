@@ -103,6 +103,7 @@ async def test_executor_removes_untrusted_identity_metadata():
 
     assert captured["user_id"] == "legacy-client-user"
     assert captured["metadata"] == {"userId": "legacy-client-user", "safe": "value"}
+    assert MessageToDict(context.message.metadata) == captured["metadata"]
 
 
 @pytest.mark.asyncio
@@ -139,3 +140,4 @@ async def test_executor_prefers_trusted_identity_over_client_metadata():
     assert captured["metadata"]["tenant_id"] == "trusted-tenant"
     assert captured["metadata"]["groups"] == ["operators"]
     assert captured["metadata"]["scopes"] == ["automa:invoke"]
+    assert MessageToDict(context.message.metadata) == captured["metadata"]
