@@ -54,5 +54,5 @@ class AutomaServerCallContextBuilder(DefaultServerCallContextBuilder):
         if isinstance(principal, Principal):
             context.state[PRINCIPAL_STATE_KEY] = principal
             context.state[IDENTITY_METADATA_STATE_KEY] = principal.to_metadata()
-            context.tenant = principal.tenant_id or ""
-        return context
+            if principal.tenant_id:
+                context.tenant = principal.tenant_id
