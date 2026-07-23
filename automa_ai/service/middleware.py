@@ -56,3 +56,4 @@ class AutomaServerCallContextBuilder(DefaultServerCallContextBuilder):
             context.state[IDENTITY_METADATA_STATE_KEY] = principal.to_metadata()
             if principal.tenant_id:
                 context.tenant = principal.tenant_id
+        return context
