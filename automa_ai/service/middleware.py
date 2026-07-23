@@ -4,12 +4,30 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from a2a.auth.user import User
 from a2a.server.context import ServerCallContext
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 
 from automa_ai.service.auth import AuthError, AuthProvider
 from automa_ai.service.constants import IDENTITY_METADATA_STATE_KEY, PRINCIPAL_STATE_KEY
 from automa_ai.service.identity import Principal
+
+
+class PrincipalUser(User):
+    """Expose a verified principal through the A2A task ownership interface."""
+
+    def __init__(self, principal: Principal) -> None:
+        self.principal = principal
+
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def user_name(self) -> str:
+        if self.principal.tenant_id:
+            return f"{self.principal.tenant_id}:{self.principal.user_id}"
+        return self.principal.user_id
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -52,6 +70,7 @@ class AutomaServerCallContextBuilder(DefaultServerCallContextBuilder):
         context = super().build(request)
         principal = getattr(request.state, PRINCIPAL_STATE_KEY, None)
         if isinstance(principal, Principal):
+            context.user = PrincipalUser(principal)
             context.state[PRINCIPAL_STATE_KEY] = principal
             context.state[IDENTITY_METADATA_STATE_KEY] = principal.to_metadata()
             if principal.tenant_id:

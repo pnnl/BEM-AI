@@ -350,6 +350,8 @@ def test_context_builder_copies_principal_from_request_state() -> None:
 
     assert context.state[PRINCIPAL_STATE_KEY].user_id == "user"
     assert context.state[IDENTITY_METADATA_STATE_KEY]["auth.trusted"] is True
+    assert context.user.is_authenticated is True
+    assert context.user.user_name == "tenant:user"
     assert context.tenant == "tenant"
 
 

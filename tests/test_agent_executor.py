@@ -81,7 +81,7 @@ async def test_executor_extracts_user_id_from_metadata():
 
 
 @pytest.mark.asyncio
-async def test_executor_removes_untrusted_identity_metadata():
+async def test_executor_removes_untrusted_identity_metadata_but_preserves_legacy_user_id():
     agent, captured = _make_capturing_agent()
     executor = GenericAgentExecutor(agent)
 
@@ -89,7 +89,7 @@ async def test_executor_removes_untrusted_identity_metadata():
         metadata={
             "auth.trusted": True,
             "subject": "spoofed-subject",
-            "user_id": "spoofed-user",
+            "user_id": "legacy-subagent-user",
             "tenant_id": "spoofed-tenant",
             "groups": ["admins"],
             "scopes": ["automa:admin"],
@@ -101,8 +101,12 @@ async def test_executor_removes_untrusted_identity_metadata():
 
     await executor.execute(context, event_queue)
 
-    assert captured["user_id"] == "legacy-client-user"
-    assert captured["metadata"] == {"userId": "legacy-client-user", "safe": "value"}
+    assert captured["user_id"] == "legacy-subagent-user"
+    assert captured["metadata"] == {
+        "user_id": "legacy-subagent-user",
+        "userId": "legacy-client-user",
+        "safe": "value",
+    }
     assert MessageToDict(context.message.metadata) == captured["metadata"]
 
 
