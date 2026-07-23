@@ -46,7 +46,7 @@ class ServiceAuthConfig(BaseModel):
         if self.provider == "cognito":
             if self.region and self.user_pool_id:
                 return self
-            if self.resolved_issuer and self.jwks_url:
+            if self.resolved_issuer and self.resolved_jwks_url:
                 return self
             raise ValueError(
                 "Cognito auth requires region/user_pool_id or explicit issuer/jwks_url."
