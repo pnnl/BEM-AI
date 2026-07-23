@@ -14,13 +14,18 @@ import re
 from typing import Any, Literal, TypeAlias
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer, normalize_a2a_card_for_server
+from automa_ai.common.agent_registry import (
+    A2AAgentServer,
+    normalize_a2a_card_for_server,
+)
 from automa_ai.common.mcp_registry import MCPServerConfig
+from automa_ai.config.a2a_auth import A2AClientAuthConfig, normalize_http_header_name
+from automa_ai.config.service import ServiceConfig
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -147,6 +152,8 @@ class SubAgentYamlSpec(BaseModel):
     agent_card: dict[str, Any] | None = None
     spec_path: str | None = None
     card_path: str | None = None
+    auth: A2AClientAuthConfig | None = None
+    request_headers: dict[str, SecretStr] | None = None
 
     @model_validator(mode="after")
     def _validate_single_card_source(self) -> "SubAgentYamlSpec":
@@ -159,10 +166,16 @@ class SubAgentYamlSpec(BaseModel):
             raise ValueError(
                 "subagent requires exactly one of 'agent_card', 'spec_path', or 'card_path'."
             )
+        if self.auth is not None and self.request_headers is not None:
+            raise ValueError(
+                "subagent may define either auth or request_headers, not both."
+            )
         return self
 
     def resolve_agent_card(self, *, base_dir: Path) -> dict[str, Any]:
         """Resolve the subagent card from an inline card, YAML spec, or JSON card file."""
+        # TODO: Support remote Agent Card discovery from
+        # /.well-known/agent-card.json for subagents configured by URL.
         if self.agent_card is not None:
             card = deepcopy(self.agent_card)
             _validate_a2a_card(card, label="subagent.agent_card")
@@ -177,6 +190,32 @@ class SubAgentYamlSpec(BaseModel):
         card = json.loads(card_path.read_text(encoding="utf-8"))
         _validate_a2a_card(card, label=f"subagent.card_path '{card_path}'")
         return card
+
+    def resolve_request_headers(
+        self,
+        agent_card: dict[str, Any],
+    ) -> dict[str, str] | None:
+        """Build either card-derived or explicitly configured request headers."""
+        if self.auth is not None:
+            return self.auth.request_headers(agent_card)
+        if self.request_headers is None:
+            return None
+
+        headers: dict[str, str] = {}
+        for name, value in self.request_headers.items():
+            try:
+                header_name = normalize_http_header_name(name)
+            except ValueError as error:
+                raise ValueError(
+                    "subagent request_headers contains an invalid header name."
+                ) from error
+            header_value = value.get_secret_value()
+            if "\r" in header_value or "\n" in header_value:
+                raise ValueError(
+                    "subagent request_headers contains an invalid header value."
+                )
+            headers[header_name] = header_value
+        return headers
 
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
@@ -195,6 +234,7 @@ class SubAgentYamlSpec(BaseModel):
             name=name,
             description=description,
             agent_card=agent_card,
+            request_headers=self.resolve_request_headers(agent_card),
         )
 
 
@@ -209,6 +249,7 @@ class YamlAgentSpec(BaseModel):
     model: ModelSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     server: ServerSpec = Field(default_factory=ServerSpec)
+    service: ServiceConfig = Field(default_factory=ServiceConfig)
 
     mcp: MCPConfigSpec | None = None
     subagents: list[SubAgentYamlSpec] = Field(default_factory=list)
@@ -408,6 +449,7 @@ class YamlAgentSpec(BaseModel):
             log_dir=self.server.log_dir,
             base_url_path=self.server.base_url_path,
             health_check_path=self.server.health_check_path,
+            service_config=self.service,
         )
 
 
@@ -458,6 +500,8 @@ def _should_resolve_env_placeholders(path: tuple[str, ...]) -> bool:
     """Return true for YAML keys intended to carry secrets or credentials."""
     if not path:
         return False
+    if "request_headers" in path:
+        return True
     key = path[-1].lower()
     return key in _ENV_PLACEHOLDER_KEY_NAMES or key.endswith(
         _ENV_PLACEHOLDER_KEY_SUFFIXES

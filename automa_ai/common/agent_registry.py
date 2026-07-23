@@ -14,13 +14,16 @@ from a2a.server.routes.agent_card_routes import create_agent_card_routes
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard
-from a2a.utils.constants import DEFAULT_RPC_URL
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, DEFAULT_RPC_URL
 from a2a.server.agent_execution import AgentExecutor
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.utils import wait_for_port
 from automa_ai.common.setup_logging import _init_child_logging
+from automa_ai.config.service import ServiceConfig
+from automa_ai.service import AuthMiddleware, AutomaServerCallContextBuilder
+from automa_ai.service.auth import build_auth_provider
 
 
 logger = logging.getLogger(__name__)
@@ -151,6 +154,7 @@ class A2AAgentServer:
         log_dir: str = "./logs",
         base_url_path: str | None = None,
         health_check_path: str = "/health",
+        service_config: ServiceConfig | Dict[str, Any] | None = None,
         executor_builder: Callable[[BaseAgent], AgentExecutor] | None = None,
     ):
         self.agent_builder = agent_builder
@@ -167,6 +171,7 @@ class A2AAgentServer:
         self.shutdown_event = asyncio.Event()
         self.health_check_path = health_check_path
         self._agent: Optional[BaseAgent] = None
+        self.service_config = ServiceConfig.from_value(service_config)
 
     @property
     def card(self) -> AgentCard:
@@ -206,6 +211,7 @@ class A2AAgentServer:
                 *create_jsonrpc_routes(
                     request_handler=request_handler,
                     rpc_url=DEFAULT_RPC_URL,
+                    context_builder=AutomaServerCallContextBuilder(),
                 ),
             ]
             a2a_app = Starlette(routes=a2a_routes)
@@ -215,6 +221,17 @@ class A2AAgentServer:
                 Mount(self.base_url_path or "/", app=a2a_app),
             ]
             app = Starlette(routes=routes)
+            app.add_middleware(
+                AuthMiddleware,
+                auth_provider=build_auth_provider(
+                    self.service_config.auth,
+                    self.service_config.identity,
+                ),
+                public_paths=[
+                    self.health_check_path,
+                    f"{self.base_url_path or ''}{AGENT_CARD_WELL_KNOWN_PATH}",
+                ],
+            )
 
             if self.base_url_path:
                 logger.info("Mounting A2A server at base path %s", self.base_url_path)
