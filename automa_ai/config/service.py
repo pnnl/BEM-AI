@@ -72,7 +72,8 @@ class ServiceAuthConfig(BaseModel):
     @property
     def resolved_jwks_url(self) -> str | None:
         if self.jwks_url:
-            return self.jwks_url
+            jwks_url = self.jwks_url.strip()
+            return jwks_url or None
         issuer = self.resolved_issuer
         return f"{issuer.rstrip('/')}/.well-known/jwks.json" if issuer else None
 
