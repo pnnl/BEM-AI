@@ -77,6 +77,7 @@ def test_default_executor_builder_is_picklable_for_spawn():
 def test_server_run_closes_sync_agent(monkeypatch):
     calls: list[str] = []
     context_builders = []
+    started_apps = []
 
     class DummyAgent:
         agent_name = "dummy"
@@ -100,7 +101,11 @@ def test_server_run_closes_sync_agent(monkeypatch):
         lambda *args, **kwargs: context_builders.append(kwargs.get("context_builder"))
         or [],
     )
-    monkeypatch.setattr(agent_registry.uvicorn, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_registry.uvicorn,
+        "run",
+        lambda app, *args, **kwargs: started_apps.append(app),
+    )
 
     server = A2AAgentServer(lambda: DummyAgent(), _make_card("localhost:20000/a2a"))
     server.run()
@@ -109,6 +114,11 @@ def test_server_run_closes_sync_agent(monkeypatch):
     assert isinstance(
         context_builders[0], agent_registry.AutomaServerCallContextBuilder
     )
+    middleware = started_apps[0].user_middleware[0]
+    assert middleware.kwargs["public_paths"] == [
+        "/health",
+        "/a2a/.well-known/agent-card.json",
+    ]
 
 
 def test_close_agent_supports_async_close():
