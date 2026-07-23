@@ -46,13 +46,13 @@ class ServiceAuthConfig(BaseModel):
         if self.provider == "cognito":
             if self.region and self.user_pool_id:
                 return self
-            if self.issuer and self.jwks_url:
+            if self.resolved_issuer and self.jwks_url:
                 return self
             raise ValueError(
                 "Cognito auth requires region/user_pool_id or explicit issuer/jwks_url."
             )
 
-        if not self.issuer:
+        if not self.resolved_issuer:
             raise ValueError("JWT auth requires issuer.")
         if not self.jwks_url:
             raise ValueError("JWT auth requires jwks_url.")
@@ -61,7 +61,8 @@ class ServiceAuthConfig(BaseModel):
     @property
     def resolved_issuer(self) -> str | None:
         if self.issuer:
-            return self.issuer
+            issuer = self.issuer.strip().rstrip("/")
+            return issuer or None
         if self.provider == "cognito" and self.region and self.user_pool_id:
             return (
                 f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}"
