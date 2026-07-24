@@ -1,6 +1,7 @@
 # YAML Agent Spec
 
-The YAML agent spec lets one YAML file define one AUTOMA-AI agent and boot it as
+The YAML agent spec lets one YAML file define one AUTOMA-AI agent. It can run
+in-process through `AgentFactory` or, when an `a2a` section is supplied, boot as
 an A2A server with a small Python bootstrap. It is a thin declarative layer over
 the existing `AgentFactory` and `A2AAgentServer` APIs.
 
@@ -15,18 +16,17 @@ Create `agent.yaml`:
 ```yaml
 spec_version: v1
 
-agent_card:
+agent:
   name: Demo Agent
   description: A YAML-defined AUTOMA-AI agent.
   version: 0.1.0
+
+a2a:
+  url: http://localhost:30000
   defaultInputModes: [text]
   defaultOutputModes: [text]
   capabilities:
     streaming: true
-  supportedInterfaces:
-    - url: http://localhost:30000
-      protocolBinding: JSONRPC
-      protocolVersion: "1.0"
 
 instructions:
   text: |
@@ -86,8 +86,7 @@ Run it:
 python run_agent.py
 ```
 
-The A2A server host and port come from
-`agent_card.supportedInterfaces[0].url`.
+The A2A server host and port come from `a2a.url`.
 
 ## API Shape
 
@@ -126,12 +125,34 @@ intermediate spec explicitly:
 from automa_ai.config.agent_spec import YamlAgentSpec, load_a2a_server_from_yaml
 
 spec = YamlAgentSpec.from_yaml_file("agent.yaml")
-print(spec.agent_card["name"])
+print(spec.runtime_card()["name"])
 
 server = load_a2a_server_from_yaml(spec)
 ```
 
 Both builder helpers accept either a YAML path or an existing `YamlAgentSpec`.
+
+## Standalone Agent Example
+
+Standalone agents need no A2A discovery URL or public agent card:
+
+```yaml
+spec_version: v1
+
+agent:
+  name: Plan Page Extractor
+  description: Renders and analyzes architecture plan pages.
+
+instructions:
+  path: ../prompts/plan_page_extractor.md
+
+model:
+  provider: bedrock
+  name: us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+Load it with `load_agent_factory_from_yaml(...)`. Calling
+`load_a2a_server_from_yaml(...)` without `a2a` produces an actionable error.
 
 ## Instruction Files
 
@@ -161,19 +182,18 @@ current shell directory.
 ```yaml
 spec_version: v1
 
-agent_card:
+agent:
   name: OpenStudio MCP Sizing Agent
   description: AgentFactory-based agent wired to OpenStudio MCP tools.
   version: 0.1.0
+
+a2a:
+  url: http://localhost:9999
   defaultInputModes: [text]
   defaultOutputModes: [text]
   capabilities:
     streaming: true
     pushNotifications: false
-  supportedInterfaces:
-    - url: http://localhost:9999
-      protocolBinding: JSONRPC
-      protocolVersion: "1.0"
   skills:
     - id: hvac_sizing_assistant
       name: OpenStudio HVAC Sizing Assistant
@@ -279,9 +299,32 @@ budget:
 
 Required string. Currently only `v1` is supported.
 
-### `agent_card`
+### `agent`
 
-Required object. This is the public A2A 1.0 agent card, passed as a plain
+Preferred required object for a new YAML spec. It is runtime identity, not A2A
+discovery metadata.
+
+- `name`: Display name used by the runtime.
+- `description`: Short description of what the agent does.
+- `version`: Optional runtime version string.
+
+### `a2a`
+
+Optional object that makes an `agent` spec bootable through
+`load_a2a_server_from_yaml(...)`.
+
+- `url`: Required A2A endpoint URL.
+- `protocolBinding`: Optional protocol binding; defaults to `JSONRPC`.
+- `protocolVersion`: Optional protocol version; defaults to `1.0`.
+- `version`, `defaultInputModes`, `defaultOutputModes`, `capabilities`, and
+  `skills`: Optional A2A public-card metadata.
+
+The loader generates `supportedInterfaces` from `a2a.url`.
+
+### Legacy `agent_card`
+
+Supported for backward compatibility. Use it instead of `agent`, not alongside
+it. A legacy card remains a full public A2A 1.0 agent card passed as a plain
 dictionary into the runtime.
 
 Required fields:
@@ -332,7 +375,8 @@ raises an error if a referenced environment variable is not set. This applies to
 keys such as `api_key`, `*_api_key`, `*_token`, `*_password`, `*_secret`,
 `*_access_key`, and `*_private_key` in model settings and nested configs such as
 tools or retrievers. Placeholders in user-facing fields such as
-`instructions.text` and `agent_card.description` remain literal text.
+`instructions.text`, `agent.description`, and `agent_card.description` remain
+literal text.
 
 ```yaml
 model:
@@ -363,13 +407,69 @@ Optional object for the `A2AAgentServer` wrapper.
 
 - `log_dir`: Log directory. Defaults to `./logs`.
 - `base_url_path`: Optional mount path override. If omitted, the path from
-  `agent_card.supportedInterfaces[0].url` is used. If provided, the server
+  `a2a.url` or legacy `agent_card.supportedInterfaces[0].url` is used. If
+  provided, the server
   mounts the A2A routes at this path and advertises the same path in the
   returned agent card.
 - `health_check_path`: Health endpoint path. Defaults to `/health`.
 
-The server host and port are not configured here. They come from the agent card's
-primary supported interface URL.
+The server host and port are not configured here. They come from `a2a.url` or
+the legacy agent card's primary supported interface URL.
+
+### `service`
+
+Optional object for production service-boundary behavior. This is separate from
+`server`: `server` controls the A2A wrapper mount/log paths, while `service`
+controls request authentication and trusted identity propagation.
+
+```yaml
+service:
+  auth:
+    enabled: true
+    provider: cognito
+    region: us-west-2
+    user_pool_id: us-west-2_abc123
+    audience: my-app-client-id
+    required_scopes:
+      - automa:invoke
+  identity:
+    user_id_claim: sub
+    tenant_id_claim: custom:tenant_id
+    groups_claim: cognito:groups
+    scopes_claim: scope
+```
+
+`auth` supports:
+
+- `enabled`: Enables service-boundary bearer-token validation. Defaults to
+  `false`.
+- `provider`: `jwt` or `cognito`. Defaults to `jwt`.
+- `issuer`: JWT issuer. Required for `jwt`; optional for `cognito` when
+  `region` and `user_pool_id` are provided.
+- `jwks_url`: JWKS endpoint. Required for `jwt`; derived for `cognito` when
+  `region` and `user_pool_id` are provided.
+- `audience`: Optional expected audience. For generic `jwt`, this is passed to
+  JWT audience validation. For `cognito`, this is the app client ID; access
+  tokens are checked against `client_id`, and ID tokens are checked against
+  `aud`.
+- `algorithms`: Allowed JWT algorithms. Defaults to `[RS256]`.
+- `required_scopes`: Optional list. The token must contain at least one.
+- `required_groups`: Optional list. The token must contain at least one.
+- `region` / `user_pool_id`: Cognito convenience fields used to derive issuer
+  and JWKS URL.
+
+`identity` maps verified JWT claims into trusted runtime metadata:
+
+- `user_id_claim`: Defaults to `sub`.
+- `tenant_id_claim`: Optional.
+- `groups_claim`: Defaults to `groups`; use `cognito:groups` for Cognito.
+- `scopes_claim`: Defaults to `scope`.
+
+When auth is enabled, the A2A server validates the HTTP `Authorization: Bearer`
+token before requests reach the agent. Verified identity is injected into
+agent metadata as `auth.trusted`, `subject`, `user_id`, optional `tenant_id`,
+`groups`, and `scopes`. These trusted values override client-supplied metadata
+with the same names.
 
 ### `mcp`
 
@@ -405,6 +505,7 @@ Optional list. Each entry becomes a `SubAgentSpec` and exposes a delegation tool
 to the coordinator agent. Each entry must provide exactly one card source:
 
 - `spec_path`: Path to another YAML agent spec. The loader reads that spec's
+  generated A2A card; the referenced spec must define `a2a` or a legacy
   `agent_card`.
 - `card_path`: Path to a standalone JSON agent card.
 - `agent_card`: Inline A2A 1.0 agent card.
@@ -461,6 +562,59 @@ subagents:
 Resolved subagent cards must use the A2A 1.0 `supportedInterfaces` shape. The
 loader validates cards loaded from `spec_path`, `card_path`, and inline
 `agent_card` entries before creating runtime `SubAgentSpec` objects.
+
+#### API-key authentication for a remote subagent
+
+Use `auth` to send an API key to one remote A2A agent. This is client-side
+configuration and is separate from `service.auth`, which protects requests
+arriving at the current agent server. The remote Agent Card must declare the
+referenced API-key scheme with `location: header` and a header `name`.
+Use an environment variable rather than a literal value to avoid committing
+credentials to source control or the card.
+
+```yaml
+subagents:
+  - name: CE Expert
+    card_path: ./agents/ce_expert_remote_card.json
+    auth:
+      type: api_key
+      scheme: permitce_api_key
+      api_key: ${CE_EXPERT_API_KEY}
+```
+
+For example, the referenced remote card declares the gateway contract:
+
+```yaml
+securitySchemes:
+  permitce_api_key:
+    apiKeySecurityScheme:
+      location: header
+      name: x-api-key
+```
+
+AUTOMA-AI validates the scheme during YAML loading and adds the declared header
+to every streaming and non-streaming A2A request. It does not copy the secret
+into A2A task metadata, prompts, or the Agent Card.
+
+#### Custom request headers for a gateway or legacy service
+
+Use `request_headers` when a remote service requires a gateway-specific
+authentication contract that is not declared in its Agent Card. This remains a
+native A2A invocation; AUTOMA-AI passes the configured values to the A2A client
+as transport headers. `auth` and `request_headers` are mutually exclusive.
+
+```yaml
+subagents:
+  - name: CE Expert
+    card_path: ./agents/ce_expert_remote_card.json
+    request_headers:
+      x-api-key: ${CE_EXPERT_API_KEY}
+      x-gateway-client: ce-backend
+```
+
+Environment placeholders are resolved for all `request_headers` values. Header
+values are treated as secrets and are not copied into task metadata or prompts.
+
 
 ### `tools`
 
@@ -859,6 +1013,12 @@ answer from one generated with missing retrieval or memory context. `before_turn
 and input assembly failures still abort the turn and trigger `on_turn_error`.
 
 ## Troubleshooting
+
+`A2A server loading requires 'a2a' configuration or a legacy 'agent_card'.`
+
+The YAML defines a standalone agent. Load it with
+`load_agent_factory_from_yaml(...)`, or add an `a2a` section before loading an
+A2A server.
 
 `agent_card.supportedInterfaces must contain at least one interface.`
 

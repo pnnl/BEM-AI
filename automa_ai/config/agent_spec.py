@@ -14,13 +14,18 @@ import re
 from typing import Any, Literal, TypeAlias
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.agents.remote_agent import SubAgentSpec
-from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.agent_registry import (
+    A2AAgentServer,
+    normalize_a2a_card_for_server,
+)
 from automa_ai.common.mcp_registry import MCPServerConfig
+from automa_ai.config.a2a_auth import A2AClientAuthConfig, normalize_http_header_name
+from automa_ai.config.service import ServiceConfig
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -90,6 +95,33 @@ class RuntimeSpec(BaseModel):
     debug: bool = False
 
 
+class AgentIdentitySpec(BaseModel):
+    """Runtime identity for an agent that is not necessarily A2A-served."""
+
+    name: str
+    description: str
+    version: str | None = None
+
+
+class A2ASpec(BaseModel):
+    """Optional public A2A configuration for a YAML-defined agent."""
+
+    url: str
+    protocol_binding: str = Field(default="JSONRPC", alias="protocolBinding")
+    protocol_version: str = Field(default="1.0", alias="protocolVersion")
+    version: str | None = None
+    default_input_modes: list[str] = Field(
+        default_factory=lambda: ["text"], alias="defaultInputModes"
+    )
+    default_output_modes: list[str] = Field(
+        default_factory=lambda: ["text"], alias="defaultOutputModes"
+    )
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    skills: list[dict[str, Any]] | None = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class ServerSpec(BaseModel):
     """A2A server wrapper options."""
 
@@ -120,6 +152,8 @@ class SubAgentYamlSpec(BaseModel):
     agent_card: dict[str, Any] | None = None
     spec_path: str | None = None
     card_path: str | None = None
+    auth: A2AClientAuthConfig | None = None
+    request_headers: dict[str, SecretStr] | None = None
 
     @model_validator(mode="after")
     def _validate_single_card_source(self) -> "SubAgentYamlSpec":
@@ -132,10 +166,16 @@ class SubAgentYamlSpec(BaseModel):
             raise ValueError(
                 "subagent requires exactly one of 'agent_card', 'spec_path', or 'card_path'."
             )
+        if self.auth is not None and self.request_headers is not None:
+            raise ValueError(
+                "subagent may define either auth or request_headers, not both."
+            )
         return self
 
     def resolve_agent_card(self, *, base_dir: Path) -> dict[str, Any]:
         """Resolve the subagent card from an inline card, YAML spec, or JSON card file."""
+        # TODO: Support remote Agent Card discovery from
+        # /.well-known/agent-card.json for subagents configured by URL.
         if self.agent_card is not None:
             card = deepcopy(self.agent_card)
             _validate_a2a_card(card, label="subagent.agent_card")
@@ -143,13 +183,39 @@ class SubAgentYamlSpec(BaseModel):
 
         if self.spec_path is not None:
             spec_path = _resolve_path(self.spec_path, base_dir=base_dir)
-            return deepcopy(YamlAgentSpec.from_yaml_file(spec_path).agent_card)
+            return YamlAgentSpec.from_yaml_file(spec_path).advertised_a2a_card()
 
         assert self.card_path is not None
         card_path = _resolve_path(self.card_path, base_dir=base_dir)
         card = json.loads(card_path.read_text(encoding="utf-8"))
         _validate_a2a_card(card, label=f"subagent.card_path '{card_path}'")
         return card
+
+    def resolve_request_headers(
+        self,
+        agent_card: dict[str, Any],
+    ) -> dict[str, str] | None:
+        """Build either card-derived or explicitly configured request headers."""
+        if self.auth is not None:
+            return self.auth.request_headers(agent_card)
+        if self.request_headers is None:
+            return None
+
+        headers: dict[str, str] = {}
+        for name, value in self.request_headers.items():
+            try:
+                header_name = normalize_http_header_name(name)
+            except ValueError as error:
+                raise ValueError(
+                    "subagent request_headers contains an invalid header name."
+                ) from error
+            header_value = value.get_secret_value()
+            if "\r" in header_value or "\n" in header_value:
+                raise ValueError(
+                    "subagent request_headers contains an invalid header value."
+                )
+            headers[header_name] = header_value
+        return headers
 
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
@@ -168,18 +234,22 @@ class SubAgentYamlSpec(BaseModel):
             name=name,
             description=description,
             agent_card=agent_card,
+            request_headers=self.resolve_request_headers(agent_card),
         )
 
 
 class YamlAgentSpec(BaseModel):
-    """One YAML file describing one AUTOMA-AI agent server."""
+    """One YAML file describing one AUTOMA-AI agent, optionally A2A-served."""
 
     spec_version: Literal["v1"] = "v1"
-    agent_card: dict[str, Any]
+    agent: AgentIdentitySpec | None = None
+    a2a: A2ASpec | None = None
+    agent_card: dict[str, Any] | None = None
     instructions: InstructionsSpec
     model: ModelSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     server: ServerSpec = Field(default_factory=ServerSpec)
+    service: ServiceConfig = Field(default_factory=ServiceConfig)
 
     mcp: MCPConfigSpec | None = None
     subagents: list[SubAgentYamlSpec] = Field(default_factory=list)
@@ -198,8 +268,13 @@ class YamlAgentSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_agent_card(self) -> "YamlAgentSpec":
-        _validate_a2a_card(self.agent_card, label="agent_card")
+    def _validate_identity_and_a2a(self) -> "YamlAgentSpec":
+        if self.a2a is not None and self.agent is None:
+            raise ValueError("'a2a' requires the new 'agent' section.")
+        if (self.agent is None) == (self.agent_card is None):
+            raise ValueError("requires exactly one of 'agent' or 'agent_card'.")
+        if self.agent_card is not None:
+            _validate_a2a_card(self.agent_card, label="agent_card")
         return self
 
     @classmethod
@@ -243,6 +318,58 @@ class YamlAgentSpec(BaseModel):
         """Return the final system instructions passed into ``AgentFactory``."""
         return self.instructions.resolve(base_dir=self._base_dir)
 
+    def runtime_card(self) -> dict[str, Any]:
+        """Return the card-shaped runtime metadata required by ``AgentFactory``."""
+        if self.agent_card is not None:
+            return deepcopy(self.agent_card)
+
+        assert self.agent is not None
+        card: dict[str, Any] = {
+            "name": self.agent.name,
+            "description": self.agent.description,
+        }
+        if self.agent.version is not None:
+            card["version"] = self.agent.version
+        return card
+
+    def a2a_card(self) -> dict[str, Any]:
+        """Build the public A2A card, or fail when this is a standalone agent."""
+        if self.agent_card is not None:
+            return deepcopy(self.agent_card)
+        if self.a2a is None:
+            raise ValueError(
+                "A2A server loading requires 'a2a' configuration or a legacy "
+                "'agent_card'. Use load_agent_factory_from_yaml() for standalone agents."
+            )
+
+        assert self.agent is not None
+        card: dict[str, Any] = {
+            "name": self.agent.name,
+            "description": self.agent.description,
+            "version": self.a2a.version or self.agent.version or "0.1.0",
+            "defaultInputModes": self.a2a.default_input_modes,
+            "defaultOutputModes": self.a2a.default_output_modes,
+            "capabilities": deepcopy(self.a2a.capabilities),
+            "supportedInterfaces": [
+                {
+                    "url": self.a2a.url,
+                    "protocolBinding": self.a2a.protocol_binding,
+                    "protocolVersion": self.a2a.protocol_version,
+                }
+            ],
+        }
+        if self.a2a.skills is not None:
+            card["skills"] = deepcopy(self.a2a.skills)
+        _validate_a2a_card(card, label="a2a")
+        return card
+
+    def advertised_a2a_card(self) -> dict[str, Any]:
+        """Return the public A2A card exactly as this spec's server advertises it."""
+        return normalize_a2a_card_for_server(
+            self.a2a_card(),
+            base_url_path=self.server.base_url_path,
+        )
+
     def to_factory_kwargs(self) -> dict[str, Any]:
         """Map this YAML spec onto the existing ``AgentFactory`` constructor.
 
@@ -267,7 +394,7 @@ class YamlAgentSpec(BaseModel):
             }
 
         return {
-            "card": deepcopy(self.agent_card),
+            "card": self.runtime_card(),
             "instructions": self.resolve_instructions(),
             "model_name": self.model.name,
             "agent_type": self.runtime.agent_type,
@@ -313,14 +440,16 @@ class YamlAgentSpec(BaseModel):
         """Build a single ``A2AAgentServer`` from the YAML spec.
 
         Host, port, and default base path are derived by ``A2AAgentServer`` from
-        ``agent_card.supportedInterfaces[0].url``.
+        ``supportedInterfaces[0].url`` on the public A2A card.
         """
+        card = self.a2a_card()
         return A2AAgentServer(
             agent_builder=self.to_agent_factory(),
-            card=deepcopy(self.agent_card),
+            card=card,
             log_dir=self.server.log_dir,
             base_url_path=self.server.base_url_path,
             health_check_path=self.server.health_check_path,
+            service_config=self.service,
         )
 
 
@@ -371,6 +500,8 @@ def _should_resolve_env_placeholders(path: tuple[str, ...]) -> bool:
     """Return true for YAML keys intended to carry secrets or credentials."""
     if not path:
         return False
+    if "request_headers" in path:
+        return True
     key = path[-1].lower()
     return key in _ENV_PLACEHOLDER_KEY_NAMES or key.endswith(
         _ENV_PLACEHOLDER_KEY_SUFFIXES
