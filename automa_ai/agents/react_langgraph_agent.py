@@ -15,6 +15,10 @@ from automa_ai.agents.remote_agent import (
     make_subagent_tool,
     StreamEvent,
     build_subagent_delegation_instruction,
+    reset_subagent_context_id,
+    reset_subagent_user_id,
+    set_subagent_context_id,
+    set_subagent_user_id,
 )
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.response_parser import extract_and_parse_json
@@ -138,7 +142,16 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         if not self.graph:
             await self.init_graph(emitter)
-        response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
+        context_id_token = set_subagent_context_id(context_id)
+        user_id_token = set_subagent_user_id(user_id)
+        try:
+            response = await self.graph.ainvoke(
+                {"messages": [("user", query)]},
+                config,
+            )
+        finally:
+            reset_subagent_user_id(user_id_token)
+            reset_subagent_context_id(context_id_token)
         return response
 
     async def stream(
@@ -188,9 +201,35 @@ class GenericLangGraphReactAgent(BaseAgent):
         )
         if not self.graph:
             await self.init_graph(emitter)
+
+        async def graph_stream():
+            graph_iterator = self.graph.astream(
+                inputs,
+                config,
+                stream_mode="updates",
+            ).__aiter__()
+            try:
+                while True:
+                    context_id_token = set_subagent_context_id(context_id)
+                    user_id_token = set_subagent_user_id(user_id)
+                    try:
+                        graph_chunk = await anext(graph_iterator)
+                    except StopAsyncIteration:
+                        return
+                    finally:
+                        # Reset before yielding to the caller so an early-stop
+                        # cannot leave request context scoped to this request.
+                        reset_subagent_user_id(user_id_token)
+                        reset_subagent_context_id(context_id_token)
+                    yield graph_chunk
+            finally:
+                close = getattr(graph_iterator, "aclose", None)
+                if close is not None:
+                    await close()
+
         # seen_messages = set()
         # Collect all streaming messages first
-        async for chunk in self.graph.astream(inputs, config, stream_mode="updates"):
+        async for chunk in graph_stream():
             # surface local tool/subagent streaming
             while not subagent_event_queue.empty():
                 event = subagent_event_queue.get_nowait()

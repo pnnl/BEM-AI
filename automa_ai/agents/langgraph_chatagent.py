@@ -24,6 +24,8 @@ from automa_ai.agents.remote_agent import (
     StreamEvent,
     set_subagent_context_id,
     reset_subagent_context_id,
+    set_subagent_user_id,
+    reset_subagent_user_id,
     set_subagent_emitter,
     reset_subagent_emitter,
 )
@@ -499,6 +501,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     },
                 )
                 context_token = set_subagent_context_id(turn.context_id)
+                user_id_token = set_subagent_user_id(turn.user_id)
                 emitter_token = set_subagent_emitter(emit_subagent_event)
                 try:
                     response = await self.graph.ainvoke(inputs, config)
@@ -528,6 +531,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     raise
                 finally:
                     reset_subagent_emitter(emitter_token)
+                    reset_subagent_user_id(user_id_token)
                     reset_subagent_context_id(context_token)
         finally:
             if telemetry_token is not None:
@@ -651,6 +655,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     tool_activity_started = False
                     human_message_queued = False
                     context_token = set_subagent_context_id(context_id)
+                    user_id_token = set_subagent_user_id(user_id)
                     emitter_token = set_subagent_emitter(emit_subagent_event)
                     try:
                         async for chunk in self.graph.astream(
@@ -858,6 +863,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                         break
                     finally:
                         reset_subagent_emitter(emitter_token)
+                        reset_subagent_user_id(user_id_token)
                         reset_subagent_context_id(context_token)
             except TokenBudgetExceededError as exc:
                 logger.info(

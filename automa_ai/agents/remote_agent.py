@@ -33,6 +33,10 @@ _subagent_context_id: ContextVar[str | None] = ContextVar(
     "subagent_context_id",
     default=None,
 )
+_subagent_user_id: ContextVar[str | None] = ContextVar(
+    "subagent_user_id",
+    default=None,
+)
 _subagent_emitter: ContextVar[Callable[[Any], Awaitable[None]] | None] = ContextVar(
     "subagent_emitter",
     default=None,
@@ -49,6 +53,18 @@ def reset_subagent_context_id(token: Any) -> None:
 
 def get_subagent_context_id() -> str | None:
     return _subagent_context_id.get()
+
+
+def set_subagent_user_id(user_id: str | None) -> Any:
+    return _subagent_user_id.set(user_id)
+
+
+def reset_subagent_user_id(token: Any) -> None:
+    _subagent_user_id.reset(token)
+
+
+def get_subagent_user_id() -> str | None:
+    return _subagent_user_id.get()
 
 
 def set_subagent_emitter(emitter: Callable[[Any], Awaitable[None]]) -> Any:
@@ -149,8 +165,17 @@ class A2AToolAdapter:
         if active_emitter:
             await active_emitter(event)
 
-    async def run(self, task: str, context_id: str | None = None) -> A2AToolResult:
-        a2a_result = await self.subagent.invoke(task, context_id=context_id)
+    async def run(
+        self,
+        task: str,
+        context_id: str | None = None,
+        user_id: str | None = None,
+    ) -> A2AToolResult:
+        a2a_result = await self.subagent.invoke(
+            task,
+            context_id=context_id,
+            user_id=user_id,
+        )
         chunks: list[str] = []
 
         if isinstance(a2a_result, Message):
@@ -205,9 +230,14 @@ class A2AToolAdapter:
         self,
         task: str,
         context_id: str | None = None,
+        user_id: str | None = None,
     ) -> AsyncIterable[A2AToolResult]:
         chunks: list[str] = []
-        async for chunk in self.subagent.stream(task, context_id=context_id):
+        async for chunk in self.subagent.stream(
+            task,
+            context_id=context_id,
+            user_id=user_id,
+        ):
             if isinstance(chunk, TaskStatusUpdateEvent):
                 if chunk.status.state == TaskState.TASK_STATE_COMPLETED:
                     continue
@@ -279,11 +309,20 @@ def make_subagent_tool(
             )
         agent_card: AgentCard = adapter.subagent.agent_card
         context_id = get_subagent_context_id()
+        user_id = get_subagent_user_id()
         if agent_card.capabilities.streaming:
-            async for chunk in adapter.stream(delegated_task, context_id=context_id):
+            async for chunk in adapter.stream(
+                delegated_task,
+                context_id=context_id,
+                user_id=user_id,
+            ):
                 chunks.append(chunk)
         else:
-            result = await adapter.run(delegated_task, context_id=context_id)
+            result = await adapter.run(
+                delegated_task,
+                context_id=context_id,
+                user_id=user_id,
+            )
             chunks.append(result)
 
         result = chunks[-1] if chunks else None
@@ -367,10 +406,16 @@ class RemoteAgent(BaseAgent):
     ) -> SendMessageRequest:
         message_metadata = dict(metadata or {})
         if user_id is not None:
-            message_metadata.setdefault("user_id", user_id)
+            # `user_id` originates from the authenticated parent request, so it
+            # must not be overridden by arbitrary caller-provided metadata.
+            message_metadata["user_id"] = user_id
+            # A2A metadata permits application-defined keys. Keep the
+            # framework's snake_case convention and provide the camelCase form
+            # expected by CE Expert and other browser/API clients.
+            message_metadata["userId"] = user_id
         # A2A metadata is the cross-process boundary for subagent calls. Carry
-        # only trace identifiers here; message/tool payloads stay in events and
-        # are sanitized by the recorder.
+        # authenticated identity and trace identifiers here; message/tool
+        # payloads stay in events and are sanitized by the recorder.
         trace_id = current_trace_id()
         span_id = current_span_id()
         if trace_id is not None:
