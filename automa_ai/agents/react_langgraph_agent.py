@@ -15,6 +15,8 @@ from automa_ai.agents.remote_agent import (
     make_subagent_tool,
     StreamEvent,
     build_subagent_delegation_instruction,
+    reset_subagent_user_id,
+    set_subagent_user_id,
 )
 from automa_ai.common.base_agent import BaseAgent
 from automa_ai.common.response_parser import extract_and_parse_json
@@ -138,7 +140,14 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         if not self.graph:
             await self.init_graph(emitter)
-        response = await self.graph.ainvoke({"messages": [("user", query)]}, config)
+        user_id_token = set_subagent_user_id(user_id)
+        try:
+            response = await self.graph.ainvoke(
+                {"messages": [("user", query)]},
+                config,
+            )
+        finally:
+            reset_subagent_user_id(user_id_token)
         return response
 
     async def stream(
@@ -188,9 +197,22 @@ class GenericLangGraphReactAgent(BaseAgent):
         )
         if not self.graph:
             await self.init_graph(emitter)
+
+        async def graph_stream():
+            user_id_token = set_subagent_user_id(user_id)
+            try:
+                async for graph_chunk in self.graph.astream(
+                    inputs,
+                    config,
+                    stream_mode="updates",
+                ):
+                    yield graph_chunk
+            finally:
+                reset_subagent_user_id(user_id_token)
+
         # seen_messages = set()
         # Collect all streaming messages first
-        async for chunk in self.graph.astream(inputs, config, stream_mode="updates"):
+        async for chunk in graph_stream():
             # surface local tool/subagent streaming
             while not subagent_event_queue.empty():
                 event = subagent_event_queue.get_nowait()

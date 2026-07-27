@@ -179,6 +179,34 @@ async def test_remote_agent_includes_user_id_metadata() -> None:
     assert metadata == {"user_id": "user-456", "userId": "user-456"}
 
 
+@pytest.mark.asyncio
+async def test_remote_agent_user_id_overrides_caller_metadata() -> None:
+    agent = RemoteAgent(
+        agent_name="remote_ce_expert",
+        subagent_card=ParseDict(_remote_card(), AgentCard()),
+        description="Remote CE expert.",
+    )
+    try:
+        request = agent._build_request(
+            "Analyze the project.",
+            user_id="trusted-user",
+            metadata={
+                "user_id": "spoofed-user",
+                "userId": "spoofed-user",
+                "request_source": "test",
+            },
+        )
+        metadata = MessageToDict(request.message.metadata)
+    finally:
+        await agent.close()
+
+    assert metadata == {
+        "user_id": "trusted-user",
+        "userId": "trusted-user",
+        "request_source": "test",
+    }
+
+
 def test_yaml_subagent_resolves_api_key_auth_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

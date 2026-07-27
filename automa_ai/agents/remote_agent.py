@@ -406,14 +406,16 @@ class RemoteAgent(BaseAgent):
     ) -> SendMessageRequest:
         message_metadata = dict(metadata or {})
         if user_id is not None:
-            message_metadata.setdefault("user_id", user_id)
-            # A2A metadata permits application-defined keys. Retain the
-            # framework's snake_case convention and include the camelCase form
+            # `user_id` originates from the authenticated parent request, so it
+            # must not be overridden by arbitrary caller-provided metadata.
+            message_metadata["user_id"] = user_id
+            # A2A metadata permits application-defined keys. Keep the
+            # framework's snake_case convention and provide the camelCase form
             # expected by CE Expert and other browser/API clients.
-            message_metadata.setdefault("userId", user_id)
+            message_metadata["userId"] = user_id
         # A2A metadata is the cross-process boundary for subagent calls. Carry
-        # only trace identifiers here; message/tool payloads stay in events and
-        # are sanitized by the recorder.
+        # authenticated identity and trace identifiers here; message/tool
+        # payloads stay in events and are sanitized by the recorder.
         trace_id = current_trace_id()
         span_id = current_span_id()
         if trace_id is not None:
