@@ -199,16 +199,27 @@ class GenericLangGraphReactAgent(BaseAgent):
             await self.init_graph(emitter)
 
         async def graph_stream():
-            user_id_token = set_subagent_user_id(user_id)
+            graph_iterator = self.graph.astream(
+                inputs,
+                config,
+                stream_mode="updates",
+            ).__aiter__()
             try:
-                async for graph_chunk in self.graph.astream(
-                    inputs,
-                    config,
-                    stream_mode="updates",
-                ):
+                while True:
+                    user_id_token = set_subagent_user_id(user_id)
+                    try:
+                        graph_chunk = await anext(graph_iterator)
+                    except StopAsyncIteration:
+                        return
+                    finally:
+                        # Reset before yielding to the caller so an early-stop
+                        # cannot leave identity scoped to this request.
+                        reset_subagent_user_id(user_id_token)
                     yield graph_chunk
             finally:
-                reset_subagent_user_id(user_id_token)
+                close = getattr(graph_iterator, "aclose", None)
+                if close is not None:
+                    await close()
 
         # seen_messages = set()
         # Collect all streaming messages first
