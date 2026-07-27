@@ -164,6 +164,57 @@ async def test_remote_subagent_tool_forwards_parent_user_id(
 
 
 @pytest.mark.asyncio
+async def test_remote_subagent_tool_forwards_parent_user_id_non_streaming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str | None] = {}
+
+    async def capture_run(
+        self: A2AToolAdapter,
+        task: str,
+        *,
+        context_id: str | None = None,
+        user_id: str | None = None,
+    ):
+        captured.update(
+            task=task,
+            context_id=context_id,
+            user_id=user_id,
+        )
+
+        class Result:
+            final = ""
+            chunks: list[str] = []
+            task_id = ""
+
+        return Result()
+
+    monkeypatch.setattr(A2AToolAdapter, "run", capture_run)
+    card = _remote_card()
+    card["capabilities"]["streaming"] = False
+    tool = make_subagent_tool(
+        SubAgentSpec(
+            name="Remote CE Expert",
+            description="Remote CE expert.",
+            agent_card=card,
+        )
+    )
+    context_token = set_subagent_context_id("session-123")
+    user_token = set_subagent_user_id("user-456")
+    try:
+        await tool.ainvoke({"task": "Analyze the project."})
+    finally:
+        reset_subagent_user_id(user_token)
+        reset_subagent_context_id(context_token)
+
+    assert captured == {
+        "task": "Analyze the project.",
+        "context_id": "session-123",
+        "user_id": "user-456",
+    }
+
+
+@pytest.mark.asyncio
 async def test_remote_agent_includes_user_id_metadata() -> None:
     agent = RemoteAgent(
         agent_name="remote_ce_expert",
