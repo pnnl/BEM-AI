@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import pytest
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 from a2a.types import AgentCard
-from automa_ai.agents.remote_agent import RemoteAgent
+from automa_ai.agents.remote_agent import (
+    A2AToolAdapter,
+    RemoteAgent,
+    SubAgentSpec,
+    make_subagent_tool,
+    reset_subagent_context_id,
+    reset_subagent_user_id,
+    set_subagent_context_id,
+    set_subagent_user_id,
+)
 from automa_ai.config.a2a_auth import A2AClientAuthConfig
 from automa_ai.config.agent_spec import SubAgentYamlSpec, YamlAgentSpec
 
@@ -108,6 +117,66 @@ async def test_remote_agent_passes_configured_headers_through_a2a_context() -> N
         assert context.service_parameters == {"x-api-key": "test-api-key"}
     finally:
         await agent.close()
+
+
+@pytest.mark.asyncio
+async def test_remote_subagent_tool_forwards_parent_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str | None] = {}
+
+    async def capture_stream(
+        self: A2AToolAdapter,
+        task: str,
+        *,
+        context_id: str | None = None,
+        user_id: str | None = None,
+    ):
+        captured.update(
+            task=task,
+            context_id=context_id,
+            user_id=user_id,
+        )
+        if False:
+            yield None
+
+    monkeypatch.setattr(A2AToolAdapter, "stream", capture_stream)
+    tool = make_subagent_tool(
+        SubAgentSpec(
+            name="Remote CE Expert",
+            description="Remote CE expert.",
+            agent_card=_remote_card(),
+        )
+    )
+    context_token = set_subagent_context_id("session-123")
+    user_token = set_subagent_user_id("user-456")
+    try:
+        await tool.ainvoke({"task": "Analyze the project."})
+    finally:
+        reset_subagent_user_id(user_token)
+        reset_subagent_context_id(context_token)
+
+    assert captured == {
+        "task": "Analyze the project.",
+        "context_id": "session-123",
+        "user_id": "user-456",
+    }
+
+
+@pytest.mark.asyncio
+async def test_remote_agent_includes_user_id_metadata() -> None:
+    agent = RemoteAgent(
+        agent_name="remote_ce_expert",
+        subagent_card=ParseDict(_remote_card(), AgentCard()),
+        description="Remote CE expert.",
+    )
+    try:
+        request = agent._build_request("Analyze the project.", user_id="user-456")
+        metadata = MessageToDict(request.message.metadata)
+    finally:
+        await agent.close()
+
+    assert metadata == {"user_id": "user-456", "userId": "user-456"}
 
 
 def test_yaml_subagent_resolves_api_key_auth_from_environment(
