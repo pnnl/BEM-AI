@@ -15,7 +15,9 @@ from automa_ai.agents.remote_agent import (
     make_subagent_tool,
     StreamEvent,
     build_subagent_delegation_instruction,
+    reset_subagent_context_id,
     reset_subagent_user_id,
+    set_subagent_context_id,
     set_subagent_user_id,
 )
 from automa_ai.common.base_agent import BaseAgent
@@ -140,6 +142,7 @@ class GenericLangGraphReactAgent(BaseAgent):
 
         if not self.graph:
             await self.init_graph(emitter)
+        context_id_token = set_subagent_context_id(context_id)
         user_id_token = set_subagent_user_id(user_id)
         try:
             response = await self.graph.ainvoke(
@@ -148,6 +151,7 @@ class GenericLangGraphReactAgent(BaseAgent):
             )
         finally:
             reset_subagent_user_id(user_id_token)
+            reset_subagent_context_id(context_id_token)
         return response
 
     async def stream(
@@ -206,6 +210,7 @@ class GenericLangGraphReactAgent(BaseAgent):
             ).__aiter__()
             try:
                 while True:
+                    context_id_token = set_subagent_context_id(context_id)
                     user_id_token = set_subagent_user_id(user_id)
                     try:
                         graph_chunk = await anext(graph_iterator)
@@ -213,8 +218,9 @@ class GenericLangGraphReactAgent(BaseAgent):
                         return
                     finally:
                         # Reset before yielding to the caller so an early-stop
-                        # cannot leave identity scoped to this request.
+                        # cannot leave request context scoped to this request.
                         reset_subagent_user_id(user_id_token)
+                        reset_subagent_context_id(context_id_token)
                     yield graph_chunk
             finally:
                 close = getattr(graph_iterator, "aclose", None)
