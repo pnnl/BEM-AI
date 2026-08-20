@@ -554,7 +554,7 @@ class TestComplexScenarios:
 
         msg = acc.finalize()
         assert msg.content == "I'll create that for you:  There you go! const x = 42;"
-        
+
     def test_reset_turn_text_drops_pre_tool_preamble(self):
         """Tool-call preambles must not be joined onto the final answer."""
         acc = AIMessageAccumulator()
