@@ -15,6 +15,7 @@ from langchain_core.messages import (
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from pydantic import BaseModel
 
 from automa_ai.agents.remote_agent import (
@@ -117,6 +118,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         transient_retry_attempts: int = 0,
         budget_config: TokenBudgetConfig | None = None,
         token_usage_store: TokenUsageStore | None = None,
+        middleware: list[AgentMiddleware] | None = None,
         telemetry_config: TelemetryConfig | dict[str, Any] | str | None = None,
         hook_runner: HookRunner | None = None,
         context_pipeline: ContextPipeline | None = None,
@@ -153,6 +155,10 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
+        # Caller-supplied LangChain middleware (prompt caching, PII redaction,
+        # etc.). Copied so a shared list passed by the caller can't be mutated
+        # out from under an already-built graph.
+        self.middleware = list(middleware) if middleware else []
         self.turn_input_builder = turn_input_builder or TurnInputBuilder.default(
             retriever=retriever,
             memory_manager=memory_manager,
@@ -335,12 +341,15 @@ class GenericLangGraphChatAgent(BaseAgent):
             system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
-            middleware=build_token_budget_middlewares(
-                budget=self.budget_config,
-                usage_store=self.token_usage_store,
-                model=self.model,
-                agent_name=self.agent_name,
-            ),
+            middleware=[
+                *build_token_budget_middlewares(
+                    budget=self.budget_config,
+                    usage_store=self.token_usage_store,
+                    model=self.model,
+                    agent_name=self.agent_name,
+                ),
+                *self.middleware,
+            ],
         )
 
     def _ensure_blackboard(self, session_id: str) -> None:

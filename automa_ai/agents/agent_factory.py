@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List
 from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.adk.models.lite_llm import LiteLlm
+from langchain.agents.middleware import AgentMiddleware
 from langchain_anthropic import ChatAnthropic
 from langchain_aws import ChatBedrockConverse
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -302,6 +303,12 @@ class AgentFactory:
                             "sample_mcp_1": MCPServerConfig(name="sample_mcp", host="localhost", port=10000, transport="sse"),
                             }
         retriever: BaseRetriever | dict | None = None Default None, knowledge base retrieval function.
+        middleware: List[AgentMiddleware] | None Default None, extra LangChain middleware appended
+                after the token-budget stack. LANGGRAPHCHAT only. Instances must be picklable
+                because A2AAgentServer pickles its agent builder for `spawn` multiprocessing, so
+                pass config-only middleware (e.g. BedrockPromptCachingMiddleware(ttl="5m")) rather
+                than middleware holding a live client or socket.
+                Examples: [BedrockPromptCachingMiddleware(ttl="5m")]
         debug: bool determine whether debug mode should be enabled or not.
     """
 
@@ -322,6 +329,7 @@ class AgentFactory:
         blackboard_config: BlackboardConfig | Dict | None = None,
         checkpointer_config: CheckpointerConfig | Dict[str, Any] | str | None = None,
         budget_config: TokenBudgetConfig | Dict[str, Any] | None = None,
+        middleware: List[AgentMiddleware] | None = None,
         telemetry_config: TelemetryConfig | Dict[str, Any] | str | None = None,
         hook_config: Dict[str, Any] | None = None,
         hook_runner: HookRunner | None = None,
@@ -357,6 +365,7 @@ class AgentFactory:
         self.blackboard_config = blackboard_config
         self.checkpointer_config = checkpointer_config
         self.budget_config = budget_config
+        self.middleware = middleware
         self.telemetry_config = telemetry_config
         self.hook_config = hook_config
         self.hook_runner = hook_runner
@@ -549,6 +558,7 @@ class AgentFactory:
                 transient_retry_attempts=self.transient_retry_attempts,
                 budget_config=budget_config,
                 token_usage_store=token_usage_store,
+                middleware=self.middleware,
                 telemetry_config=self.telemetry_config,
                 turn_input_builder=turn_input_builder,
                 debug=self.debug,
