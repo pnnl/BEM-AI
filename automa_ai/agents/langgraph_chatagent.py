@@ -155,9 +155,6 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
-        # Caller-supplied LangChain middleware (prompt caching, PII redaction,
-        # etc.). Copied so a shared list passed by the caller can't be mutated
-        # out from under an already-built graph.
         self.middleware = list(middleware) if middleware else []
         self.turn_input_builder = turn_input_builder or TurnInputBuilder.default(
             retriever=retriever,

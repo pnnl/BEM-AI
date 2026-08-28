@@ -303,12 +303,7 @@ class AgentFactory:
                             "sample_mcp_1": MCPServerConfig(name="sample_mcp", host="localhost", port=10000, transport="sse"),
                             }
         retriever: BaseRetriever | dict | None = None Default None, knowledge base retrieval function.
-        middleware: List[AgentMiddleware] | None Default None, extra LangChain middleware appended
-                after the token-budget stack. LANGGRAPHCHAT only. Instances must be picklable
-                because A2AAgentServer pickles its agent builder for `spawn` multiprocessing, so
-                pass config-only middleware (e.g. BedrockPromptCachingMiddleware(ttl="5m")) rather
-                than middleware holding a live client or socket.
-                Examples: [BedrockPromptCachingMiddleware(ttl="5m")]
+        middleware: List[AgentMiddleware] | None Default None, extra LangChain middleware appended after the token budget stack
         debug: bool determine whether debug mode should be enabled or not.
     """
 
