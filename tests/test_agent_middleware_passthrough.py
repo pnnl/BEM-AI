@@ -61,6 +61,25 @@ def test_caller_list_mutation_does_not_affect_agent(monkeypatch):
     assert len(agent.middleware) == 1
 
 
+def test_caller_list_mutation_before_get_agent_does_not_affect_agent(monkeypatch):
+    """The factory snapshots at construction, so this window is closed too."""
+    monkeypatch.setattr(
+        "automa_ai.agents.agent_factory.resolve_chat_model",
+        lambda *args, **kwargs: None,
+    )
+    supplied = [_TestMiddleware()]
+    factory = AgentFactory(
+        card=_card(),
+        instructions="test",
+        model_name="dummy",
+        agent_type=GenericAgentType.LANGGRAPHCHAT,
+        chat_model=GenericLLM.OLLAMA,
+        middleware=supplied,
+    )
+    supplied.append(_TestMiddleware())
+    assert len(factory.get_agent().middleware) == 1
+
+
 @pytest.mark.asyncio
 async def test_middleware_appended_after_budget_stack(monkeypatch):
     """Caller middleware must land last so it sits closest to the model call."""

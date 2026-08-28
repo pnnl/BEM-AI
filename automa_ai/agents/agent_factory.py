@@ -360,7 +360,7 @@ class AgentFactory:
         self.blackboard_config = blackboard_config
         self.checkpointer_config = checkpointer_config
         self.budget_config = budget_config
-        self.middleware = middleware
+        self.middleware = list(middleware) if middleware else []
         self.telemetry_config = telemetry_config
         self.hook_config = hook_config
         self.hook_runner = hook_runner
