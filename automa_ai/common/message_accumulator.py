@@ -172,6 +172,7 @@ class AIMessageAccumulator:
         """
         self._assistant_parts.clear()
         self._artifact_parts.clear()
+        self._tool_calls.clear()
         self._in_artifact = False
         self._carry = ""
 

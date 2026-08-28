@@ -605,6 +605,27 @@ class TestComplexScenarios:
         assert acc.get_assistant_text() == "final answer"
         assert acc.get_artifact_text() is None
 
+    def test_reset_turn_text_clears_tool_calls(self):
+        """Tool calls before reset must not appear in the final message."""
+        acc = AIMessageAccumulator()
+
+        tool_call = {
+            "id": "123",
+            "name": "search",
+            "args": {"query": "test"},
+            "type": "tool_call",
+        }
+        acc.add_chunk(
+            AIMessageChunk(content="I'll search for that.", tool_calls=[tool_call])
+        )
+        acc.reset_turn_text()  # tool result arrived
+
+        acc.add_chunk(AIMessageChunk(content="Here's what I found."))
+
+        msg = acc.finalize()
+        assert msg.content == "Here's what I found."
+        assert msg.tool_calls == []
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
