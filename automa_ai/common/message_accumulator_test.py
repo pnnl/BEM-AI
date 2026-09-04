@@ -555,6 +555,77 @@ class TestComplexScenarios:
         msg = acc.finalize()
         assert msg.content == "I'll create that for you:  There you go! const x = 42;"
 
+    def test_reset_turn_text_drops_pre_tool_preamble(self):
+        """Tool-call preambles must not be joined onto the final answer."""
+        acc = AIMessageAccumulator()
+
+        # Turn 1: Claude's preamble that accompanies its tool_calls.
+        acc.add_chunk(
+            AIMessageChunk(
+                content="I'll load the project inspector skill.",
+                usage_metadata={
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "total_tokens": 15,
+                },
+            )
+        )
+        acc.reset_turn_text()  # tool result arrived
+
+        # Turn 2: another preamble before the second tool call.
+        acc.add_chunk(AIMessageChunk(content="Now I'll query your project:"))
+        acc.reset_turn_text()
+
+        # Final turn: the actual answer.
+        acc.add_chunk(
+            AIMessageChunk(
+                content="Your project has 4 walls.",
+                usage_metadata={
+                    "input_tokens": 20,
+                    "output_tokens": 7,
+                    "total_tokens": 27,
+                },
+            )
+        )
+
+        assert acc.get_assistant_text() == "Your project has 4 walls."
+        msg = acc.finalize()
+        assert msg.content == "Your project has 4 walls."
+        # Usage totals span the whole run even though text was reset.
+        assert msg.usage_metadata["output_tokens"] == 12
+
+    def test_reset_turn_text_clears_partial_artifact_state(self):
+        """A reset mid-artifact must not leak into the next turn's routing."""
+        acc = AIMessageAccumulator()
+
+        acc.add_chunk(AIMessageChunk(content=f"stale {ARTIFACT_START}partial"))
+        acc.reset_turn_text()
+
+        acc.add_chunk(AIMessageChunk(content="final answer"))
+        assert acc.get_assistant_text() == "final answer"
+        assert acc.get_artifact_text() is None
+
+    def test_reset_turn_text_clears_tool_calls(self):
+        """Tool calls before reset must not appear in the final message."""
+        acc = AIMessageAccumulator()
+
+        tool_call = {
+            "id": "123",
+            "name": "search",
+            "args": {"query": "test"},
+            "type": "tool_call",
+        }
+        acc.add_chunk(
+            AIMessageChunk(content="I'll search for that.", tool_calls=[tool_call])
+        )
+        acc.reset_turn_text()  # tool result arrived
+
+        acc.add_chunk(AIMessageChunk(content="Here's what I found."))
+
+        msg = acc.finalize()
+        assert msg.content == "Here's what I found."
+        assert msg.tool_calls == []
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

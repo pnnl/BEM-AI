@@ -163,6 +163,19 @@ class AIMessageAccumulator:
         self._carry = ""
         return message
 
+    def reset_turn_text(self) -> None:
+        """Drop the text accumulated so far, keeping usage/metadata totals.
+
+        Called at a tool-call boundary. Models such as Claude emit a
+        conversational preamble in the same AIMessage as their tool calls,
+        but that text is only useful as an intermediate status update.
+        """
+        self._assistant_parts.clear()
+        self._artifact_parts.clear()
+        self._tool_calls.clear()
+        self._in_artifact = False
+        self._carry = ""
+
     def get_last_assistant_text(self) -> str | None:
         """
         Get the last assistant text.
