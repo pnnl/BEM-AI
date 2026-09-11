@@ -137,6 +137,52 @@ tools:
         - ctypes
 ```
 
+## Built-in tool: `pdf_reader`
+
+`pdf_reader` extracts raw text from local uploaded PDFs and approved S3 objects,
+preserving page boundaries. It does not perform OCR, layout reconstruction,
+summarization, or table parsing. It uses the BSD-3-Clause licensed `pypdf`
+package.
+
+> **Important:** This tool must be explicitly enabled in `tools_config` to be used.
+
+Input fields:
+- `source` (required): a local path within `upload_root`, or an approved
+  `s3://bucket/key` URI.
+- `page_numbers` (optional): one-based page numbers to extract. When omitted,
+  every page is extracted.
+
+Output format:
+- `success`: whether the extraction completed.
+- `source`: the input source path or S3 URI.
+- `page_count`: total pages in the PDF, or `null` when the source could not be read.
+- `pages`: a list of `{page_number, text}` entries.
+- `meta.warnings`: blank-page and truncation warnings; errors are in `meta.error`.
+
+Example configuration:
+
+```yaml
+tools:
+  - type: pdf_reader
+    config:
+      upload_root: ./uploads
+      max_file_bytes: 52428800
+      max_pages: 200
+      max_chars_per_page: 100000
+      s3:
+        enabled: true
+        allowed_buckets:
+          - bem-ai-documents
+        allowed_key_prefixes:
+          - uploads/
+        region_name: us-west-2
+```
+
+S3 access uses the runtime's standard AWS credential provider chain. The tool
+checks the configured bucket and key-prefix allowlists and object size before a
+download; it never accepts credentials in a tool call. Arbitrary HTTP(S) URLs,
+encrypted PDFs, and scanned/image-only PDF OCR are unsupported.
+
 ## Built-in tool: `run_command`
 
 > ⚠️ This tool must be explicitly enabled in `tools_config` to be used.
