@@ -90,6 +90,25 @@ The facade sanitizes attributes before they reach the recorder. Your
 Do not re-derive prompts, tool arguments, metadata, or other payloads from
 external state inside a recorder; that bypasses the central redaction policy.
 
+## Inspecting JSONL Traces
+
+The dependency-free trace reader groups records by trace ID, reports unclosed
+or failed spans, and can make lightweight assertions in CI or a local replay
+fixture. It reads the stable JSONL record shape; it does not rerun an agent or
+resend tool calls.
+
+```bash
+python -m automa_ai.telemetry.trace_reader summary ./logs/telemetry.jsonl
+python -m automa_ai.telemetry.trace_reader evaluate ./logs/telemetry.jsonl \
+  --require-event assistant.final --require-ok --max-duration-ms 30000
+```
+
+Use `--require-event` and `--forbid-event` repeatedly to assert application or
+framework events such as `tool.request`, `tool.result`, and `assistant.final`.
+The `evaluate` command returns exit status `1` when an expectation fails; use
+`--json` on either command for machine-readable output. Invalid JSONL lines are
+reported to stderr and skipped so a partially written local log remains useful.
+
 ## OpenTelemetry Recorder
 
 Install the OTEL extra before enabling the built-in OpenTelemetry recorder:
