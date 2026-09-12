@@ -59,21 +59,63 @@ def map_mcp_config_to_server_config(mcp_config: MCPServerConfig) -> ServerConfig
 
 
 def map_server_config_to_mcp_connection(server_config: ServerConfig) -> dict:
-    """Map server config into a MultiServerMCPClient connection config."""
-    connection = {
-        "url": (
-            f"{server_config.url}/sse"
-            if server_config.transport == "sse"
-            else f"{server_config.url}/mcp"
-        ),
-        "transport": server_config.transport,
+    """Map an HTTP MCP server into the standard FastMCP connection shape."""
+    if server_config.transport == "stdio":
+        raise ValueError(
+            "MCP stdio connections require a command and arguments, which "
+            "MCPServerConfig does not model. Use streamable-http or SSE."
+        )
+    return {
+        "url": f"{server_config.url}/sse"
+        if server_config.transport == "sse"
+        else f"{server_config.url}/mcp",
     }
-    if server_config.transport != "stdio":
-        if server_config.timeout is not None:
-            connection["timeout"] = server_config.timeout
-        if server_config.sse_read_timeout is not None:
-            connection["sse_read_timeout"] = server_config.sse_read_timeout
-    return connection
+
+
+def _mcp_adapter_targets(server_configs: dict[str, ServerConfig]) -> list[object]:
+    """Build native LangChain MCPAdapter targets from AUTOMA-AI server configs.
+
+    Streamable HTTP servers share one standard ``mcpServers`` config. SSE is
+    retained only as a compatibility path because FastMCP no longer infers its
+    deprecated transport from a URL.
+    """
+    from fastmcp import Client
+    from fastmcp.client.transports import SSETransport
+
+    streamable_servers: dict[str, dict] = {}
+    targets: list[object] = []
+
+    for name, server_config in server_configs.items():
+        connection = map_server_config_to_mcp_connection(server_config)
+        if server_config.transport == "sse":
+            transport = SSETransport(
+                connection["url"],
+                sse_read_timeout=server_config.sse_read_timeout,
+            )
+            targets.append(Client(transport, timeout=server_config.timeout))
+        else:
+            streamable_servers[name] = connection
+
+    if streamable_servers:
+        targets.insert(0, {"mcpServers": streamable_servers})
+    return targets
+
+
+async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> list:
+    """Discover LangChain tools through native ``langchain.mcp.MCPAdapter``."""
+    try:
+        from langchain.mcp import MCPAdapter
+    except ImportError as exc:
+        raise ImportError(
+            "MCP tool integration requires the optional 'mcp' extra. "
+            "Install it with `pip install automa-ai[mcp]`."
+        ) from exc
+
+    tools = []
+    for target in _mcp_adapter_targets(server_configs):
+        async with MCPAdapter(target) as adapter:
+            tools.extend(await adapter.list_tools())
+    return tools
 
 
 def map_to_url(hostname, port, protocol="http"):

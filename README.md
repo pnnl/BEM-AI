@@ -4,8 +4,6 @@
 
 AUTOMA-AI treats agent systems as **composable agent infrastructure** rather than a monolithic agent stack. Instead of requiring every component to be implemented as a framework-specific agent, AUTOMA-AI provides protocol-driven integration points and plugin-and-play interfaces so agents, tools, retrievers, memory stores, token usage stores, blackboards, checkpointers, and model providers can be independently developed, replaced, and deployed.
 
-> **Formerly BEM-AI:** The original building energy modeling application has moved to the example folder: [examples/sim_bem_network](examples/sim_bem_network).
-
 ## What is AUTOMA-AI?
 
 AUTOMA-AI is an open-source framework for building stateful, long-running workflows powered by modern language models such as OpenAI/ChatGPT, Azure OpenAI, Google GenAI/Gemini, Claude-compatible interfaces, AWS Bedrock, and local models such as Ollama.
@@ -175,6 +173,12 @@ For local development:
    uv sync
    ```
 
+   Demo-only dependencies are optional. Install the matching extra when running
+   an example; for example, `uv sync --extra eplus_mcp_demo` or
+   `uv sync --extra ruleset_checking`. Streamlit-only demos can use
+   `uv sync --extra ui`; MCP client integration alone uses
+   `uv sync --extra mcp`.
+
 3. **Activate the virtual environment**
 
    ```bash
@@ -209,7 +213,7 @@ Use in production systems should be done with care and appropriate validation.
 
 - **LangChain / LangGraph**: Agent execution, orchestration, and workflow patterns.
 - **Google A2A**: Agent-to-agent communication protocol.
-- **Anthropic MCP**: Tool and context protocol integration.
+- **MCP integration (optional)**: Tool and context protocol integration through the `mcp` extra.
 - **Provider-specific LLM SDKs**: Model integration across cloud and local providers.
 
 ### Development tools
@@ -225,13 +229,10 @@ BEM-AI/
 ├── automa_ai/
 │   ├── agent_test/                     # Test implementations and examples
 │   ├── agents/                         # Generic agent classes
-│   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
-│   │   ├── agent_factor.py             # Agent factory - recommend utility to initialize an agent
-│   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
+│   │   ├── langgraph_chatagent.py      # Supported LangChain/LangGraph agent
+│   │   ├── agent_factory.py            # Agent factory
 │   ├── client/                         # Under development
 │   ├── scheduler/                      # Session-scoped scheduled prompt loops
-│   ├── mcp_servers/                    # MCP library
-│   ├── network/                        # Network
 │   ├── common/                         # Common utilities
 │   └── prompts/                        # Shared prompt templates
 ├── pyproject.toml                      # Project configuration
@@ -553,11 +554,6 @@ retriever:
 
 This example demonstrates AUTOMA-AI for creating a live-streaming chatbot. It uses a sample MCP server to demonstrate streaming and tool calling with a single chatbot.
 See [examples/sim_chat_demo](examples/sim_chat_demo).
-
-### Simple BEM typical building network
-
-This example is the prototype of BEM-AI, where multiple agents collaboratively complete a building energy modeling task.
-See [examples/sim_bem_network](examples/sim_bem_network).
 
 ### EnergyPlus chatbot with EnergyPlus MCP server
 

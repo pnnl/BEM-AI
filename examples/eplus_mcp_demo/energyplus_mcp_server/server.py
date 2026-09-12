@@ -1,5 +1,5 @@
 """
-EnergyPlus MCP Server with FastMCP
+EnergyPlus MCP Server with MCP SDK v2
 
 EnergyPlus Model Context Protocol Server (EnergyPlus-MCP)
 Copyright (c) 2025, The Regents of the University of California,
@@ -16,8 +16,8 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 from datetime import datetime
 
-# Import FastMCP instead of the low-level Server
-from mcp.server.fastmcp import FastMCP
+# MCP SDK v2 high-level server.
+from mcp.server.mcpserver import MCPServer
 
 # Import our EnergyPlus utilities and configuration
 from .energyplus_tools import EnergyPlusManager
@@ -30,8 +30,8 @@ def serve(host, port, transport):
     # Initialize configuration and set up logging
     config = get_config()
 
-    # Initialize the FastMCP server with configuration
-    mcp = FastMCP(config.server.name, port=port, host=host)
+    # Transport settings belong to run() in MCP SDK v2.
+    mcp = MCPServer(config.server.name)
 
     # Initialize EnergyPlus manager with configuration
     ep_manager = EnergyPlusManager(config)
@@ -1362,4 +1362,4 @@ def serve(host, port, transport):
     logger.info(f"Starting {config.server.name} v{config.server.version}")
     logger.info(f"EnergyPlus version: {config.energyplus.version}")
     logger.info(f"Sample files path: {config.paths.sample_files_path}")
-    mcp.run(transport=transport)
+    mcp.run(transport=transport, host=host, port=port)

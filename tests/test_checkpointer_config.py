@@ -388,7 +388,7 @@ def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> Non
         instructions="test",
         model_name="model",
         agent_type=GenericAgentType.LANGGRAPHCHAT,
-        chat_model=GenericLLM.LITELLAMA,
+        chat_model=GenericLLM.OLLAMA,
         checkpointer_config="default",
     )
 
@@ -449,7 +449,7 @@ def test_agent_factory_builds_turn_input_builder_from_hook_config(monkeypatch) -
         instructions="test",
         model_name="model",
         agent_type=GenericAgentType.LANGGRAPHCHAT,
-        chat_model=GenericLLM.LITELLAMA,
+        chat_model=GenericLLM.OLLAMA,
         hook_config={"turn_hooks": []},
     )
 

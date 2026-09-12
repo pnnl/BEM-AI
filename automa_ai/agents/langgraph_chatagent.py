@@ -12,7 +12,6 @@ from langchain_core.messages import (
     ToolMessage,
     HumanMessage,
 )
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -37,7 +36,7 @@ from automa_ai.common.network_retry import (
     is_retryable_network_error,
 )
 from automa_ai.common.response_parser import extract_and_parse_json
-from automa_ai.common.utils import map_server_config_to_mcp_connection
+from automa_ai.common.utils import load_mcp_tools
 from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
@@ -230,26 +229,15 @@ class GenericLangGraphChatAgent(BaseAgent):
         emitter: agent internal event queue for streaming, a separate streaming channel from langchain's streaming.
         """
         logger.info(f"Initializing {self.agent_name} metadata")
-        if self.mcp_servers:
-            # Loading mcp server clients.
-            logger.info(f"Subscribe to MCPs through sse")
-
-            self.client = MultiServerMCPClient(
-                {
-                    server_name: map_server_config_to_mcp_connection(
-                        self.mcp_servers[server_name]
-                    )
-                    for server_name in self.mcp_servers
-                }
-            )
-
         tools = []
-        used_tool_name = []
-        if self.client:
+        if self.mcp_servers:
+            logger.info("Discovering MCP tools through LangChain MCPAdapter")
             tools = [
                 wrap_langchain_tool(tool, self.telemetry, source_type="mcp")
-                for tool in await self.client.get_tools()
+                for tool in await load_mcp_tools(self.mcp_servers)
             ]
+        used_tool_name = []
+        if tools:
             for tool in tools:
                 if self.debug:
                     print(self.agent_name, f"Loaded tools {tool.name}")

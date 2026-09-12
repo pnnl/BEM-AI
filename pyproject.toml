@@ -8,37 +8,30 @@ license = "BSD-2-Clause"
 readme = "README.md"
 dependencies = [
     "a2a-sdk>=1.0.2",
-    "asyncclick>=8.3.0.7",
     "boto3>=1.41.4",
     "bs4>=0.0.2",
     "chromadb>=1.5.8",
-    "deepeval>=3.9.9",
     "httpx>=0.28.1",
     "jwcrypto>=1.5.6",
-    "langchain>=1.2.15",
+    "langchain>=1.4,<2",
     "langchain-anthropic>=1.4.1",
     "langchain-aws>=1.4.5",
     "langchain-chroma>=1.1.0",
-    "langchain-community>=0.4.1",
     "langchain-google-genai>=4.2.2",
-    "langchain-huggingface>=1.2.2",
-    "langchain-mcp-adapters>=0.2.2",
     "langchain-ollama>=1.1.0",
     "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
     "langgraph-checkpoint-redis>=0.4.1",
     "networkx>=3.5",
     "pandas>=2.3.3",
-    "pandas-stubs==2.3.3.251219",
     "pydantic>=2.12.3",
     "pyjwt>=2.11.0",
     "pyyaml>=6.0.2",
     "redis>=6.4.0",
-    "streamlit>=1.54.0",
+    "sse-starlette>=3,<4",
+    "starlette>=0.52,<2",
     "uvicorn>=0.40.0",
-    "multiprocessing-logging>=0.3.4",
     "langgraph-checkpoint-aws>=1.0.7",
-    "mcp>=1.28.1,<2",
 ]
 packages = [{include = "automa_ai", from = "."}]
 
@@ -50,10 +43,16 @@ web = [
     "rank-bm25>=0.2.2",
 ]
 rerank = ["sentence-transformers>=3.4.1"]
-sim_bem_network = ["openstudio>=3.10.0", "streamlit>=1.51.0"]
+mcp = ["fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
+ui = ["streamlit>=1.54.0"]
+ruleset_checking = ["langchain-community>=0.4.1", "streamlit>=1.54.0"]
+openstudio_ai = ["streamlit>=1.54.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
+subagent_example = ["streamlit>=1.54.0"]
+travel_blackboard_demo = ["streamlit>=1.54.0"]
+travel_blackboard_yaml_demo = ["streamlit>=1.54.0"]
 sim_chat_demo = ["streamlit>=1.51.0"]
-sim_chat_stream_demo = ["streamlit>=1.51.0"]
-eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0"]
+sim_chat_stream_demo = ["streamlit>=1.51.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
+eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0", "streamlit>=1.54.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 otel = [
     "opentelemetry-sdk>=1.38.0",
     "opentelemetry-exporter-otlp-proto-http>=1.38.0",
@@ -66,6 +65,7 @@ dev-dependencies = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "black>=25.9.0",
+    "pandas-stubs==2.3.3.251219",
 ]
 
 [build-system]

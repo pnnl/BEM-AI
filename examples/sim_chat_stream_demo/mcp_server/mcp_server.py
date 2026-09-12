@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-from mcp.server import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def serve(host, port, transport):
         ValueError
     """
     logger.info("Starting MCP Model Server")
-    mcp = FastMCP(MCP_NAME, host=host, port=port)
+    mcp = MCPServer(MCP_NAME)
 
     @mcp.tool(
         name="get_weather_by_city_and_state",
@@ -39,4 +39,4 @@ def serve(host, port, transport):
         return "Cloudy"
 
     logger.info(f"MCP Server at {host}:{port} and transport {transport}")
-    mcp.run(transport=transport)
+    mcp.run(transport=transport, host=host, port=port)

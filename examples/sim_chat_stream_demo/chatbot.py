@@ -119,7 +119,7 @@ chat_agent = AgentFactory(
     card=public_agent_card,
     instructions=chat_prompt,
     model_name="llama3.1:8b",
-    agent_type=GenericAgentType.LANGGRAPH,
+    agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=GenericLLM.OLLAMA,
 )
 ```
@@ -165,7 +165,7 @@ chat_agent = AgentFactory(
     card=public_agent_card,
     instructions=chat_prompt,
     model_name="llama3.1:8b",
-    agent_type=GenericAgentType.LANGGRAPH,
+    agent_type=GenericAgentType.LANGGRAPHCHAT,
     chat_model=GenericLLM.OLLAMA,
     mcp_configs={"oss_schema_mcp": oss_schema_mcp_config}
 )

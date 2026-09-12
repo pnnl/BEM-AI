@@ -3,6 +3,17 @@ from automa_ai.agents import agent_factory
 import pytest
 
 
+def test_agent_factory_defaults_to_langgraph_chat() -> None:
+    factory = agent_factory.AgentFactory(
+        card={},
+        instructions="test",
+        model_name="model",
+        chat_model=GenericLLM.OLLAMA,
+    )
+
+    assert factory.agent_type is GenericAgentType.LANGGRAPHCHAT
+
+
 def test_resolve_chat_model_uses_openai_api_key_env(monkeypatch):
     captured: dict[str, object] = {}
 

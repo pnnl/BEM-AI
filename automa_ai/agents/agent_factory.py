@@ -16,7 +16,6 @@ from pydantic import BaseModel, SecretStr
 
 from automa_ai.agents import GenericAgentType, GenericLLM
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
-from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
 from automa_ai.blackboard.errors import SchemaValidationError
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry
@@ -308,8 +307,8 @@ class AgentFactory:
         card: AgentCard | Dict[str, Any],
         instructions: str,
         model_name: str,
-        agent_type: GenericAgentType,
         chat_model: GenericLLM,
+        agent_type: GenericAgentType | None = None,
         response_format: type[BaseModel] | None = None,
         mcp_configs: Dict[str, MCPServerConfig] | None = None,
         retriever_spec: RetrieverProviderSpec | dict | None = None,
@@ -342,9 +341,11 @@ class AgentFactory:
             )
         else:
             self._card_data = deepcopy(card)
+        if agent_type is not None and not isinstance(agent_type, GenericAgentType):
+            raise ValueError(f"Unsupported agent type: {agent_type!r}")
         self.instructions = instructions
         self.model_name = model_name
-        self.agent_type = agent_type
+        self.agent_type = agent_type or GenericAgentType.LANGGRAPHCHAT
         self.chat_model = chat_model
         self.response_format = response_format
         self.mcp_configs = mcp_configs
@@ -545,29 +546,6 @@ class AgentFactory:
                 telemetry_config=self.telemetry_config,
                 turn_input_builder=turn_input_builder,
                 debug=self.debug,
-            )
-
-        elif self.agent_type == GenericAgentType.LANGGRAPH:
-            return GenericLangGraphReactAgent(
-                agent_name=card.name,
-                description=card.description,
-                instructions=self.instructions,
-                response_format=self.response_format,
-                chat_model=chat_model,
-                mcp_servers=mcp_servers,
-                debug=self.debug,
-            )
-
-        elif self.agent_type == GenericAgentType.ORCHESTRATOR:
-            from automa_ai.agents.orchestrator_network_agent import (
-                OrchestratorNetworkAgent,
-            )
-
-            return OrchestratorNetworkAgent(
-                agent_name=card.name,
-                description=card.description,
-                instructions=self.instructions,
-                chat_model=chat_model,
             )
 
         raise ValueError(f"Unknown agent type: {self.agent_type}")

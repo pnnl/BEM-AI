@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from mcp.server import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from examples.openstudio_ai.openstudio_mcp_server.runtime.artifact_store import ArtifactStore
 from examples.openstudio_ai.openstudio_mcp_server.runtime.job_manager import JobManager
@@ -778,10 +778,10 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = 10210,
     workspace_root: str | Path | None = None,
-) -> FastMCP:
+) -> MCPServer:
     workspace = Path(workspace_root or ".openstudio_mcp_workspace")
     service = OpenStudioService(workspace_root=workspace)
-    mcp = FastMCP("openstudio-mcp", host=host, port=port)
+    mcp = MCPServer("openstudio-mcp")
 
     register_model_tools(mcp, service)
     register_sim_tools(mcp, service)
@@ -798,7 +798,7 @@ def serve(
     workspace_root: str | None = None,
 ) -> None:
     mcp = create_server(host=host, port=port, workspace_root=workspace_root)
-    mcp.run(transport=transport)
+    mcp.run(transport=transport, host=host, port=port)
 
 
 def main() -> None:

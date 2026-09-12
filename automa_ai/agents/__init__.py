@@ -5,9 +5,7 @@ class GenericEmbedModel(Enum):
     OPENAI = "openai"
 
 class GenericAgentType(Enum):
-    LANGGRAPH = "langgraph-task"
     LANGGRAPHCHAT = "langgraph-chat"
-    ORCHESTRATOR = "orchestrator"
 
 class GenericLLM(Enum):
     OPENAI = "openai"

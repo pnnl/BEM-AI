@@ -17,6 +17,8 @@ from automa_ai.blackboard.models import BlackboardPatch
 from automa_ai.blackboard.schema import BlackboardSchemaRegistry
 from automa_ai.blackboard.store import create_blackboard_store
 from automa_ai.common.agent_registry import A2AAgentServer
+from automa_ai.common.types import ServerConfig
+from automa_ai.common.utils import load_mcp_tools
 from automa_ai.config.agent_spec import load_a2a_server_from_yaml
 from automa_ai.skills.manager import SkillManager
 from examples.openstudio_ai.agent import (
@@ -79,10 +81,26 @@ async def test_openstudio_mcp_smoke_list_and_call_model_load() -> None:
                 name="model_load",
                 arguments={"model_uri": "file:///tmp/dummy.osm"},
             )
-            payload = result.structuredContent
+            payload = result.structured_content
             assert isinstance(payload, dict)
             assert payload["ok"] is True
             assert isinstance(payload["model_id"], str)
+
+
+@pytest.mark.asyncio
+async def test_native_langchain_mcp_adapter_discovers_openstudio_tools() -> None:
+    tools = await load_mcp_tools(
+        {
+            "openstudio": ServerConfig(
+                host=MCP_HOST,
+                port=MCP_PORT,
+                transport="sse",
+                url=f"http://{MCP_HOST}:{MCP_PORT}",
+            )
+        }
+    )
+
+    assert {tool.name for tool in tools} >= {"model_load", "sim_run"}
 
 
 def test_openstudio_example_loads_yaml_a2a_server_with_mcp_config() -> None:
@@ -296,7 +314,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
                 name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
-            load_payload = load_result.structuredContent
+            load_payload = load_result.structured_content
             assert isinstance(load_payload, dict)
             assert load_payload["ok"] is True
             original_model_id = load_payload["model_id"]
@@ -305,7 +323,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
                 name="model_list_measures",
                 arguments={},
             )
-            measures_payload = measures_result.structuredContent
+            measures_payload = measures_result.structured_content
             assert isinstance(measures_payload, dict)
             assert measures_payload["ok"] is True
             measures = measures_payload.get("measures", [])
@@ -319,7 +337,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
                     "args": {},
                 },
             )
-            apply_payload = apply_result.structuredContent
+            apply_payload = apply_result.structured_content
             assert isinstance(apply_payload, dict)
             assert apply_payload["ok"] is True
             assert isinstance(apply_payload["model_id"], str)
@@ -331,7 +349,7 @@ async def test_openstudio_mcp_apply_add_daylighting_measure() -> None:
                 name="model_validate",
                 arguments={"model_id": apply_payload["model_id"]},
             )
-            validate_payload = validate_result.structuredContent
+            validate_payload = validate_result.structured_content
             assert isinstance(validate_payload, dict)
             assert validate_payload["ok"] is True
 
@@ -351,7 +369,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
                 name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
-            load_payload = load_result.structuredContent
+            load_payload = load_result.structured_content
             assert isinstance(load_payload, dict)
             assert load_payload["ok"] is True
             model_id = load_payload["model_id"]
@@ -360,7 +378,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
                 name="sim_run",
                 arguments={"model_id": model_id, "run_mode": "sizing", "options": {}},
             )
-            run_payload = run_result.structuredContent
+            run_payload = run_result.structured_content
             assert isinstance(run_payload, dict)
 
             # If OPENSTUDIO_PATH is not configured, the tool should fail fast with invalid_state.
@@ -378,7 +396,7 @@ async def test_openstudio_mcp_simulation_flow_with_sample_model() -> None:
                     name="sim_status",
                     arguments={"job_id": job_id},
                 )
-                status_payload = status_result.structuredContent
+                status_payload = status_result.structured_content
                 assert isinstance(status_payload, dict)
                 assert status_payload["ok"] is True
                 final_state = status_payload["state"]
@@ -420,7 +438,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                 name="model_load",
                 arguments={"model_uri": sample_model_uri},
             )
-            load_payload = load_result.structuredContent
+            load_payload = load_result.structured_content
             assert isinstance(load_payload, dict)
             assert load_payload["ok"] is True
             model_id = load_payload["model_id"]
@@ -429,7 +447,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                 name="model_set_weather",
                 arguments={"model_id": model_id, "epw_path": str(epw_path)},
             )
-            set_weather_payload = set_weather_result.structuredContent
+            set_weather_payload = set_weather_result.structured_content
             assert isinstance(set_weather_payload, dict)
             assert set_weather_payload["ok"] is True
 
@@ -437,7 +455,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                 name="sim_run",
                 arguments={"model_id": model_id, "run_mode": "sizing", "options": {}},
             )
-            run_payload = run_result.structuredContent
+            run_payload = run_result.structured_content
             assert isinstance(run_payload, dict)
             assert run_payload["ok"] is True
             job_id = run_payload["job_id"]
@@ -448,7 +466,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                     name="sim_status",
                     arguments={"job_id": job_id},
                 )
-                status_payload = status_result.structuredContent
+                status_payload = status_result.structured_content
                 assert isinstance(status_payload, dict)
                 assert status_payload["ok"] is True
                 final_state = status_payload["state"]
@@ -462,7 +480,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                 name="sim_artifacts",
                 arguments={"job_id": job_id},
             )
-            artifacts_payload = artifacts_result.structuredContent
+            artifacts_payload = artifacts_result.structured_content
             assert isinstance(artifacts_payload, dict)
             assert artifacts_payload["ok"] is True
             assert isinstance(artifacts_payload["sql_id"], str)
@@ -476,7 +494,7 @@ async def test_openstudio_mcp_real_simulation_with_sample_model() -> None:
                     "params": {},
                 },
             )
-            query_payload = query_result.structuredContent
+            query_payload = query_result.structured_content
             assert isinstance(query_payload, dict)
             assert query_payload["ok"] is True
             summary_data = query_payload["data"]

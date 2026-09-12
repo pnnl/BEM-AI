@@ -23,15 +23,6 @@ Relative paths for instructions, subagent specs/cards, tools, skills, and
 blackboards are resolved from the YAML file's directory, so moving a spec or
 loading it from the wrong path can cause schema or path validation failures.
 
-Avoid these legacy paths:
-
-- `GenericAgentType.ORCHESTRATOR`
-- `automa_ai.network.agentic_network`
-- `automa_ai.network.chat_network`
-- `orchestrator_local_agent.py`
-- `orchestrator_network_agent.py`
-- workflow-graph orchestration for new examples
-
 ## A2A 1.0 rules
 
 The repo now targets the current protobuf-backed A2A SDK.
