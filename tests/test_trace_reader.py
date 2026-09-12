@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from automa_ai.telemetry.trace_reader import evaluate_traces, main, summarize_traces
+from automa_ai.telemetry.trace_reader import (
+    evaluate_traces,
+    main,
+    read_jsonl,
+    summarize_traces,
+)
 
 
 def _record(kind: str, **values):
@@ -66,9 +71,13 @@ def test_duration_uses_root_span_not_nested_span_sum() -> None:
 def test_require_ok_identifies_failed_tool_span() -> None:
     records = _tool_trace()
     records[4]["status"] = "error"
+    records[4]["attributes"] = {
+        "exception.type": "RuntimeError",
+        "exception.message": {"content": "sandbox rejected command"},
+    }
     failures = evaluate_traces(summarize_traces(records), require_ok=True)
     assert [failure.message for failure in failures] == [
-        "Failed span tool.call (tool) for tool run_python."
+        'Failed span tool.call (tool) for tool run_python (RuntimeError: {"content": "sandbox rejected command"}).'
     ]
 
 
@@ -77,3 +86,24 @@ def test_cli_reports_failed_tool_count(tmp_path, capsys) -> None:
     path.write_text("\n".join(json.dumps(record) for record in _tool_trace()) + "\n")
     assert main(["evaluate", str(path), "--tool-call-count", "run_python=2"]) == 1
     assert "Tool run_python call count is 1; expected 2." in capsys.readouterr().out
+
+
+def test_reader_skips_invalid_lines_and_summary_json_preserves_tool_records(
+    tmp_path, capsys
+) -> None:
+    path = tmp_path / "telemetry.jsonl"
+    path.write_text(
+        "\n".join(
+            [json.dumps(_tool_trace()[0]), "not json", json.dumps(_tool_trace()[1])]
+        )
+        + "\n"
+    )
+
+    records, issues = read_jsonl(path)
+    assert len(records) == 2
+    assert [(issue.line_number, issue.message) for issue in issues] == [
+        (2, "Invalid JSON: Expecting value")
+    ]
+    assert main(["summary", str(path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["spans"][1]["attributes"]["tool.name"] == "run_python"

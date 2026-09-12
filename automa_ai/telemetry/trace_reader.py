@@ -18,22 +18,29 @@ _TOOL_OUTPUT_EVENTS = frozenset({"tool.output", "tool.message"})
 
 @dataclass(frozen=True)
 class ReadIssue:
+    """A malformed JSONL line skipped during lenient trace inspection."""
+
     line_number: int
     message: str
 
 
 @dataclass(frozen=True)
 class SpanSummary:
+    """A span's start identity plus end status, duration, and attributes."""
+
     span_id: str
     parent_span_id: str | None
     name: str
     status: str | None
     duration_ms: float | None
     attributes: dict[str, Any]
+    end_attributes: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class EventSummary:
+    """One event occurrence with attributes preserved for evaluation."""
+
     name: str
     span_id: str | None
     attributes: dict[str, Any]
@@ -41,6 +48,8 @@ class EventSummary:
 
 @dataclass(frozen=True)
 class TraceSummary:
+    """All recorded spans and events for one trace."""
+
     trace_id: str
     record_count: int
     spans: tuple[SpanSummary, ...]
@@ -78,6 +87,8 @@ class TraceSummary:
 
 @dataclass(frozen=True)
 class EvaluationFailure:
+    """One unmet trace expectation suitable for CI output."""
+
     trace_id: str
     message: str
 
@@ -116,6 +127,7 @@ def summarize_traces(records: Iterable[dict[str, Any]]) -> list[TraceSummary]:
 
 
 def _summarize_trace(trace_id: str, records: Sequence[dict[str, Any]]) -> TraceSummary:
+    """Pair starts/ends while retaining their distinct attribute payloads."""
     starts: dict[str, dict[str, Any]] = {}
     ends: dict[str, dict[str, Any]] = {}
     events: list[EventSummary] = []
@@ -141,6 +153,7 @@ def _summarize_trace(trace_id: str, records: Sequence[dict[str, Any]]) -> TraceS
             _text(ends[span_id].get("status")) if span_id in ends else None,
             _number(ends[span_id].get("duration_ms")) if span_id in ends else None,
             _attributes(start),
+            _attributes(ends[span_id]) if span_id in ends else {},
         )
         for span_id, start in starts.items()
     )
@@ -230,7 +243,10 @@ def evaluate_traces(
         if require_ok:
             for span in summary.error_spans:
                 failures.append(
-                    EvaluationFailure(summary.trace_id, f"Failed {_span_label(span)}.")
+                    EvaluationFailure(
+                        summary.trace_id,
+                        f"Failed {_span_label(span)}{_exception_detail(span)}.",
+                    )
                 )
             for span in summary.open_spans:
                 failures.append(
@@ -249,6 +265,7 @@ def _tool_content_failures(
     event_names: frozenset[str],
     label: str,
 ) -> None:
+    """Check each ``TOOL=TEXT`` assertion against matching event attributes."""
     for spec in specs:
         tool, text = _tool_text(spec)
         found = any(
@@ -272,6 +289,7 @@ def _tool_content_failures(
 
 
 def _tool_text(spec: str) -> tuple[str, str]:
+    """Parse one tool-content expression without a custom config format."""
     name, sep, text = spec.partition("=")
     if not sep or not name or not text:
         raise ValueError(f"Expected TOOL=TEXT, got {spec!r}.")
@@ -279,6 +297,7 @@ def _tool_text(spec: str) -> tuple[str, str]:
 
 
 def _tool_count(spec: str) -> tuple[str, int]:
+    """Parse one non-negative ``TOOL=COUNT`` assertion."""
     name, text = _tool_text(spec)
     try:
         count = int(text)
@@ -290,15 +309,18 @@ def _tool_count(spec: str) -> tuple[str, int]:
 
 
 def _attributes(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy a record's attribute map, treating malformed values as empty."""
     value = record.get("attributes")
     return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _text(value: Any) -> str | None:
+    """Return a non-empty string value without coercing arbitrary JSON types."""
     return value if isinstance(value, str) and value else None
 
 
 def _number(value: Any) -> float | None:
+    """Return a non-negative numeric value, ignoring invalid telemetry input."""
     if isinstance(value, bool):
         return None
     try:
@@ -309,15 +331,29 @@ def _number(value: Any) -> float | None:
 
 
 def _tool_name(attributes: Mapping[str, Any]) -> str | None:
+    """Read the standard tool identity from a span or event attribute map."""
     return _text(attributes.get("tool.name"))
 
 
 def _span_label(span: SpanSummary) -> str:
+    """Return a span label with its tool identity when available."""
     tool = _tool_name(span.attributes)
     return f"span {span.name} ({span.span_id})" + (f" for tool {tool}" if tool else "")
 
 
+def _exception_detail(span: SpanSummary) -> str:
+    """Render recorder-sanitized exception context from a span-end record."""
+    exception_type = _text(span.end_attributes.get("exception.type"))
+    message = span.end_attributes.get("exception.message")
+    if message is None:
+        return ""
+    rendered = json.dumps(message, default=str, ensure_ascii=False, sort_keys=True)
+    prefix = exception_type or "exception"
+    return f" ({prefix}: {rendered})"
+
+
 def _build_parser() -> argparse.ArgumentParser:
+    """Build the small, dependency-free trace-reader command interface."""
     parser = argparse.ArgumentParser(description="Inspect AUTOMA-AI JSONL telemetry.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("summary", "evaluate"):
@@ -341,6 +377,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the reader CLI and return a shell-compatible exit status."""
     args = _build_parser().parse_args(argv)
     try:
         records, issues = read_jsonl(args.path)

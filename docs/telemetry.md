@@ -112,8 +112,11 @@ Use `--require-event` and `--forbid-event` for real event names such as
 `llm.call`. Tool-aware checks accept `TOOL=TEXT` (or `TOOL=COUNT` for
 `--tool-call-count`) and inspect recorded `tool.name`, `tool.arguments`, and
 `tool.result` attributes. `--max-duration-ms` compares the longest top-level
-span instead of summing nested spans. The `evaluate` command returns exit status
-`1` when an expectation fails; use `--json` for machine-readable output.
+span instead of summing nested spans; it is not cumulative elapsed time when a
+trace contains several sequential top-level spans. The `evaluate` command
+returns exit status `1` when an expectation fails; use `--json` for
+machine-readable output. Invalid JSONL lines are reported to stderr and skipped,
+so a partially written local log remains useful.
 
 ## OpenTelemetry Recorder
 
