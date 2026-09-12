@@ -737,6 +737,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     )
                             elif isinstance(ck, ToolMessage):
                                 tool_activity_started = True
+                                # Only text produced after the last tool
+                                # result belongs in the final artifact.
+                                message_accumulator.reset_turn_text()
                                 self.telemetry.event(
                                     "tool.message",
                                     attributes={
