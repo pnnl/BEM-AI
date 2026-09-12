@@ -228,7 +228,6 @@ BEM-AI/
 │   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
 │   │   ├── agent_factor.py             # Agent factory - recommend utility to initialize an agent
 │   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
-│   │   └── adk_agent.py                # Google ADK based agent
 │   ├── client/                         # Under development
 │   ├── scheduler/                      # Session-scoped scheduled prompt loops
 │   ├── mcp_servers/                    # MCP library

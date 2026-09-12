@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, List
 
 from a2a.types import AgentCard
 from google.protobuf.json_format import MessageToDict, ParseDict
-from google.adk.models.lite_llm import LiteLlm
 from langchain.agents.middleware import AgentMiddleware
 from langchain_anthropic import ChatAnthropic
 from langchain_aws import ChatBedrockConverse
@@ -16,7 +15,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, SecretStr
 
 from automa_ai.agents import GenericAgentType, GenericLLM
-from automa_ai.agents.adk_agent import GenericADKAgent
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.agents.react_langgraph_agent import GenericLangGraphReactAgent
 from automa_ai.agents.remote_agent import SubAgentSpec
@@ -143,8 +141,6 @@ def resolve_chat_model(
             max_tokens=None,
             streaming=streaming,
         )
-    elif backend == GenericLLM.LITELLAMA:
-        return LiteLlm(model=model_name)
     else:
         raise ValueError(f"Unsupported model backend: {backend}")
 
@@ -295,7 +291,7 @@ class AgentFactory:
         card: AgentCard Agent card stored in AgentCard object
         instruction: str system prompt - system prompt does not accept the prompt template. It is simply an instruction for the agent
         model_name: str the name of the language model
-        agent_type: GenericAgentType specify the agent type, currently available includes langgraph task and langgraph chat, orchestrator, (google ADK is not tested)
+        agent_type: GenericAgentType specify the agent implementation.
         chat_model: GenericLLM specify the language model framework, currently supports openai, ollama and claude
         response_format: BaseModel Response format
         mcp_configs: Dict[str, MCPServerConfig] | None Default None, mcp servers the agent connect to.
@@ -504,15 +500,7 @@ class AgentFactory:
                         "Token session and user budgets require budget.store to be configured."
                     )
 
-        if self.agent_type == GenericAgentType.ADK:
-            return GenericADKAgent(
-                agent_name=card.name,
-                description=card.description,
-                instructions=self.instructions,
-                chat_model=chat_model,
-                mcp_servers=mcp_servers,
-            )
-        elif self.agent_type == GenericAgentType.LANGGRAPHCHAT:
+        if self.agent_type == GenericAgentType.LANGGRAPHCHAT:
             checkpointer, checkpointer_cleanup = _build_checkpointer(
                 self.checkpointer_config
             )
