@@ -353,7 +353,7 @@ def _exception_detail(span: SpanSummary) -> str:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the small, dependency-free trace-reader command interface."""
+    """Build the small, standard-library-only trace-reader command interface."""
     parser = argparse.ArgumentParser(description="Inspect AUTOMA-AI JSONL telemetry.")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("summary", "evaluate"):

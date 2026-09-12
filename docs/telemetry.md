@@ -92,10 +92,12 @@ external state inside a recorder; that bypasses the central redaction policy.
 
 ## Inspecting JSONL Traces
 
-The dependency-free trace reader groups records by trace ID, reports unclosed
-or failed spans, and can make lightweight assertions in CI or a local replay
-fixture. It reads the stable JSONL record shape; it does not rerun an agent or
-resend tool calls.
+The trace reader groups records by trace ID, reports unclosed or failed spans,
+and can make lightweight assertions in CI or a local replay fixture. Its reader
+implementation uses only the Python standard library and it does not rerun an
+agent or resend tool calls. Invoking it as an AUTOMA-AI module still imports the
+installed AUTOMA-AI package, so it requires the package's normal runtime
+dependencies today; it is not a standalone zero-dependency executable.
 
 ```bash
 python -m automa_ai.telemetry.trace_reader summary ./logs/telemetry.jsonl
@@ -117,6 +119,10 @@ trace contains several sequential top-level spans. The `evaluate` command
 returns exit status `1` when an expectation fails; use `--json` for
 machine-readable output. Invalid JSONL lines are reported to stderr and skipped,
 so a partially written local log remains useful.
+
+Making this a truly standalone operations utility would require a separate
+entry point or lazy imports in AUTOMA-AI package initializers. That broader
+packaging change is intentionally outside this trace-reader feature.
 
 ## OpenTelemetry Recorder
 
