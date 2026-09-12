@@ -2,104 +2,78 @@ from __future__ import annotations
 
 import json
 
-from automa_ai.telemetry.trace_reader import (
-    evaluate_traces,
-    main,
-    read_jsonl,
-    summarize_traces,
-)
+from automa_ai.telemetry.trace_reader import evaluate_traces, main, summarize_traces
 
 
-def _record(record_type: str, **values):
-    return {"type": record_type, "trace_id": "trace-1", **values}
+def _record(kind: str, **values):
+    return {"type": kind, "trace_id": "trace-1", **values}
 
 
-def test_reader_skips_invalid_lines_and_summarizes_trace(tmp_path) -> None:
-    path = tmp_path / "telemetry.jsonl"
-    path.write_text(
-        "\n".join(
-            [
-                json.dumps(_record("span_start", span_id="agent", name="agent.turn")),
-                "not json",
-                json.dumps(_record("event", span_id="agent", name="tool.result")),
-                json.dumps(
-                    _record(
-                        "span_end",
-                        span_id="agent",
-                        name="agent.turn",
-                        status="ok",
-                        duration_ms=12.5,
-                    )
-                ),
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    records, issues = read_jsonl(path)
-    summaries = summarize_traces(records)
-
-    assert len(issues) == 1
-    assert issues[0].line_number == 2
-    assert summaries[0].trace_id == "trace-1"
-    assert summaries[0].record_count == 3
-    assert summaries[0].span_count == 1
-    assert summaries[0].open_span_count == 0
-    assert summaries[0].total_duration_ms == 12.5
-    assert summaries[0].event_names == ("tool.result",)
-
-
-def test_evaluate_traces_reports_event_duration_and_health_failures() -> None:
-    summaries = summarize_traces(
-        [
-            _record("span_start", span_id="agent", name="agent.turn"),
-            _record("event", span_id="agent", name="tool.request"),
-            _record(
-                "span_end",
-                span_id="agent",
-                name="agent.turn",
-                status="error",
-                duration_ms=25,
-            ),
-            _record("span_start", span_id="open", name="tool.call"),
-        ]
-    )
-
-    failures = evaluate_traces(
-        summaries,
-        required_events=["assistant.final"],
-        forbidden_events=["tool.request"],
-        max_duration_ms=20,
-        require_ok=True,
-    )
-
-    assert [failure.message for failure in failures] == [
-        "Missing event: assistant.final",
-        "Forbidden event: tool.request",
-        "Total span duration 25.0 ms exceeds 20.0 ms.",
-        "Trace is not clean: 1 error span(s), 1 open span(s).",
+def _tool_trace() -> list[dict]:
+    return [
+        _record("span_start", span_id="agent", name="agent.turn"),
+        _record(
+            "span_start",
+            span_id="tool",
+            parent_span_id="agent",
+            name="tool.call",
+            attributes={"tool.name": "run_python", "tool.arguments": {"code": "x=1"}},
+        ),
+        _record(
+            "event",
+            span_id="tool",
+            name="tool.input",
+            attributes={"tool.name": "run_python", "tool.arguments": {"code": "x=1"}},
+        ),
+        _record(
+            "event",
+            span_id="tool",
+            name="tool.output",
+            attributes={"tool.name": "run_python", "tool.result": "answer: 1"},
+        ),
+        _record("span_end", span_id="tool", status="ok", duration_ms=40),
+        _record("span_end", span_id="agent", status="ok", duration_ms=100),
     ]
 
 
-def test_cli_evaluate_returns_nonzero_for_failed_expectation(tmp_path, capsys) -> None:
-    path = tmp_path / "telemetry.jsonl"
-    path.write_text(
-        json.dumps(_record("event", name="assistant.final")) + "\n",
-        encoding="utf-8",
+def test_evaluator_retains_tool_attributes_and_counts() -> None:
+    summary = summarize_traces(_tool_trace())
+    assert summary[0].spans[1].attributes["tool.name"] == "run_python"
+    assert summary[0].events[1].attributes["tool.result"] == "answer: 1"
+    assert (
+        evaluate_traces(
+            summary,
+            required_spans=["tool.call"],
+            required_tools=["run_python"],
+            tool_call_counts=["run_python=1"],
+            tool_argument_contains=["run_python=x=1"],
+            tool_output_contains=["run_python=answer: 1"],
+            require_ok=True,
+        )
+        == []
     )
 
-    exit_code = main(["evaluate", str(path), "--require-event", "tool.result"])
 
-    assert exit_code == 1
-    assert "Missing event: tool.result" in capsys.readouterr().out
+def test_duration_uses_root_span_not_nested_span_sum() -> None:
+    summary = summarize_traces(_tool_trace())[0]
+    assert summary.top_level_duration_ms == 100
+    assert evaluate_traces([summary], max_duration_ms=110) == []
+    assert "Top-level trace duration 100.0 ms exceeds 99.0 ms." in [
+        failure.message for failure in evaluate_traces([summary], max_duration_ms=99)
+    ]
 
 
-def test_cli_summary_json_is_machine_readable(tmp_path, capsys) -> None:
+def test_require_ok_identifies_failed_tool_span() -> None:
+    records = _tool_trace()
+    records[4]["status"] = "error"
+    failures = evaluate_traces(summarize_traces(records), require_ok=True)
+    assert [failure.message for failure in failures] == [
+        "Failed span tool.call (tool) for tool run_python."
+    ]
+
+
+def test_cli_reports_failed_tool_count(tmp_path, capsys) -> None:
     path = tmp_path / "telemetry.jsonl"
-    path.write_text(json.dumps(_record("event", name="assistant.final")) + "\n")
-
-    exit_code = main(["summary", str(path), "--json"])
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)[0]["trace_id"] == "trace-1"
+    path.write_text("\n".join(json.dumps(record) for record in _tool_trace()) + "\n")
+    assert main(["evaluate", str(path), "--tool-call-count", "run_python=2"]) == 1
+    assert "Tool run_python call count is 1; expected 2." in capsys.readouterr().out

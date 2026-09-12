@@ -100,14 +100,20 @@ resend tool calls.
 ```bash
 python -m automa_ai.telemetry.trace_reader summary ./logs/telemetry.jsonl
 python -m automa_ai.telemetry.trace_reader evaluate ./logs/telemetry.jsonl \
-  --require-event assistant.final --require-ok --max-duration-ms 30000
+  --require-span agent.turn --require-tool run_python \
+  --tool-argument-contains 'run_python=example.py' \
+  --tool-output-contains 'run_python=Simulation complete' \
+  --tool-call-count run_python=1 --require-ok --max-duration-ms 30000
 ```
 
-Use `--require-event` and `--forbid-event` repeatedly to assert application or
-framework events such as `tool.request`, `tool.result`, and `assistant.final`.
-The `evaluate` command returns exit status `1` when an expectation fails; use
-`--json` on either command for machine-readable output. Invalid JSONL lines are
-reported to stderr and skipped so a partially written local log remains useful.
+Use `--require-event` and `--forbid-event` for real event names such as
+`message`, `agent.response`, `tool.requested`, `tool.message`, `tool.input`, and
+`tool.output`. Use `--require-span` for `agent.turn`, `tool.call`, and
+`llm.call`. Tool-aware checks accept `TOOL=TEXT` (or `TOOL=COUNT` for
+`--tool-call-count`) and inspect recorded `tool.name`, `tool.arguments`, and
+`tool.result` attributes. `--max-duration-ms` compares the longest top-level
+span instead of summing nested spans. The `evaluate` command returns exit status
+`1` when an expectation fails; use `--json` for machine-readable output.
 
 ## OpenTelemetry Recorder
 
