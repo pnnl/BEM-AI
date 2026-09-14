@@ -91,27 +91,32 @@ SAMPLE CODE:
 There are three steps to create an agent:
 Step 1: Define agent skills and agent card
 ```python
-skill = AgentSkill(
-    id="eplus_assis",
-    name="EnergyPlus Assistant",
-    description="Provide explanation to EnergyPlus questions",
-    tags=["assistant"],
-    examples=["What does EnergyPlus do", "Where can we download EnergyPlus"],
-)
+skill = {
+    "id": "eplus_assis",
+    "name": "EnergyPlus Assistant",
+    "description": "Provide explanation to EnergyPlus questions",
+    "tags": ["assistant"],
+    "examples": ["What does EnergyPlus do", "Where can we download EnergyPlus"],
+}
 
 # --8<-- [start:AgentCard]
 # This will be the public-facing agent card
-public_agent_card = AgentCard(
-    name="Chat Bot Agent",
-    description="An expert in building energy modeling and happy to have a chat with peers.",
-    url="http://localhost:20000",
-    version="1.0.0",
-    default_input_modes=["text"],
-    default_output_modes=["text"],
-    capabilities=AgentCapabilities(streaming=True),
-    skills=[skill],  # Only the basic skill for the public card
-    supports_authenticated_extended_card=False,
-)
+public_agent_card = {
+    "name": "Chat Bot Agent",
+    "description": "An expert in building energy modeling and happy to have a chat with peers.",
+    "version": "1.0.0",
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "capabilities": {"streaming": True},
+    "supportedInterfaces": [
+        {
+            "url": "http://localhost:20000",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0",
+        }
+    ],
+    "skills": [skill],
+}
 ```
 Step 2: Create an Agent using AgentFactory - remember to provide a chat prompt
 ```python
