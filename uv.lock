@@ -451,6 +451,7 @@ dependencies = [
 eplus-mcp-demo = [
     { name = "eppy" },
     { name = "fastmcp" },
+    { name = "graphviz" },
     { name = "langchain", extra = ["mcp"] },
     { name = "matplotlib" },
     { name = "mcp" },
@@ -532,6 +533,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'eplus-mcp-demo'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'sim-chat-server-demo'", specifier = ">=4,<5" },
+    { name = "graphviz", marker = "extra == 'eplus-mcp-demo'", specifier = ">=0.21" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jwcrypto", specifier = ">=1.5.6" },
     { name = "langchain", specifier = ">=1.4,<2" },
@@ -2064,6 +2066,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e5/7b/adfd75544c415c487b33061fe7ae526165241c1ea133f9a9125a56b39fd8/googleapis_common_protos-1.72.0.tar.gz", hash = "sha256:e55a601c1b32b52d7a3e65f43563e2aa61bcd737998ee672ac9b951cd49319f5", size = 147433, upload-time = "2025-11-06T18:29:24.087Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/ab/09169d5a4612a5f92490806649ac8d41e3ec9129c636754575b3553f4ea4/googleapis_common_protos-1.72.0-py3-none-any.whl", hash = "sha256:4299c5a82d5ae1a9702ada957347726b167f9f8d1fc352477702a1e851ff4038", size = 297515, upload-time = "2025-11-06T18:29:13.14Z" },
+]
+
+[[package]]
+name = "graphviz"
+version = "0.21"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
 ]
 
 [[package]]
