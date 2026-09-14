@@ -10,7 +10,7 @@ from automa_ai.agents.agent_factory import AgentFactory
 from automa_ai.common.agent_registry import A2AServerManager, A2AAgentServer
 from automa_ai.common.mcp_registry import MCPServerConfig, MCPServerManager
 from automa_ai.memory.memory_types import MemoryType
-from examples.sim_chat_stream_demo.mcp_server.mcp_server import serve
+from examples.sim_chat_server_demo.mcp_server.mcp_server import serve
 
 base_dir = Path(__file__).resolve().parent
 env_path = base_dir / ".env"

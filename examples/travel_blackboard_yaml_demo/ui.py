@@ -9,6 +9,7 @@ from pathlib import Path
 import streamlit as st
 
 from automa_ai.client.simple_client import SimpleClient
+from automa_ai.client.ui_util import extract_stream_text
 from examples.travel_blackboard_yaml_demo.agents.common import blackboard_file_path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -43,30 +44,9 @@ def blackboard_read(session_id: str) -> dict:
 async def stream_reply(prompt: str, session_id: str):
     client = get_client()
     async for chunk in client.send_streaming_message(prompt, session_id):
-        text_part = None
-        if isinstance(chunk, dict) and "result" in chunk:
-            result = chunk.get("result", {})
-            status = result.get("status", {})
-            message = status.get("message", {})
-            parts = message.get("parts", [])
-            text_fragments = [
-                p.get("text")
-                for p in parts
-                if p.get("kind") == "text" and p.get("text")
-            ]
-            if text_fragments:
-                text_part = "\n".join(text_fragments)
-        elif "delta" in chunk and "text" in chunk["delta"]:
-            text_part = chunk["delta"]["text"]
-        elif "message" in chunk and "text" in chunk["message"]:
-            text_part = chunk["message"]["text"]
-        elif "content" in chunk:
-            text_part = chunk["content"]
-        elif "data" in chunk:
-            text_part = chunk["data"]
-
-        if text_part:
-            yield text_part
+        update = extract_stream_text(chunk)
+        if update.text:
+            yield update
 
 
 def main() -> None:
@@ -131,8 +111,8 @@ def main() -> None:
 
             async def consume_stream():
                 nonlocal full_reply
-                async for token in stream_reply(prompt, st.session_state["session_id"]):
-                    full_reply += token
+                async for update in stream_reply(prompt, st.session_state["session_id"]):
+                    full_reply = update.text if update.is_final else full_reply + update.text
                     st.session_state["messages"][assistant_index][
                         "content"
                     ] = full_reply

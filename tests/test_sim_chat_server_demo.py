@@ -1,7 +1,11 @@
-from examples.sim_chat_stream_demo import chatbot as demo
+import pytest
+
+pytest.importorskip("mcp")
+
+from examples.sim_chat_server_demo import chatbot as demo
 
 
-def test_sim_chat_stream_demo_enables_opensource_web_search() -> None:
+def test_sim_chat_server_demo_enables_opensource_web_search() -> None:
     tools_config = demo.chatbot.tools_config
 
     assert tools_config is not None

@@ -477,7 +477,7 @@ ruleset-checking = [
 sim-chat-demo = [
     { name = "streamlit" },
 ]
-sim-chat-stream-demo = [
+sim-chat-server-demo = [
     { name = "fastmcp" },
     { name = "langchain", extra = ["mcp"] },
     { name = "mcp" },
@@ -520,13 +520,13 @@ requires-dist = [
     { name = "eppy", marker = "extra == 'eplus-mcp-demo'", specifier = ">=0.5.63" },
     { name = "fastmcp", marker = "extra == 'eplus-mcp-demo'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
-    { name = "fastmcp", marker = "extra == 'sim-chat-stream-demo'", specifier = ">=4,<5" },
+    { name = "fastmcp", marker = "extra == 'sim-chat-server-demo'", specifier = ">=4,<5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jwcrypto", specifier = ">=1.5.6" },
     { name = "langchain", specifier = ">=1.4,<2" },
     { name = "langchain", extras = ["mcp"], marker = "extra == 'eplus-mcp-demo'", specifier = ">=1.4,<2" },
     { name = "langchain", extras = ["mcp"], marker = "extra == 'mcp'", specifier = ">=1.4,<2" },
-    { name = "langchain", extras = ["mcp"], marker = "extra == 'sim-chat-stream-demo'", specifier = ">=1.4,<2" },
+    { name = "langchain", extras = ["mcp"], marker = "extra == 'sim-chat-server-demo'", specifier = ">=1.4,<2" },
     { name = "langchain-anthropic", specifier = ">=1.4.1" },
     { name = "langchain-aws", specifier = ">=1.4.5" },
     { name = "langchain-chroma", specifier = ">=1.1.0" },
@@ -540,7 +540,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'eplus-mcp-demo'", specifier = ">=3.10.7" },
     { name = "mcp", marker = "extra == 'eplus-mcp-demo'", specifier = ">=2,<3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
-    { name = "mcp", marker = "extra == 'sim-chat-stream-demo'", specifier = ">=2,<3" },
+    { name = "mcp", marker = "extra == 'sim-chat-server-demo'", specifier = ">=2,<3" },
     { name = "networkx", specifier = ">=3.4,<3.5" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'otel'", specifier = ">=1.38.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.38.0" },
@@ -559,7 +559,7 @@ requires-dist = [
     { name = "streamlit", marker = "extra == 'eplus-mcp-demo'", specifier = ">=1.54.0" },
     { name = "streamlit", marker = "extra == 'ruleset-checking'", specifier = ">=1.54.0" },
     { name = "streamlit", marker = "extra == 'sim-chat-demo'", specifier = ">=1.51.0" },
-    { name = "streamlit", marker = "extra == 'sim-chat-stream-demo'", specifier = ">=1.51.0" },
+    { name = "streamlit", marker = "extra == 'sim-chat-server-demo'", specifier = ">=1.51.0" },
     { name = "streamlit", marker = "extra == 'subagent-example'", specifier = ">=1.54.0" },
     { name = "streamlit", marker = "extra == 'travel-blackboard-demo'", specifier = ">=1.54.0" },
     { name = "streamlit", marker = "extra == 'travel-blackboard-yaml-demo'", specifier = ">=1.54.0" },
@@ -567,7 +567,7 @@ requires-dist = [
     { name = "trafilatura", marker = "extra == 'web'", specifier = ">=1.12.2" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
-provides-extras = ["web", "rerank", "mcp", "ui", "ruleset-checking", "subagent-example", "travel-blackboard-demo", "travel-blackboard-yaml-demo", "sim-chat-demo", "sim-chat-stream-demo", "eplus-mcp-demo", "otel"]
+provides-extras = ["web", "rerank", "mcp", "ui", "ruleset-checking", "subagent-example", "travel-blackboard-demo", "travel-blackboard-yaml-demo", "sim-chat-demo", "sim-chat-server-demo", "eplus-mcp-demo", "otel"]
 
 [package.metadata.requires-dev]
 dev = [

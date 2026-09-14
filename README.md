@@ -187,11 +187,13 @@ For local development:
 
 ## Minimal quick-start example
 
-The recommended starting point is the streaming chatbot example:
+The recommended starting point is the standalone streaming chatbot example:
 
-- [examples/sim_chat_stream_demo](examples/sim_chat_stream_demo)
+- [examples/sim_chat_demo](examples/sim_chat_demo)
 
-This example shows how to bootstrap an AUTOMA-AI chatbot with streaming, tool integration, and the agent factory pattern.
+This example loads a YAML-defined agent directly in Streamlit; it does not start
+an A2A or MCP server. For the server-backed equivalent, see
+[examples/sim_chat_server_demo](examples/sim_chat_server_demo).
 
 ## Project status and maturity
 
@@ -552,7 +554,8 @@ retriever:
 
 ### Single-agent chatbot with Streamlit UI
 
-This example demonstrates AUTOMA-AI for creating a live-streaming chatbot. It uses a sample MCP server to demonstrate streaming and tool calling with a single chatbot.
+This example demonstrates AUTOMA-AI for creating a live-streaming chatbot with
+a standalone YAML-defined agent. It does not require a local agent server.
 See [examples/sim_chat_demo](examples/sim_chat_demo).
 
 ### EnergyPlus chatbot with EnergyPlus MCP server

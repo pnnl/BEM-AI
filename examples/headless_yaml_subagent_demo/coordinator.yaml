@@ -25,7 +25,7 @@ instructions:
 
 model:
   provider: ollama
-  name: llama3.1:8b
+  name: qwen3:4b
 
 runtime:
   agent_type: langgraph-chat

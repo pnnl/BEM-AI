@@ -1,0 +1,30 @@
+from automa_ai.client.ui_util import extract_stream_text
+
+
+def test_extract_stream_text_reads_status_update_message() -> None:
+    update = extract_stream_text(
+        {
+            "result": {
+                "kind": "status-update",
+                "status": {"state": "working", "message": {"parts": [{"kind": "text", "text": "Hello"}]}},
+            }
+        }
+    )
+
+    assert update.text == "Hello"
+    assert update.is_final is False
+
+
+def test_extract_stream_text_reads_completed_task_artifact() -> None:
+    update = extract_stream_text(
+        {
+            "result": {
+                "kind": "task",
+                "status": {"state": "completed"},
+                "artifacts": [{"parts": [{"kind": "text", "text": "Final answer"}]}],
+            }
+        }
+    )
+
+    assert update.text == "Final answer"
+    assert update.is_final is True
