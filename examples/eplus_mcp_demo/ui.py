@@ -76,7 +76,7 @@ def main():
 
                         st.session_state["awaiting_input"] = False
                         if update.text:
-                            full_response = update.text if update.is_final else full_response + update.text
+                            full_response = update.text if update.replaces_text else full_response + update.text
                             message_placeholder.markdown(full_response + "▌")
 
             asyncio.run(process_stream())

@@ -36,3 +36,26 @@ async def test_mcp_tools_keep_adapters_open_until_session_close(monkeypatch) -> 
     await tools.aclose()
 
     assert [adapter.exited for adapter in adapters] == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_session_closes_every_adapter_after_a_close_failure() -> None:
+    closed: list[str] = []
+
+    class FailingAdapter:
+        async def __aexit__(self, *_args) -> None:
+            closed.append("failing")
+            raise RuntimeError("disconnect failed")
+
+    class HealthyAdapter:
+        async def __aexit__(self, *_args) -> None:
+            closed.append("healthy")
+
+    session = utils.MCPToolSession()
+    # Reverse closing makes the failing adapter run first.
+    session._adapters.extend([HealthyAdapter(), FailingAdapter()])
+
+    with pytest.raises(RuntimeError, match="disconnect failed"):
+        await session.aclose()
+
+    assert closed == ["failing", "healthy"]

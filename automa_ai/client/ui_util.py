@@ -11,7 +11,13 @@ class StreamText:
 
     text: str = ""
     is_final: bool = False
+    append: bool = False
     state: str | None = None
+
+    @property
+    def replaces_text(self) -> bool:
+        """Whether this event supplies a complete terminal response."""
+        return self.is_final and not self.append
 
 
 def _text_from_parts(parts: Any) -> str:
@@ -39,8 +45,8 @@ def extract_stream_text(chunk: Any) -> StreamText:
     """Extract visible text from legacy and protobuf-backed A2A stream chunks.
 
     A completed A2A task carries its canonical output in ``artifacts`` rather
-    than in ``status.message``.  UIs should replace accumulated token updates
-    with that terminal artifact to avoid a blank or duplicated final response.
+    than in ``status.message``. UIs replace accumulated token updates only for
+    a non-appended terminal artifact; appended artifact chunks remain suffixes.
     """
     if not isinstance(chunk, dict):
         return StreamText()
@@ -75,6 +81,7 @@ def extract_stream_text(chunk: Any) -> StreamText:
                 if isinstance(artifact, dict)
                 else "",
                 is_final=bool(result.get("lastChunk")),
+                append=bool(result.get("append")),
                 state=state,
             )
         if kind == "status-update":

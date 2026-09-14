@@ -1,7 +1,8 @@
+import asyncio
+
 from automa_ai.config.agent_spec import YamlAgentSpec
 from examples.sim_chat_demo import chatbot as demo
 from examples.sim_chat_demo import streamlit_ui
-import pytest
 
 
 def test_sim_chat_demo_is_a_standalone_yaml_agent() -> None:
@@ -16,19 +17,40 @@ def test_sim_chat_demo_is_a_standalone_yaml_agent() -> None:
     }
 
 
-@pytest.mark.asyncio
-async def test_sim_chat_demo_replaces_streamed_text_with_terminal_response(monkeypatch) -> None:
-    class FakeChatbot:
-        async def stream(self, *_args):
-            yield {"content": "Hel", "is_task_complete": False}
-            yield {"content": "lo", "is_task_complete": False}
-            yield {"content": "Hello", "is_task_complete": True}
+def test_sim_chat_demo_replaces_streamed_text_with_terminal_response(monkeypatch) -> None:
+    class FakeRuntime:
+        def stream(self, *_args):
+            yield "Hel", False
+            yield "lo", False
+            yield "Hello", True
 
-    monkeypatch.setattr(streamlit_ui, "get_chatbot", lambda: FakeChatbot())
+    monkeypatch.setattr(streamlit_ui, "get_chatbot", lambda: FakeRuntime())
 
-    updates = [update async for update in streamlit_ui.stream_reply("hello", "session")]
+    updates = list(streamlit_ui.stream_reply("hello", "session"))
     response = ""
     for text, is_complete in updates:
         response = text if is_complete else response + text
 
     assert response == "Hello"
+
+
+def test_sim_chat_demo_reuses_one_loop_for_cached_runtime(monkeypatch) -> None:
+    loop_ids: list[int] = []
+
+    class FakeAgent:
+        async def stream(self, *_args):
+            loop_ids.append(id(asyncio.get_running_loop()))
+            yield {"content": "done", "is_task_complete": True}
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(streamlit_ui, "build_chatbot", FakeAgent)
+    runtime = streamlit_ui.ChatbotRuntime()
+    try:
+        assert list(runtime.stream("one", "session")) == [("done", True)]
+        assert list(runtime.stream("two", "session")) == [("done", True)]
+    finally:
+        runtime.close()
+
+    assert len(set(loop_ids)) == 1

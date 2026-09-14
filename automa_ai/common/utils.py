@@ -110,10 +110,17 @@ class MCPToolSession(list):
     async def aclose(self) -> None:
         if self._closed:
             return
-        self._closed = True
+        first_error: BaseException | None = None
         for adapter in reversed(self._adapters):
-            await adapter.__aexit__(None, None, None)
+            try:
+                await adapter.__aexit__(None, None, None)
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
         self._adapters.clear()
+        self._closed = True
+        if first_error is not None:
+            raise first_error
 
 
 async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> MCPToolSession:

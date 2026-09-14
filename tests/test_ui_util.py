@@ -43,3 +43,21 @@ def test_extract_stream_text_marks_final_artifact_update_as_terminal() -> None:
 
     assert update.text == "Final answer"
     assert update.is_final is True
+    assert update.replaces_text is True
+
+
+def test_extract_stream_text_appends_terminal_artifact_suffix() -> None:
+    update = extract_stream_text(
+        {
+            "result": {
+                "kind": "artifact-update",
+                "append": True,
+                "lastChunk": True,
+                "artifact": {"parts": [{"kind": "text", "text": "lo"}]},
+            }
+        }
+    )
+
+    assert update.is_final is True
+    assert update.append is True
+    assert update.replaces_text is False

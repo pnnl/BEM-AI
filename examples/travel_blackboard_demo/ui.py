@@ -97,7 +97,7 @@ def main() -> None:
             async def consume_stream():
                 nonlocal full_reply
                 async for update in stream_reply(prompt, st.session_state["session_id"]):
-                    full_reply = update.text if update.is_final else full_reply + update.text
+                    full_reply = update.text if update.replaces_text else full_reply + update.text
                     st.session_state["messages"][assistant_index]["content"] = full_reply
                     placeholder.markdown(full_reply + "▌")
                 placeholder.markdown(full_reply)

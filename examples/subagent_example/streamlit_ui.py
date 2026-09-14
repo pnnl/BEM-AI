@@ -67,7 +67,7 @@ def main():
                     async for chunk in send_message_async(prompt, session_id):
                         update = extract_stream_text(chunk)
                         if update.text:
-                            if update.is_final:
+                            if update.replaces_text:
                                 full_response = update.text
                             else:
                                 await natural_delay(update.text)
