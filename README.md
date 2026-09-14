@@ -155,7 +155,7 @@ For local development:
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.10+
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ### Setup
@@ -219,7 +219,7 @@ Use in production systems should be done with care and appropriate validation.
 ### Development tools
 
 - **uv**: Modern Python package management.
-- **Python 3.12**: Runtime environment.
+- **Python 3.10+**: Runtime environment.
 
 ## Project structure
 
@@ -559,6 +559,12 @@ See [examples/sim_chat_demo](examples/sim_chat_demo).
 
 This example shows how AUTOMA-AI integrates with the EnergyPlus MCP server developed by LBNL.
 See [examples/eplus_mcp_demo](examples/eplus_mcp_demo).
+
+### OpenStudio AI
+
+OpenStudio AI is maintained separately. Use the
+[OpenStudio AI plugin](https://github.com/pnnl/openstudio-ai-plugin) and the
+[OpenStudio AI harness](https://github.com/pnnl/openstudio-ai-harness).
 
 ## Development guidelines
 

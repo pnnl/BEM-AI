@@ -2,7 +2,7 @@
 name = "automa_ai"
 version = "0.7.3"
 description = "PNNL Auto Multi-Agent AI: Dynamic multi-agent system for building applications"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [{name = "Weili Xu", email = "weili.xu@pnnl.gov"}, {name = "Hanlong, Wan", email = "hanlong.wan@pnnl.gov"}]
 license = "BSD-2-Clause"
 readme = "README.md"
@@ -22,7 +22,7 @@ dependencies = [
     "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
     "langgraph-checkpoint-redis>=0.4.1",
-    "networkx>=3.5",
+    "networkx>=3.4,<3.5",
     "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "pyjwt>=2.11.0",
@@ -32,6 +32,7 @@ dependencies = [
     "starlette>=0.52,<2",
     "uvicorn>=0.40.0",
     "langgraph-checkpoint-aws>=1.0.7",
+    "streamlit>=1.54.0",
 ]
 packages = [{include = "automa_ai", from = "."}]
 
@@ -46,7 +47,6 @@ rerank = ["sentence-transformers>=3.4.1"]
 mcp = ["fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 ui = ["streamlit>=1.54.0"]
 ruleset_checking = ["langchain-community>=0.4.1", "streamlit>=1.54.0"]
-openstudio_ai = ["streamlit>=1.54.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 subagent_example = ["streamlit>=1.54.0"]
 travel_blackboard_demo = ["streamlit>=1.54.0"]
 travel_blackboard_yaml_demo = ["streamlit>=1.54.0"]

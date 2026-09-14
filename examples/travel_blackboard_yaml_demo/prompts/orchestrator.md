@@ -12,7 +12,6 @@ Blackboard policy addendum:
 
 Valid blackboard_write example:
 blackboard_write(
-  session_id="<current_session_id>",
   ops=[
     {"op": "set", "path": "requirements", "value": {...}},
     {"op": "set", "path": "booking.status", "value": "draft"}
