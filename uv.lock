@@ -481,10 +481,13 @@ sim-chat-demo = [
     { name = "trafilatura" },
 ]
 sim-chat-server-demo = [
+    { name = "duckduckgo-search" },
     { name = "fastmcp" },
     { name = "langchain", extra = ["mcp"] },
     { name = "mcp" },
+    { name = "rank-bm25" },
     { name = "streamlit" },
+    { name = "trafilatura" },
 ]
 subagent-example = [
     { name = "streamlit" },
@@ -523,6 +526,7 @@ requires-dist = [
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "chromadb", specifier = ">=1.5.8" },
     { name = "duckduckgo-search", marker = "extra == 'sim-chat-demo'", specifier = ">=7.2.1" },
+    { name = "duckduckgo-search", marker = "extra == 'sim-chat-server-demo'", specifier = ">=7.2.1" },
     { name = "duckduckgo-search", marker = "extra == 'web'", specifier = ">=7.2.1" },
     { name = "eppy", marker = "extra == 'eplus-mcp-demo'", specifier = ">=0.5.63" },
     { name = "fastmcp", marker = "extra == 'eplus-mcp-demo'", specifier = ">=4,<5" },
@@ -558,6 +562,7 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.11.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rank-bm25", marker = "extra == 'sim-chat-demo'", specifier = ">=0.2.2" },
+    { name = "rank-bm25", marker = "extra == 'sim-chat-server-demo'", specifier = ">=0.2.2" },
     { name = "rank-bm25", marker = "extra == 'web'", specifier = ">=0.2.2" },
     { name = "redis", specifier = ">=6.4.0" },
     { name = "sentence-transformers", marker = "extra == 'rerank'", specifier = ">=3.4.1" },
@@ -573,6 +578,7 @@ requires-dist = [
     { name = "streamlit", marker = "extra == 'travel-blackboard-yaml-demo'", specifier = ">=1.54.0" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.54.0" },
     { name = "trafilatura", marker = "extra == 'sim-chat-demo'", specifier = ">=1.12.2" },
+    { name = "trafilatura", marker = "extra == 'sim-chat-server-demo'", specifier = ">=1.12.2" },
     { name = "trafilatura", marker = "extra == 'web'", specifier = ">=1.12.2" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]

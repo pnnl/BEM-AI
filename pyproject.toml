@@ -56,7 +56,15 @@ sim_chat_demo = [
     "duckduckgo-search>=7.2.1",
     "rank-bm25>=0.2.2",
 ]
-sim_chat_server_demo = ["streamlit>=1.51.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
+sim_chat_server_demo = [
+    "streamlit>=1.51.0",
+    "fastmcp>=4,<5",
+    "langchain[mcp]>=1.4,<2",
+    "mcp>=2,<3",
+    "trafilatura>=1.12.2",
+    "duckduckgo-search>=7.2.1",
+    "rank-bm25>=0.2.2",
+]
 eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0", "streamlit>=1.54.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 otel = [
     "opentelemetry-sdk>=1.38.0",

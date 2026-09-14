@@ -5,7 +5,7 @@ from google.protobuf.struct_pb2 import Struct
 
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import Message, Part, Role
+from a2a.types import Message, Part, Role, TaskArtifactUpdateEvent
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.common.base_agent import BaseAgent
@@ -78,6 +78,12 @@ async def test_executor_extracts_user_id_from_metadata():
     assert captured["metadata"] == {"userId": "executor-test-user"}
     assert captured["query"] == "Test query"
     event_queue.enqueue_event.assert_called()
+    artifact_event = next(
+        call.args[0]
+        for call in event_queue.enqueue_event.await_args_list
+        if isinstance(call.args[0], TaskArtifactUpdateEvent)
+    )
+    assert artifact_event.last_chunk is True
 
 
 @pytest.mark.asyncio

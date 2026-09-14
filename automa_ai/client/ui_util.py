@@ -74,6 +74,7 @@ def extract_stream_text(chunk: Any) -> StreamText:
                 text=_text_from_parts(artifact.get("parts", []))
                 if isinstance(artifact, dict)
                 else "",
+                is_final=bool(result.get("lastChunk")),
                 state=state,
             )
         if kind == "status-update":

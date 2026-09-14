@@ -28,3 +28,18 @@ def test_extract_stream_text_reads_completed_task_artifact() -> None:
 
     assert update.text == "Final answer"
     assert update.is_final is True
+
+
+def test_extract_stream_text_marks_final_artifact_update_as_terminal() -> None:
+    update = extract_stream_text(
+        {
+            "result": {
+                "kind": "artifact-update",
+                "lastChunk": True,
+                "artifact": {"parts": [{"kind": "text", "text": "Final answer"}]},
+            }
+        }
+    )
+
+    assert update.text == "Final answer"
+    assert update.is_final is True
