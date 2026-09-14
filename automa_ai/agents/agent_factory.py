@@ -307,8 +307,8 @@ class AgentFactory:
         card: AgentCard | Dict[str, Any],
         instructions: str,
         model_name: str,
-        chat_model: GenericLLM,
         agent_type: GenericAgentType | None = None,
+        chat_model: GenericLLM | None = None,
         response_format: type[BaseModel] | None = None,
         mcp_configs: Dict[str, MCPServerConfig] | None = None,
         retriever_spec: RetrieverProviderSpec | dict | None = None,
@@ -343,6 +343,8 @@ class AgentFactory:
             self._card_data = deepcopy(card)
         if agent_type is not None and not isinstance(agent_type, GenericAgentType):
             raise ValueError(f"Unsupported agent type: {agent_type!r}")
+        if not isinstance(chat_model, GenericLLM):
+            raise ValueError("chat_model is required and must be a GenericLLM value.")
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type or GenericAgentType.LANGGRAPHCHAT

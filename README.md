@@ -195,6 +195,15 @@ This example loads a YAML-defined agent directly in Streamlit; it does not start
 an A2A or MCP server. For the server-backed equivalent, see
 [examples/sim_chat_server_demo](examples/sim_chat_server_demo).
 
+Run the standalone demo with only its UI process:
+
+```bash
+uv sync --extra sim_chat_demo
+streamlit run examples/sim_chat_demo/streamlit_ui.py
+```
+
+The server-backed demo has a separate startup sequence; see its README.
+
 ## Project status and maturity
 
 AUTOMA-AI is under active development. The project is designed for production-oriented applications, but the package is still maturing. APIs, interfaces, and examples may change as the framework evolves.

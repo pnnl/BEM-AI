@@ -64,6 +64,9 @@ dev-dependencies = [
     "notebook>=7.4.7",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "fastmcp>=4,<5",
+    "langchain[mcp]>=1.4,<2",
+    "mcp>=2,<3",
     "black>=25.9.0",
     "pandas-stubs==2.3.3.251219",
 ]

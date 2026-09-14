@@ -14,6 +14,19 @@ def test_agent_factory_defaults_to_langgraph_chat() -> None:
     assert factory.agent_type is GenericAgentType.LANGGRAPHCHAT
 
 
+def test_agent_factory_preserves_legacy_positional_agent_type_order() -> None:
+    factory = agent_factory.AgentFactory(
+        {},
+        "test",
+        "model",
+        GenericAgentType.LANGGRAPHCHAT,
+        GenericLLM.OLLAMA,
+    )
+
+    assert factory.agent_type is GenericAgentType.LANGGRAPHCHAT
+    assert factory.chat_model is GenericLLM.OLLAMA
+
+
 def test_resolve_chat_model_uses_openai_api_key_env(monkeypatch):
     captured: dict[str, object] = {}
 

@@ -152,6 +152,10 @@ def test_runnable_config_omits_llm_callback_when_telemetry_disabled():
 async def test_agent_aclose_runs_telemetry_cleanup_once():
     calls: list[str] = []
 
+    class DummyMCPToolSession:
+        async def aclose(self):
+            calls.append("mcp-close")
+
     class DummyTelemetry:
         enabled = True
 
@@ -173,12 +177,14 @@ async def test_agent_aclose_runs_telemetry_cleanup_once():
         checkpointer_cleanup=lambda: calls.append("checkpointer-close"),
     )
     agent.telemetry = DummyTelemetry()
+    agent._mcp_tool_session = DummyMCPToolSession()
 
     await agent.aclose()
     await agent.aclose()
     agent.close()
 
     assert calls == [
+        "mcp-close",
         "checkpointer-close",
         "telemetry-aflush",
         "telemetry-aclose",

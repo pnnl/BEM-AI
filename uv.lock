@@ -504,6 +504,9 @@ web = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
+    { name = "fastmcp" },
+    { name = "langchain", extra = ["mcp"] },
+    { name = "mcp" },
     { name = "notebook" },
     { name = "pandas-stubs" },
     { name = "pytest" },
@@ -572,6 +575,9 @@ provides-extras = ["web", "rerank", "mcp", "ui", "ruleset-checking", "subagent-e
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=25.9.0" },
+    { name = "fastmcp", specifier = ">=4,<5" },
+    { name = "langchain", extras = ["mcp"], specifier = ">=1.4,<2" },
+    { name = "mcp", specifier = ">=2,<3" },
     { name = "notebook", specifier = ">=7.4.7" },
     { name = "pandas-stubs", specifier = "==2.3.3.251219" },
     { name = "pytest", specifier = ">=8.4.2" },

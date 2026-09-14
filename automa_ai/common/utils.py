@@ -2,6 +2,7 @@ import socket
 import time
 import warnings
 from functools import wraps
+from typing import Any
 
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.common.types import ServerConfig
@@ -75,14 +76,13 @@ def map_server_config_to_mcp_connection(server_config: ServerConfig) -> dict:
 def _mcp_adapter_targets(server_configs: dict[str, ServerConfig]) -> list[object]:
     """Build native LangChain MCPAdapter targets from AUTOMA-AI server configs.
 
-    Streamable HTTP servers share one standard ``mcpServers`` config. SSE is
-    retained only as a compatibility path because FastMCP no longer infers its
-    deprecated transport from a URL.
+    FastMCP clients are used for both HTTP transports so configured timeouts are
+    honored. SSE remains a compatibility path because FastMCP no longer infers
+    its deprecated transport from a URL.
     """
     from fastmcp import Client
-    from fastmcp.client.transports import SSETransport
+    from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 
-    streamable_servers: dict[str, dict] = {}
     targets: list[object] = []
 
     for name, server_config in server_configs.items():
@@ -94,15 +94,30 @@ def _mcp_adapter_targets(server_configs: dict[str, ServerConfig]) -> list[object
             )
             targets.append(Client(transport, timeout=server_config.timeout))
         else:
-            streamable_servers[name] = connection
-
-    if streamable_servers:
-        targets.insert(0, {"mcpServers": streamable_servers})
+            transport = StreamableHttpTransport(connection["url"])
+            targets.append(Client(transport, timeout=server_config.timeout))
     return targets
 
 
-async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> list:
-    """Discover LangChain tools through native ``langchain.mcp.MCPAdapter``."""
+class MCPToolSession(list):
+    """List-compatible MCP tools that own their entered adapter contexts."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._adapters: list[Any] = []
+        self._closed = False
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for adapter in reversed(self._adapters):
+            await adapter.__aexit__(None, None, None)
+        self._adapters.clear()
+
+
+async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> MCPToolSession:
+    """Discover tools and retain MCP adapters until the caller closes them."""
     try:
         from langchain.mcp import MCPAdapter
     except ImportError as exc:
@@ -111,10 +126,16 @@ async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> list:
             "Install it with `pip install automa-ai[mcp]`."
         ) from exc
 
-    tools = []
-    for target in _mcp_adapter_targets(server_configs):
-        async with MCPAdapter(target) as adapter:
+    tools = MCPToolSession()
+    try:
+        for target in _mcp_adapter_targets(server_configs):
+            adapter = MCPAdapter(target)
+            await adapter.__aenter__()
+            tools._adapters.append(adapter)
             tools.extend(await adapter.list_tools())
+    except BaseException:
+        await tools.aclose()
+        raise
     return tools
 
 

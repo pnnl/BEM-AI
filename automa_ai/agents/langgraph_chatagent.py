@@ -36,7 +36,7 @@ from automa_ai.common.network_retry import (
     is_retryable_network_error,
 )
 from automa_ai.common.response_parser import extract_and_parse_json
-from automa_ai.common.utils import load_mcp_tools
+from automa_ai.common.utils import MCPToolSession, load_mcp_tools
 from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
@@ -138,6 +138,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.client = None
         self.graph = None
         self.mcp_servers = mcp_servers
+        self._mcp_tool_session: MCPToolSession | None = None
         self.retriever = retriever
         self.memory_manager = memory_manager
         self.skill_manager = skills_manager
@@ -198,6 +199,9 @@ class GenericLangGraphChatAgent(BaseAgent):
 
     async def aclose(self) -> None:
         """Async-safe agent teardown for server shutdown paths."""
+        if self._mcp_tool_session is not None:
+            await self._mcp_tool_session.aclose()
+            self._mcp_tool_session = None
         self._close_checkpointer()
         await self._aclose_telemetry()
 
@@ -232,9 +236,10 @@ class GenericLangGraphChatAgent(BaseAgent):
         tools = []
         if self.mcp_servers:
             logger.info("Discovering MCP tools through LangChain MCPAdapter")
+            self._mcp_tool_session = await load_mcp_tools(self.mcp_servers)
             tools = [
                 wrap_langchain_tool(tool, self.telemetry, source_type="mcp")
-                for tool in await load_mcp_tools(self.mcp_servers)
+                for tool in self._mcp_tool_session
             ]
         used_tool_name = []
         if tools:
