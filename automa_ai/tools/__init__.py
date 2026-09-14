@@ -11,6 +11,7 @@ from automa_ai.tools.run_command import build_run_command_tool
 from automa_ai.tools.run_python import build_run_python_tool
 from automa_ai.tools.web_search import build_web_search_tool
 from automa_ai.tools.yaml_agent import build_yaml_agent_tool
+from automa_ai.tools.pdf_reader import build_pdf_reader_tool
 
 import logging
 
@@ -19,6 +20,7 @@ for tool_type, builder in {
     "run_command": build_run_command_tool,
     "run_python": build_run_python_tool,
     "yaml_agent": build_yaml_agent_tool,
+    "pdf_reader": build_pdf_reader_tool,
 }.items():
     try:
         DEFAULT_TOOL_REGISTRY.register(tool_type, builder)
