@@ -200,11 +200,24 @@ class GenericLangGraphChatAgent(BaseAgent):
 
     async def aclose(self) -> None:
         """Async-safe agent teardown for server shutdown paths."""
+        close_error: BaseException | None = None
         if self._mcp_tool_session is not None:
-            await self._mcp_tool_session.aclose()
-            self._mcp_tool_session = None
+            try:
+                await self._mcp_tool_session.aclose()
+            except BaseException as exc:
+                close_error = exc
+                logger.exception("Failed to close MCP tool session cleanly.")
+            finally:
+                self._mcp_tool_session = None
         self._close_checkpointer()
-        await self._aclose_telemetry()
+        try:
+            await self._aclose_telemetry()
+        except BaseException as exc:
+            if close_error is None:
+                close_error = exc
+            logger.exception("Failed to close telemetry cleanly.")
+        if close_error is not None:
+            raise close_error
 
     def _close_checkpointer(self) -> None:
         if self._checkpointer_closed:

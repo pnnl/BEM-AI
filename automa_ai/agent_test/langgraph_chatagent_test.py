@@ -192,6 +192,49 @@ async def test_agent_aclose_runs_telemetry_cleanup_once():
 
 
 @pytest.mark.asyncio
+async def test_agent_aclose_finishes_cleanup_after_mcp_close_error():
+    calls: list[str] = []
+
+    class FailingMCPToolSession:
+        async def aclose(self):
+            calls.append("mcp-close")
+            raise RuntimeError("MCP disconnected")
+
+    class DummyTelemetry:
+        enabled = True
+
+        def close(self):
+            calls.append("telemetry-close")
+
+        async def aflush(self):
+            calls.append("telemetry-aflush")
+
+        async def aclose(self):
+            calls.append("telemetry-aclose")
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+        checkpointer_cleanup=lambda: calls.append("checkpointer-close"),
+    )
+    agent.telemetry = DummyTelemetry()
+    agent._mcp_tool_session = FailingMCPToolSession()
+
+    with pytest.raises(RuntimeError, match="MCP disconnected"):
+        await agent.aclose()
+
+    assert calls == [
+        "mcp-close",
+        "checkpointer-close",
+        "telemetry-aflush",
+        "telemetry-aclose",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_agent_initializes_graph_once_for_concurrent_requests(monkeypatch):
     agent = GenericLangGraphChatAgent(
         agent_name="test-agent",
