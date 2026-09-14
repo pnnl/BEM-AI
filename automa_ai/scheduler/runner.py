@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from automa_ai.scheduler.models import LoopTask, LoopTaskStatus
@@ -14,7 +14,7 @@ NowProvider = Callable[[], datetime]
 
 
 def _utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class LoopScheduler:
@@ -160,7 +160,7 @@ class LoopScheduler:
     def _coerce_aware_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ValueError("scheduler timestamps must be timezone-aware")
-        return value.astimezone(UTC)
+        return value.astimezone(timezone.utc)
 
     @staticmethod
     def _next_scheduled_time(task: LoopTask, now: datetime) -> datetime:

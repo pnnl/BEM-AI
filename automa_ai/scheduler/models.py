@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import StrEnum
+from enum import Enum
 
 
-class LoopTaskStatus(StrEnum):
+class LoopTaskStatus(str, Enum):
     """Lifecycle states for a scheduled loop task."""
 
     ACTIVE = "active"

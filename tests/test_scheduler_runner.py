@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from automa_ai.scheduler import LoopScheduler, LoopTaskStatus
+
+UTC = timezone.utc
 
 
 class MutableClock:

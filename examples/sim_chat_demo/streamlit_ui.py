@@ -24,7 +24,7 @@ async def stream_reply(prompt: str, session_id: str):
     async for chunk in get_chatbot().stream(prompt, session_id, task_id):
         content = chunk.get("content")
         if content:
-            yield content
+            yield content, chunk.get("is_task_complete", False)
 
 
 def main() -> None:
@@ -48,8 +48,8 @@ def main() -> None:
 
             async def consume() -> None:
                 nonlocal response
-                async for text in stream_reply(prompt, session_id):
-                    response += text
+                async for text, is_complete in stream_reply(prompt, session_id):
+                    response = text if is_complete else response + text
                     placeholder.markdown(response + "▌")
 
             asyncio.run(consume())

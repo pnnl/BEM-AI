@@ -50,7 +50,12 @@ ruleset_checking = ["langchain-community>=0.4.1", "streamlit>=1.54.0"]
 subagent_example = ["streamlit>=1.54.0"]
 travel_blackboard_demo = ["streamlit>=1.54.0"]
 travel_blackboard_yaml_demo = ["streamlit>=1.54.0"]
-sim_chat_demo = ["streamlit>=1.51.0"]
+sim_chat_demo = [
+    "streamlit>=1.51.0",
+    "trafilatura>=1.12.2",
+    "duckduckgo-search>=7.2.1",
+    "rank-bm25>=0.2.2",
+]
 sim_chat_server_demo = ["streamlit>=1.51.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 eplus_mcp_demo = ["eppy>=0.5.63", "matplotlib>=3.10.7", "plotly>=6.4.0", "streamlit>=1.54.0", "fastmcp>=4,<5", "langchain[mcp]>=1.4,<2", "mcp>=2,<3"]
 otel = [

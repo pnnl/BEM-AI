@@ -137,6 +137,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.instructions = instructions
         self.client = None
         self.graph = None
+        self._graph_init_lock = asyncio.Lock()
         self.mcp_servers = mcp_servers
         self._mcp_tool_session: MCPToolSession | None = None
         self.retriever = retriever
@@ -229,6 +230,19 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._telemetry_closed = True
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
+        """Initialize the graph at most once, including MCP tool discovery."""
+        async with self._graph_init_lock:
+            if self.graph is not None:
+                return
+            try:
+                await self._build_graph(emitter)
+            except BaseException:
+                if self._mcp_tool_session is not None:
+                    await self._mcp_tool_session.aclose()
+                    self._mcp_tool_session = None
+                raise
+
+    async def _build_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
         emitter: agent internal event queue for streaming, a separate streaming channel from langchain's streaming.
         """

@@ -191,6 +191,32 @@ async def test_agent_aclose_runs_telemetry_cleanup_once():
     ]
 
 
+@pytest.mark.asyncio
+async def test_agent_initializes_graph_once_for_concurrent_requests(monkeypatch):
+    agent = GenericLangGraphChatAgent(
+        agent_name="test-agent",
+        description="test",
+        instructions="test",
+        chat_model=None,
+        response_format=None,
+    )
+    calls: list[object] = []
+
+    async def build_graph(emitter):
+        calls.append(emitter)
+        await asyncio.sleep(0)
+        agent.graph = object()
+
+    monkeypatch.setattr(agent, "_build_graph", build_graph)
+
+    async def emitter(_event):
+        return None
+
+    await asyncio.gather(agent.init_graph(emitter), agent.init_graph(emitter))
+
+    assert len(calls) == 1
+
+
 def test_load_skill_tool_response_is_never_streamed():
     assert not _should_emit_tool_response(
         "load_skill",
