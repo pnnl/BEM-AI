@@ -10,6 +10,11 @@ from automa_ai.scheduler import LoopScheduler, LoopTaskStatus
 UTC = timezone.utc
 
 
+def test_loop_task_status_preserves_strenum_string_semantics() -> None:
+    assert str(LoopTaskStatus.ACTIVE) == "active"
+    assert f"{LoopTaskStatus.CANCELLED}" == "cancelled"
+
+
 class MutableClock:
     def __init__(self, current: datetime) -> None:
         self.current = current
