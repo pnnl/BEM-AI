@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import json
 from typing import Any
 from uuid import UUID
 
@@ -62,7 +61,7 @@ class AutomaLLMCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             invocation_params=kwargs.get("invocation_params"),
         )
-        attributes["gen_ai.prompt"] = _messages_json(messages)
+        attributes["gen_ai.prompt"] = _messages_payload(messages)
         attributes["input.value"] = attributes["gen_ai.prompt"]
         self._start_span(run_id, attributes)
 
@@ -86,7 +85,9 @@ class AutomaLLMCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             invocation_params=kwargs.get("invocation_params"),
         )
-        attributes["gen_ai.prompt"] = json.dumps(prompts, default=str)
+        # Pass the list itself, not a JSON string, so each prompt is truncated
+        # individually and the encoded payload stays valid JSON.
+        attributes["gen_ai.prompt"] = list(prompts)
         attributes["input.value"] = attributes["gen_ai.prompt"]
         self._start_span(run_id, attributes)
 
@@ -298,19 +299,14 @@ def _prefer_complete_usage(
     return response_usage
 
 
-def _messages_json(messages: list[list[BaseMessage]]) -> str:
-    """Serialize LangChain chat batches into a compact role/content JSON payload."""
+def _messages_payload(messages: list[list[BaseMessage]]) -> list[Any]:
+    """Build a structured role/content prompt payload for telemetry.
+    """
     batches = [
         [_message_dict(message) for message in message_group]
         for message_group in messages
     ]
-    payload = batches[0] if len(batches) == 1 else batches
-    return json.dumps(
-        payload,
-        default=str,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+    return batches[0] if len(batches) == 1 else batches
 
 
 def _message_dict(message: BaseMessage) -> dict[str, Any]:
