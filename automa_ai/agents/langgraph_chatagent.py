@@ -511,6 +511,11 @@ class GenericLangGraphChatAgent(BaseAgent):
                     turn.task_id,
                     metadata=metadata,
                 )
+                identity = self._event_identity_attributes(
+                    session_id=turn.context_id,
+                    task_id=turn.task_id,
+                    user_id=turn.user_id,
+                )
                 self.telemetry.event(
                     "message",
                     attributes={
@@ -519,13 +524,18 @@ class GenericLangGraphChatAgent(BaseAgent):
                         **self._attachment_telemetry_attributes(
                             turn.attachments
                         ),
-                        **self._event_identity_attributes(
-                            session_id=turn.context_id,
-                            task_id=turn.task_id,
-                            user_id=turn.user_id,
-                        ),
+                        **identity,
                     },
                 )
+
+                self.telemetry.event(
+                    "agent.input",
+                    attributes={
+                        "input.messages": inputs.get("messages", inputs),
+                        **identity,
+                    },
+                )
+
                 context_token = set_subagent_context_id(turn.context_id)
                 user_id_token = set_subagent_user_id(turn.user_id)
                 emitter_token = set_subagent_emitter(emit_subagent_event)
@@ -627,17 +637,28 @@ class GenericLangGraphChatAgent(BaseAgent):
             task_id = turn.task_id
             user_id = turn.user_id
             metadata = turn.metadata
+            identity = self._event_identity_attributes(
+                session_id=context_id,
+                task_id=task_id,
+                user_id=user_id,
+            )
             self.telemetry.event(
                 "message",
                 attributes={
                     "message.role": "user",
                     "message.content": turn.query,
                     **self._attachment_telemetry_attributes(turn.attachments),
-                    **self._event_identity_attributes(
-                        session_id=turn.context_id,
-                        task_id=turn.task_id,
-                        user_id=turn.user_id,
-                    ),
+                    **identity,
+                },
+            )
+
+            self.telemetry.event(
+                "agent.input",
+                attributes={
+                    "input.messages": inputs.get("messages", inputs),
+                    "context.degraded": turn_degraded,
+                    "context.missing_providers": missing_providers,
+                    **identity,
                 },
             )
 
