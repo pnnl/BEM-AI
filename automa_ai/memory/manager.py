@@ -131,6 +131,12 @@ class DefaultMemoryManager:
         importance_score: float = 0.5,
         memory_type: MemoryType = MemoryType.SHORT_TERM,
     ) -> None:
+        if self.short_term_store is not None:
+            store = self.short_term_store
+        elif self.long_term_store is not None:
+            store, memory_type = self.long_term_store, MemoryType.LONG_TERM
+        else:
+            raise ValueError("DefaultMemoryManager has no store configured to write to.")
 
         entry = self._entry_from_message(
             message,
@@ -142,10 +148,13 @@ class DefaultMemoryManager:
             memory_type=memory_type,
         )
 
-        await self.short_term_store.awrite_memory([entry])
+        await store.awrite_memory([entry])
 
     async def manage_memory_size(self) -> None:
         """Manage memory size by moving old memories to long-term storage."""
+        if self.short_term_store is None or self.long_term_store is None:
+            return
+
         short_memories = await self.short_term_store.aread_memories(
             memory_type=MemoryType.SHORT_TERM,
             limit=self.max_short_term_memories * 2,  # Get all short-term memories
