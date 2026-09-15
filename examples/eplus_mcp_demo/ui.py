@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from automa_ai.client.simple_client import (
     SimpleClient,
 )
+from automa_ai.client.ui_util import extract_stream_text
 
 
 base_dir = Path(__file__).resolve().parent
@@ -57,68 +58,25 @@ def main():
                 nonlocal full_response
                 with st.spinner("🤖 Thinking..."):
                     async for chunk in send_message_async(prompt, st.session_state.get("context_id")):
-                        # print(chunk)
-                        text_part = None
-
-                        ## Case 1: A2A JSON-RPC result object
                         if isinstance(chunk, dict) and "result" in chunk:
                             result = chunk.get("result", {})
-                            kind = result.get("kind")
                             context_id = result.get("contextId")
                             if context_id:
                                 st.session_state["context_id"] = context_id
 
-                            # === Handle artifact-update ===
-                            if kind == "artifact-update":
-                                artifact = result.get("artifact", {})
-                                parts = artifact.get("parts", [])
-                                text_fragments = [
-                                    p.get("text") for p in parts if p.get("kind") == "text" and p.get("text")
-                                ]
-                                if text_fragments:
-                                    text_part = "\n".join(text_fragments)
-                                    full_response += f"\n\n🧩 **Artifact Update**\n{text_part}"
-                                    message_placeholder.markdown(full_response + "▌")
-                            # === Handle status-update ===
-                            if kind == "status-update":
-                                status = result.get("status", {})
-                                state = status.get("state")
-                                message = status.get("message", {})
-                                parts = message.get("parts", [])
+                        update = extract_stream_text(chunk)
+                        if update.state == "input-required":
+                            st.session_state["awaiting_input"] = True
+                            full_response += (
+                                "\n\n🟡 *Agent is waiting for your response...*\n\n"
+                                f"**Response:** {update.text}"
+                            )
+                            message_placeholder.markdown(full_response)
+                            break
 
-                                # Extract text fragments (agent response or question)
-                                text_fragments = [
-                                    p.get("text")
-                                    for p in parts
-                                    if p.get("kind") == "text" and p.get("text")
-                                ]
-                                if text_fragments:
-                                    text_part = "\n".join(text_fragments)
-
-                                # Handle 'input-required' state
-                                if state == "input-required":
-                                    st.session_state["awaiting_input"] = True
-                                    full_response += (
-                                        f"\n\n🟡 *Agent is waiting for your response...*\n\n"
-                                        f"**Response:** {text_part}"
-                                    )
-                                    message_placeholder.markdown(full_response)
-                                    break  # Stop streaming to wait for user input
-                                else:
-                                    st.session_state["awaiting_input"] = False
-                        ## Case 2: fallback streaming types
-                        elif "delta" in chunk and "text" in chunk["delta"]:
-                            text_part = chunk["delta"]["text"]
-                        elif "message" in chunk and "text" in chunk["message"]:
-                            text_part = chunk["message"]["text"]
-                        elif "content" in chunk:
-                            text_part = chunk["content"]
-                        elif "data" in chunk:
-                            text_part = chunk["data"]
-
-                        # --- Render text incrementally ---
-                        if text_part and state != "input-required":
-                            full_response += text_part
+                        st.session_state["awaiting_input"] = False
+                        if update.text:
+                            full_response = update.text if update.replaces_text else full_response + update.text
                             message_placeholder.markdown(full_response + "▌")
 
             asyncio.run(process_stream())

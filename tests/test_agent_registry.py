@@ -1,4 +1,5 @@
 import pickle
+import asyncio
 
 import pytest
 from google.protobuf.json_format import MessageToDict
@@ -136,6 +137,38 @@ def test_close_agent_supports_async_close():
     agent_registry._close_agent(DummyAgent())
 
     assert calls == ["async-closed"]
+
+
+def test_server_lifespan_closes_async_agent_on_uvicorn_loop(monkeypatch):
+    calls: list[int] = []
+
+    class DummyAgent:
+        agent_name = "dummy"
+
+        async def aclose(self):
+            calls.append(id(asyncio.get_running_loop()))
+
+    monkeypatch.setattr(agent_registry, "GenericAgentExecutor", lambda agent: object())
+    monkeypatch.setattr(
+        agent_registry, "DefaultRequestHandler", lambda **kwargs: object()
+    )
+    monkeypatch.setattr(agent_registry, "create_agent_card_routes", lambda *args: [])
+    monkeypatch.setattr(agent_registry, "create_jsonrpc_routes", lambda **kwargs: [])
+
+    def run_with_lifespan(app, *_args, **_kwargs):
+        async def serve_lifespan():
+            async with app.router.lifespan_context(app):
+                pass
+
+        asyncio.run(serve_lifespan())
+
+    monkeypatch.setattr(agent_registry.uvicorn, "run", run_with_lifespan)
+
+    server = A2AAgentServer(lambda: DummyAgent(), _make_card("localhost:20000"))
+    server.run()
+
+    assert len(calls) == 1
+    assert server._agent_closed is True
 
 
 def test_health_check_default_response():

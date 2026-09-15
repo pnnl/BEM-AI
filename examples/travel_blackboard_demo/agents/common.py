@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from automa_ai.agents.remote_agent import get_subagent_context_id
 from automa_ai.config.blackboard import BlackboardConfig
 from automa_ai.tools.base import BaseDefaultTool, RuntimeDeps
 from automa_ai.tools.registry import DEFAULT_TOOL_REGISTRY
@@ -118,7 +119,13 @@ class RequirementsInput(BaseModel):
 class BookingInput(BaseModel):
     category: str
     quote_id: str
-    session_id: str
+
+
+def _active_session_id() -> str:
+    session_id = get_subagent_context_id()
+    if not session_id:
+        raise ValueError("travel_booking_provider requires an active request context.")
+    return session_id
 
 
 class TravelFlightTool(BaseDefaultTool):
@@ -150,11 +157,11 @@ class TravelCarTool(BaseDefaultTool):
 
 class TravelBookingTool(BaseDefaultTool):
     type = "travel_booking_provider"
-    description = "Create deterministic booking confirmations from selected quote IDs."
+    description = "Create deterministic booking confirmations from selected quote IDs using the active request session."
     args_schema = BookingInput
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return make_confirmation(payload["category"], payload["quote_id"], payload["session_id"])
+        return make_confirmation(payload["category"], payload["quote_id"], _active_session_id())
 
 
 def build_travel_flight_tool(_config: dict[str, Any], _deps: RuntimeDeps) -> BaseDefaultTool:

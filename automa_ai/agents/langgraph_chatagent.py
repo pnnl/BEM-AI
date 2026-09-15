@@ -12,9 +12,9 @@ from langchain_core.messages import (
     ToolMessage,
     HumanMessage,
 )
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from pydantic import BaseModel
 
 from automa_ai.agents.remote_agent import (
@@ -36,7 +36,7 @@ from automa_ai.common.network_retry import (
     is_retryable_network_error,
 )
 from automa_ai.common.response_parser import extract_and_parse_json
-from automa_ai.common.utils import map_server_config_to_mcp_connection
+from automa_ai.common.utils import MCPToolSession, load_mcp_tools
 from automa_ai.retrieval.base import BaseRetriever
 from automa_ai.common.types import ServerConfig
 from automa_ai.memory.manager import DefaultMemoryManager, MemoryWriteEvent
@@ -117,6 +117,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         transient_retry_attempts: int = 0,
         budget_config: TokenBudgetConfig | None = None,
         token_usage_store: TokenUsageStore | None = None,
+        middleware: list[AgentMiddleware] | None = None,
         telemetry_config: TelemetryConfig | dict[str, Any] | str | None = None,
         hook_runner: HookRunner | None = None,
         context_pipeline: ContextPipeline | None = None,
@@ -136,7 +137,9 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.instructions = instructions
         self.client = None
         self.graph = None
+        self._graph_init_lock = asyncio.Lock()
         self.mcp_servers = mcp_servers
+        self._mcp_tool_session: MCPToolSession | None = None
         self.retriever = retriever
         self.memory_manager = memory_manager
         self.skill_manager = skills_manager
@@ -153,6 +156,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
+        self.middleware = list(middleware) if middleware else []
         self.turn_input_builder = turn_input_builder or TurnInputBuilder.default(
             retriever=retriever,
             memory_manager=memory_manager,
@@ -196,8 +200,24 @@ class GenericLangGraphChatAgent(BaseAgent):
 
     async def aclose(self) -> None:
         """Async-safe agent teardown for server shutdown paths."""
+        close_error: BaseException | None = None
+        if self._mcp_tool_session is not None:
+            try:
+                await self._mcp_tool_session.aclose()
+            except BaseException as exc:
+                close_error = exc
+                logger.exception("Failed to close MCP tool session cleanly.")
+            finally:
+                self._mcp_tool_session = None
         self._close_checkpointer()
-        await self._aclose_telemetry()
+        try:
+            await self._aclose_telemetry()
+        except BaseException as exc:
+            if close_error is None:
+                close_error = exc
+            logger.exception("Failed to close telemetry cleanly.")
+        if close_error is not None:
+            raise close_error
 
     def _close_checkpointer(self) -> None:
         if self._checkpointer_closed:
@@ -223,30 +243,33 @@ class GenericLangGraphChatAgent(BaseAgent):
         self._telemetry_closed = True
 
     async def init_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
+        """Initialize the graph at most once, including MCP tool discovery."""
+        async with self._graph_init_lock:
+            if self.graph is not None:
+                return
+            try:
+                await self._build_graph(emitter)
+            except BaseException:
+                if self._mcp_tool_session is not None:
+                    await self._mcp_tool_session.aclose()
+                    self._mcp_tool_session = None
+                raise
+
+    async def _build_graph(self, emitter: Callable[[StreamEvent], Awaitable[None]]):
         """Load the agent graph
         emitter: agent internal event queue for streaming, a separate streaming channel from langchain's streaming.
         """
         logger.info(f"Initializing {self.agent_name} metadata")
-        if self.mcp_servers:
-            # Loading mcp server clients.
-            logger.info(f"Subscribe to MCPs through sse")
-
-            self.client = MultiServerMCPClient(
-                {
-                    server_name: map_server_config_to_mcp_connection(
-                        self.mcp_servers[server_name]
-                    )
-                    for server_name in self.mcp_servers
-                }
-            )
-
         tools = []
-        used_tool_name = []
-        if self.client:
+        if self.mcp_servers:
+            logger.info("Discovering MCP tools through LangChain MCPAdapter")
+            self._mcp_tool_session = await load_mcp_tools(self.mcp_servers)
             tools = [
                 wrap_langchain_tool(tool, self.telemetry, source_type="mcp")
-                for tool in await self.client.get_tools()
+                for tool in self._mcp_tool_session
             ]
+        used_tool_name = []
+        if tools:
             for tool in tools:
                 if self.debug:
                     print(self.agent_name, f"Loaded tools {tool.name}")
@@ -335,12 +358,15 @@ class GenericLangGraphChatAgent(BaseAgent):
             system_prompt=self.instructions,
             response_format=self.response_format,
             tools=tools,
-            middleware=build_token_budget_middlewares(
-                budget=self.budget_config,
-                usage_store=self.token_usage_store,
-                model=self.model,
-                agent_name=self.agent_name,
-            ),
+            middleware=[
+                *build_token_budget_middlewares(
+                    budget=self.budget_config,
+                    usage_store=self.token_usage_store,
+                    model=self.model,
+                    agent_name=self.agent_name,
+                ),
+                *self.middleware,
+            ],
         )
 
     def _ensure_blackboard(self, session_id: str) -> None:
@@ -731,6 +757,9 @@ class GenericLangGraphChatAgent(BaseAgent):
                                     )
                             elif isinstance(ck, ToolMessage):
                                 tool_activity_started = True
+                                # Only text produced after the last tool
+                                # result belongs in the final artifact.
+                                message_accumulator.reset_turn_text()
                                 self.telemetry.event(
                                     "tool.message",
                                     attributes={

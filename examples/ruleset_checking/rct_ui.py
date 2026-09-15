@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from automa_ai.client.simple_client import (
     SimpleClient,
 )  # assuming your file is named simple_client.py
-from automa_ai.client.ui_util import natural_delay
+from automa_ai.client.ui_util import extract_stream_text, natural_delay
 
 base_dir = Path(__file__).resolve().parent
 env_path = base_dir / '.env'
@@ -70,33 +70,13 @@ def main():
                 nonlocal full_response
                 with st.spinner("🤖 Thinking..."):
                     async for chunk in send_message_async(prompt, session_id):
-                        text_part = None
-                        print(chunk)
-                        if isinstance(chunk, dict) and "result" in chunk:
-                            result = chunk.get("result", {})
-                            status = result.get("status", {})
-                            message = status.get("message", {})
-                            parts = message.get("parts", [])
-                            text_fragments = [
-                                p.get("text")
-                                for p in parts
-                                if p.get("kind") == "text" and p.get("text")
-                            ]
-                            if text_fragments:
-                                text_part = "\n".join(text_fragments)
-
-                        elif "delta" in chunk and "text" in chunk["delta"]:
-                            text_part = chunk["delta"]["text"]
-                        elif "message" in chunk and "text" in chunk["message"]:
-                            text_part = chunk["message"]["text"]
-                        elif "content" in chunk:
-                            text_part = chunk["content"]
-                        elif "data" in chunk:
-                            text_part = chunk["data"]
-
-                        if text_part:
-                            await natural_delay(text_part)
-                            full_response += text_part
+                        update = extract_stream_text(chunk)
+                        if update.text:
+                            if update.replaces_text:
+                                full_response = update.text
+                            else:
+                                await natural_delay(update.text)
+                                full_response += update.text
                             message_placeholder.markdown(full_response + "▌")
 
                     message_placeholder.markdown(full_response)

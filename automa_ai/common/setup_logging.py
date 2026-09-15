@@ -130,74 +130,16 @@ def _get_logging_config(log_dir: str = "logs") -> LoggingConfigDict:
         "version": 1,
         "disable_existing_loggers": False,
         "filters": {
-            "mcp_client_filter": {
-                "()": "logging.Filter",
-                "name": "automa_ai.mcp_servers.client",
-            },
-            "mcp_server_filter": {
-                "()": "logging.Filter",
-                "name": "automa_ai.mcp_servers.server",
-            },
-            "orchestrator_agent_filter_1": {
-                "()": "logging.Filter",
-                "name": "automa_ai.agents.orchestrator_local_agent",
-            },
-            "orchestrator_agent_filter_2": {
-                "()": "logging.Filter",
-                "name": "automa_ai.agents.orchestrator_network_agent",
-            },
-            "adk_agent_filter": {
-                "()": "logging.Filter",
-                "name": "automa_ai.agents.adk_agent",
-            },
             "exclude_patterns_filter": {
                 "()": "automa_ai.common.setup_logging.ExcludePatternsFilter",
                 "name": "automa_ai",
-                "exclude_patterns": [
-                    "automa_ai.mcp_servers.client",
-                    "automa_ai.mcp_servers.server",
-                    "automa_ai.mcp_servers.agent_card_server",
-                    "automa_ai.agents.orchestrator_local_agent",
-                    "automa_ai.agents.orchestrator_network_agent",
-                    "automa_ai.agents.adk_agent",
-                ],
+                "exclude_patterns": [],
             },
         },
         "formatters": {
             "default": {"format": DEFAULT_LOG_FORMAT}
         },
         "handlers": {
-            "mcp_client_file": {
-                "class": "logging.FileHandler",
-                "formatter": "default",
-                "level": "INFO",
-                "filename": f"{log_dir}/mcp_client.log",
-                "filters": ["mcp_client_filter"],
-            },
-            "mcp_server_file": {
-                "class": "logging.FileHandler",
-                "formatter": "default",
-                "level": "INFO",
-                "filename": f"{log_dir}/mcp_server.log",
-                "filters": ["mcp_server_filter"],
-            },
-            "orchestrator_agent_file": {
-                "class": "logging.FileHandler",
-                "formatter": "default",
-                "level": "INFO",
-                "filename": f"{log_dir}/orchestrator_agent.log",
-                "filters": [
-                    "orchestrator_agent_filter_1",
-                    "orchestrator_agent_filter_2",
-                ],
-            },
-            "adk_agent_file": {
-                "class": "logging.FileHandler",
-                "formatter": "default",
-                "level": "INFO",
-                "filename": f"{log_dir}/adk_agent.log",
-                "filters": ["adk_agent_filter"],
-            },
             "catch_all_file": {
                 "class": "logging.FileHandler",
                 "formatter": "default",
@@ -213,45 +155,11 @@ def _get_logging_config(log_dir: str = "logs") -> LoggingConfigDict:
                 },
                 "level": "INFO",
                 "handlers": [
-                    "mcp_client_file",
-                    "mcp_server_file",
-                    "orchestrator_agent_file",
-                    "adk_agent_file",
                     "catch_all_file",
                 ],
             },
         },
         "loggers": {
-            "automa_ai.mcp_servers.client": {
-                "handlers": ["mcp_client_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "automa_ai.mcp_servers.server": {
-                "handlers": ["mcp_server_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "automa_ai.mcp_servers.agent_card_server": {
-                "handlers": ["mcp_server_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "automa_ai.agents.orchestrator_local_agent": {
-                "handlers": ["orchestrator_agent_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "automa_ai.agents.orchestrator_network_agent": {
-                "handlers": ["orchestrator_agent_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "automa_ai.agents.adk_agent": {
-                "handlers": ["adk_agent_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
             "automa_ai": {
                 "handlers": ["catch_all_file"],
                 "level": "INFO",

@@ -90,6 +90,40 @@ The facade sanitizes attributes before they reach the recorder. Your
 Do not re-derive prompts, tool arguments, metadata, or other payloads from
 external state inside a recorder; that bypasses the central redaction policy.
 
+## Inspecting JSONL Traces
+
+The trace reader groups records by trace ID, reports unclosed or failed spans,
+and can make lightweight assertions in CI or a local replay fixture. Its reader
+implementation uses only the Python standard library and it does not rerun an
+agent or resend tool calls. Invoking it as an AUTOMA-AI module still imports the
+installed AUTOMA-AI package, so it requires the package's normal runtime
+dependencies today; it is not a standalone zero-dependency executable.
+
+```bash
+python -m automa_ai.telemetry.trace_reader summary ./logs/telemetry.jsonl
+python -m automa_ai.telemetry.trace_reader evaluate ./logs/telemetry.jsonl \
+  --require-span agent.turn --require-tool run_python \
+  --tool-argument-contains 'run_python=example.py' \
+  --tool-output-contains 'run_python=Simulation complete' \
+  --tool-call-count run_python=1 --require-ok --max-duration-ms 30000
+```
+
+Use `--require-event` and `--forbid-event` for real event names such as
+`message`, `agent.response`, `tool.requested`, `tool.message`, `tool.input`, and
+`tool.output`. Use `--require-span` for `agent.turn`, `tool.call`, and
+`llm.call`. Tool-aware checks accept `TOOL=TEXT` (or `TOOL=COUNT` for
+`--tool-call-count`) and inspect recorded `tool.name`, `tool.arguments`, and
+`tool.result` attributes. `--max-duration-ms` compares the longest top-level
+span instead of summing nested spans; it is not cumulative elapsed time when a
+trace contains several sequential top-level spans. The `evaluate` command
+returns exit status `1` when an expectation fails; use `--json` for
+machine-readable output. Invalid JSONL lines are reported to stderr and skipped,
+so a partially written local log remains useful.
+
+Making this a truly standalone operations utility would require a separate
+entry point or lazy imports in AUTOMA-AI package initializers. That broader
+packaging change is intentionally outside this trace-reader feature.
+
 ## OpenTelemetry Recorder
 
 Install the OTEL extra before enabling the built-in OpenTelemetry recorder:

@@ -153,3 +153,18 @@ def test_tool_wrapper_uses_context_session_when_omitted(tools, session_id):
 
     assert read_result["session_id"] == session_id
     assert read_result["data"] == ["ctx"]
+
+
+def test_tool_wrapper_resolves_legacy_current_session_placeholder(tools, session_id):
+    token = set_subagent_context_id(session_id)
+    try:
+        result = tools["blackboard_write"].func(
+            session_id="current_session_id",
+            ops=[{"op": "append", "path": "items", "value": "ctx"}],
+            expected_revision=1,
+        )
+    finally:
+        reset_subagent_context_id(token)
+
+    assert result["session_id"] == session_id
+    assert tools["blackboard_read"].func(session_id=session_id, path="items")["data"] == ["ctx"]

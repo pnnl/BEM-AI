@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import logging
 import sys
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from multiprocessing import Process
 from typing import Any, Optional, List, Dict, Callable
@@ -142,6 +143,20 @@ def _close_agent(agent: BaseAgent) -> None:
         logger.exception("Failed to close agent %s cleanly.", agent.agent_name)
 
 
+async def _aclose_agent(agent: BaseAgent) -> None:
+    """Close an agent on its currently running server event loop."""
+    close_fn = getattr(agent, "aclose", None) or getattr(agent, "close", None)
+    if not callable(close_fn):
+        return
+
+    try:
+        result = close_fn()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        logger.exception("Failed to close agent %s cleanly.", agent.agent_name)
+
+
 def _build_generic_agent_executor(agent: BaseAgent) -> AgentExecutor:
     return GenericAgentExecutor(agent=agent)
 
@@ -171,6 +186,7 @@ class A2AAgentServer:
         self.shutdown_event = asyncio.Event()
         self.health_check_path = health_check_path
         self._agent: Optional[BaseAgent] = None
+        self._agent_closed = False
         self.service_config = ServiceConfig.from_value(service_config)
 
     @property
@@ -186,6 +202,7 @@ class A2AAgentServer:
 
     def run(self):
         self._agent = None
+        self._agent_closed = False
         try:
             logger.info("Building the agent....")
             self._agent = self.agent_builder()
@@ -220,7 +237,16 @@ class A2AAgentServer:
                 Route(self.health_check_path, health_check),
                 Mount(self.base_url_path or "/", app=a2a_app),
             ]
-            app = Starlette(routes=routes)
+            @asynccontextmanager
+            async def lifespan(_app):
+                try:
+                    yield
+                finally:
+                    if self._agent is not None and not self._agent_closed:
+                        await _aclose_agent(self._agent)
+                        self._agent_closed = True
+
+            app = Starlette(routes=routes, lifespan=lifespan)
             app.add_middleware(
                 AuthMiddleware,
                 auth_provider=build_auth_provider(
@@ -245,8 +271,9 @@ class A2AAgentServer:
             logger.error(f"An error occurred during server startup: {e}")
             sys.exit(1)
         finally:
-            if self._agent is not None:
+            if self._agent is not None and not self._agent_closed:
                 _close_agent(self._agent)
+                self._agent_closed = True
 
 
 class A2AServerManager:
