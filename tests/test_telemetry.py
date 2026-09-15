@@ -394,17 +394,13 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     )
     assert agent_span.events[0].name == "message"
     assert agent_span.events[0].attributes["message.role"] == "user"
-    assert agent_span.events[0].attributes["message.content"] == (
-        '{"length": 5, "sha256": '
-        '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e730'
-        '43362938b9824"}'
+    assert "message.content" not in agent_span.events[0].attributes
+    assert agent_span.events[0].attributes["message.content.length"] == 5
+    assert agent_span.events[0].attributes["message.content.sha256"] == (
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
     )
-    assert agent_span.attributes["input.value"] == agent_span.events[0].attributes[
-        "message.content"
-    ]
-    assert agent_span.attributes["gen_ai.prompt"] == agent_span.events[0].attributes[
-        "message.content"
-    ]
+    assert "input.value" not in agent_span.attributes
+    assert "gen_ai.prompt" not in agent_span.attributes
     assert agent_span.events[1].name == "model.usage"
     assert agent_span.events[1].attributes["gen_ai.request.model"] == "gpt-4o"
     assert agent_span.events[1].attributes["gen_ai.provider.name"] == "openai"
@@ -421,12 +417,13 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     assert agent_span.attributes["gen_ai.usage.total_tokens"] == 15
     assert tool_span.events[0].name == "tool.input"
     assert tool_span.events[1].name == "tool.output"
-    assert tool_span.attributes["input.value"] == tool_span.events[0].attributes[
-        "tool.arguments"
-    ]
-    assert tool_span.attributes["output.value"] == tool_span.events[1].attributes[
-        "tool.result"
-    ]
+    # `sanitize_value` wraps each leaf of a structured tool payload, so the
+    # envelope has to be unwrapped recursively. The exported attribute is the
+    # original object, not `{"query": {"length": 4, "sha256": ...}}`.
+    assert tool_span.events[0].attributes["tool.arguments"] == '{"query": "hvac"}'
+    assert tool_span.events[1].attributes["tool.result"] == '{"ok": true}'
+    assert tool_span.attributes["input.value"] == '{"query": "hvac"}'
+    assert tool_span.attributes["output.value"] == '{"ok": true}'
     assert agent_span.resource.attributes["service.name"] == "test-service"
 
 

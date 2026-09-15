@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -21,6 +22,29 @@ _ISO_TIMESTAMP_PATTERN = re.compile(
     r"(?:\.(?P<fraction>\d+))?"
     r"(?P<tz>Z|[+-]\d{2}:?\d{2})?$"
 )
+
+# `redaction.sanitize_text` wraps every payload in a
+# `{length, sha256, content?, truncated?}` envelope. That shape is correct for
+# the AUTOMA record (and the JSONL recorder), but OTEL payload attributes are
+# display fields: backends render `input.value` / `output.value` as the prompt
+# and completion. Exporting the envelope makes them render an opaque object
+# instead of the conversation, so the envelope is flattened during OTEL encoding.
+_ENVELOPE_REQUIRED_KEYS = frozenset({"length", "sha256"})
+_ENVELOPE_KEYS = frozenset({"content", "length", "sha256", "truncated"})
+_ENVELOPE_METADATA_KEYS = ("length", "sha256", "truncated")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+class _WithheldPayload:
+    """Sentinel for content the redaction policy chose not to export."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<withheld>"
+
+
+_WITHHELD = _WithheldPayload()
 
 
 @dataclass(frozen=True)
@@ -152,7 +176,16 @@ def span_attributes_from_event(
         # The callback learns output/model fields only when LangChain finishes
         # the run. Promote the event payload onto the open LLM span so
         # span-oriented backends can render model output without parsing events.
-        output = attributes.get("output.value") or attributes.get("gen_ai.completion")
+        #
+        # NOTE: callers pass raw (pre-otel_attributes) values here. Verify that
+        # the recorded OTEL span for llm.output events also goes through
+        # otel_attributes so envelope values are unwrapped before promotion.
+        #
+        # Use explicit None check rather than `or` so that a deliberate empty
+        # string ("") is preserved and doesn't fall through to a stale sibling.
+        output = attributes.get("output.value")
+        if output is None:
+            output = attributes.get("gen_ai.completion")
         result = {}
         if output is not None:
             result["output.value"] = output
@@ -344,12 +377,85 @@ def _span_name(original_name: str, attributes: dict[str, Any]) -> str:
 
 
 def otel_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
+    """Encode AUTOMA attributes as OTEL attributes.
+
+    Redaction envelopes are unwrapped to their content so payload attributes
+    stay renderable. For top-level envelopes, the envelope's own metadata is
+    preserved on sibling keys (`<key>.length`, `<key>.sha256`, `<key>.truncated`).
+    Metadata from nested envelopes is not propagated — the sibling-key approach
+    is only applied at the top level of the attribute dict.
+
+    When a mode such as `metadata` withholds content entirely, the payload
+    attribute is dropped rather than exported as a hash object a backend would
+    display as the prompt.
+
+    Precedence rule: if the input already contains an explicit attribute whose
+    key matches a generated sibling key (e.g. `foo.sha256`), the explicit value
+    wins. Envelope metadata is merged last via setdefault so input dict ordering
+    never changes the result.
+    """
     result: dict[str, Any] = {}
+    # Collect envelope metadata separately; merging it after the main pass
+    # ensures an explicit `foo.sha256` attribute is never silently overwritten
+    # by metadata generated from a `foo` envelope, regardless of dict order.
+    envelope_meta: dict[str, Any] = {}
     for key, value in attributes.items():
         if value is None:
             continue
-        result[str(key)] = _otel_attribute_value(value)
+        key_text = str(key)
+        if _is_sanitized_envelope(value):
+            for name in _ENVELOPE_METADATA_KEYS:
+                if name in value:
+                    envelope_meta[f"{key_text}.{name}"] = value[name]
+        unwrapped = _unwrap_payload(value)
+        if unwrapped is _WITHHELD:
+            continue
+        result[key_text] = _otel_attribute_value(unwrapped)
+    # Fill envelope metadata only where the main pass did not already write an
+    # explicit attribute — explicit attribute always takes precedence.
+    for meta_key, meta_value in envelope_meta.items():
+        result.setdefault(meta_key, meta_value)
     return result
+
+
+def _is_sanitized_envelope(value: Any) -> bool:
+    """Detect a `redaction.sanitize_text` envelope without matching real payloads."""
+    if not isinstance(value, Mapping):
+        return False
+    keys = set(value)
+    if not _ENVELOPE_REQUIRED_KEYS <= keys or not keys <= _ENVELOPE_KEYS:
+        return False
+    length = value.get("length")
+    sha256 = value.get("sha256")
+    if isinstance(length, bool) or not isinstance(length, int):
+        return False
+    return isinstance(sha256, str) and _SHA256_PATTERN.match(sha256) is not None
+
+
+def _unwrap_payload(value: Any) -> Any:
+    """Recursively replace redaction envelopes with the content they wrap.
+    """
+    if _is_sanitized_envelope(value):
+        return value["content"] if "content" in value else _WITHHELD
+    if isinstance(value, Mapping):
+        unwrapped_map = {}
+        for key, item in value.items():
+            item_value = _unwrap_payload(item)
+            if item_value is not _WITHHELD:
+                unwrapped_map[str(key)] = item_value
+        if value and not unwrapped_map:
+            return _WITHHELD
+        return unwrapped_map
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        unwrapped_list = [
+            item
+            for item in (_unwrap_payload(entry) for entry in value)
+            if item is not _WITHHELD
+        ]
+        if value and not unwrapped_list:
+            return _WITHHELD
+        return unwrapped_list
+    return value
 
 
 def _otel_attribute_value(value: Any) -> Any:

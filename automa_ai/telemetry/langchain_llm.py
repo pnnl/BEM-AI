@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 from typing import Any
 from uuid import UUID
@@ -11,6 +12,12 @@ from langchain_core.messages import BaseMessage
 from langchain_core.messages.ai import add_usage
 
 from automa_ai.telemetry.facade import SpanScope, Telemetry
+
+_ROLE_ALIASES = {
+    "human": "user",
+    "ai": "assistant",
+    "function": "tool",
+}
 
 
 class AutomaLLMCallbackHandler(AsyncCallbackHandler):
@@ -293,11 +300,13 @@ def _prefer_complete_usage(
 
 def _messages_json(messages: list[list[BaseMessage]]) -> str:
     """Serialize LangChain chat batches into a compact role/content JSON payload."""
+    batches = [
+        [_message_dict(message) for message in message_group]
+        for message_group in messages
+    ]
+    payload = batches[0] if len(batches) == 1 else batches
     return json.dumps(
-        [
-            [_message_dict(message) for message in message_group]
-            for message_group in messages
-        ],
+        payload,
         default=str,
         ensure_ascii=False,
         sort_keys=True,
@@ -307,10 +316,27 @@ def _messages_json(messages: list[list[BaseMessage]]) -> str:
 def _message_dict(message: BaseMessage) -> dict[str, Any]:
     """Return the message fields useful for prompt observability."""
     role = getattr(message, "type", None) or message.__class__.__name__
-    return {
-        "role": role,
+    payload: dict[str, Any] = {
+        "role": _ROLE_ALIASES.get(str(role).lower(), str(role)),
         "content": _content_to_text(getattr(message, "content", None)),
     }
+    # Tool calls live beside `content` in LangChain's message shape, but they are not part of the prompt text.
+    tool_calls = getattr(message, "tool_calls", None)
+    if tool_calls:
+        payload["tool_calls"] = [
+            {
+                "name": call.get("name"),
+                "arguments": call.get("args"),
+                "id": call.get("id"),
+            }
+            for call in tool_calls
+            if isinstance(call, Mapping)
+        ]
+    for field in ("name", "tool_call_id"):
+        value = getattr(message, field, None)
+        if value:
+            payload[field] = value
+    return payload
 
 
 def _response_text(response: Any) -> str | None:
