@@ -179,6 +179,10 @@ current shell directory.
 
 ## Full Example
 
+The OpenStudio-specific implementation is maintained outside this repository:
+[OpenStudio AI plugin](https://github.com/pnnl/openstudio-ai-plugin) and
+[OpenStudio AI harness](https://github.com/pnnl/openstudio-ai-harness).
+
 ```yaml
 spec_version: v1
 

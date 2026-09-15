@@ -69,7 +69,7 @@ class SchemaSplitter(ABC):
             name: Field name/path
             field_info: Field information dictionary
         """
-        lines = [f"Field: {name}", f"Type: {field_info.get("type")}"]
+        lines = [f"Field: {name}", f"Type: {field_info.get('type')}"]
 
         # Add additional field information
         for key in self.get_field_attributes():

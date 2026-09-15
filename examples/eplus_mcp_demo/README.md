@@ -40,7 +40,7 @@ The client communicates with the server in real time, displaying streamed model 
 
 Make sure you have the following installed:
 
-- **Python 3.12+**
+- **Python 3.10+**
 - **Streamlit**
 - **automa_ai 0.2.0**
 - **Async libraries**

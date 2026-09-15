@@ -4,8 +4,6 @@
 
 AUTOMA-AI treats agent systems as **composable agent infrastructure** rather than a monolithic agent stack. Instead of requiring every component to be implemented as a framework-specific agent, AUTOMA-AI provides protocol-driven integration points and plugin-and-play interfaces so agents, tools, retrievers, memory stores, token usage stores, blackboards, checkpointers, and model providers can be independently developed, replaced, and deployed.
 
-> **Formerly BEM-AI:** The original building energy modeling application has moved to the example folder: [examples/sim_bem_network](examples/sim_bem_network).
-
 ## What is AUTOMA-AI?
 
 AUTOMA-AI is an open-source framework for building stateful, long-running workflows powered by modern language models such as OpenAI/ChatGPT, Azure OpenAI, Google GenAI/Gemini, Claude-compatible interfaces, AWS Bedrock, and local models such as Ollama.
@@ -157,7 +155,7 @@ For local development:
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.10+
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ### Setup
@@ -175,6 +173,12 @@ For local development:
    uv sync
    ```
 
+   Demo-only dependencies are optional. Install the matching extra when running
+   an example; for example, `uv sync --extra eplus_mcp_demo` or
+   `uv sync --extra ruleset_checking`. Streamlit-only demos can use
+   `uv sync --extra ui`; MCP client integration alone uses
+   `uv sync --extra mcp`.
+
 3. **Activate the virtual environment**
 
    ```bash
@@ -183,11 +187,22 @@ For local development:
 
 ## Minimal quick-start example
 
-The recommended starting point is the streaming chatbot example:
+The recommended starting point is the standalone streaming chatbot example:
 
-- [examples/sim_chat_stream_demo](examples/sim_chat_stream_demo)
+- [examples/sim_chat_demo](examples/sim_chat_demo)
 
-This example shows how to bootstrap an AUTOMA-AI chatbot with streaming, tool integration, and the agent factory pattern.
+This example loads a YAML-defined agent directly in Streamlit; it does not start
+an A2A or MCP server. For the server-backed equivalent, see
+[examples/sim_chat_server_demo](examples/sim_chat_server_demo).
+
+Run the standalone demo with only its UI process:
+
+```bash
+uv sync --extra sim_chat_demo
+streamlit run examples/sim_chat_demo/streamlit_ui.py
+```
+
+The server-backed demo has a separate startup sequence; see its README.
 
 ## Project status and maturity
 
@@ -209,13 +224,13 @@ Use in production systems should be done with care and appropriate validation.
 
 - **LangChain / LangGraph**: Agent execution, orchestration, and workflow patterns.
 - **Google A2A**: Agent-to-agent communication protocol.
-- **Anthropic MCP**: Tool and context protocol integration.
+- **MCP integration (optional)**: Tool and context protocol integration through the `mcp` extra.
 - **Provider-specific LLM SDKs**: Model integration across cloud and local providers.
 
 ### Development tools
 
 - **uv**: Modern Python package management.
-- **Python 3.12**: Runtime environment.
+- **Python 3.10+**: Runtime environment.
 
 ## Project structure
 
@@ -225,14 +240,10 @@ BEM-AI/
 ├── automa_ai/
 │   ├── agent_test/                     # Test implementations and examples
 │   ├── agents/                         # Generic agent classes
-│   │   ├── react_langgraph_agent.py    # langchain/langgraph based agent
-│   │   ├── agent_factor.py             # Agent factory - recommend utility to initialize an agent
-│   │   ├── orchestrator_agent.py       # An agent that orchestrates the task workflow
-│   │   └── adk_agent.py                # Google ADK based agent
+│   │   ├── langgraph_chatagent.py      # Supported LangChain/LangGraph agent
+│   │   ├── agent_factory.py            # Agent factory
 │   ├── client/                         # Under development
 │   ├── scheduler/                      # Session-scoped scheduled prompt loops
-│   ├── mcp_servers/                    # MCP library
-│   ├── network/                        # Network
 │   ├── common/                         # Common utilities
 │   └── prompts/                        # Shared prompt templates
 ├── pyproject.toml                      # Project configuration
@@ -552,18 +563,20 @@ retriever:
 
 ### Single-agent chatbot with Streamlit UI
 
-This example demonstrates AUTOMA-AI for creating a live-streaming chatbot. It uses a sample MCP server to demonstrate streaming and tool calling with a single chatbot.
+This example demonstrates AUTOMA-AI for creating a live-streaming chatbot with
+a standalone YAML-defined agent. It does not require a local agent server.
 See [examples/sim_chat_demo](examples/sim_chat_demo).
-
-### Simple BEM typical building network
-
-This example is the prototype of BEM-AI, where multiple agents collaboratively complete a building energy modeling task.
-See [examples/sim_bem_network](examples/sim_bem_network).
 
 ### EnergyPlus chatbot with EnergyPlus MCP server
 
 This example shows how AUTOMA-AI integrates with the EnergyPlus MCP server developed by LBNL.
 See [examples/eplus_mcp_demo](examples/eplus_mcp_demo).
+
+### OpenStudio AI
+
+OpenStudio AI is maintained separately. Use the
+[OpenStudio AI plugin](https://github.com/pnnl/openstudio-ai-plugin) and the
+[OpenStudio AI harness](https://github.com/pnnl/openstudio-ai-harness).
 
 ## Development guidelines
 

@@ -1,0 +1,54 @@
+spec_version: v1
+
+# This is a standalone agent: it deliberately has no `a2a` section and no
+# agent card. The Streamlit UI invokes it in-process.
+agent:
+  name: Automa AI Assistant
+  description: Assistant that helps users work with the automa_ai package.
+  version: 1.0.0
+
+instructions:
+  path: ./prompts/chat.md
+
+model:
+  provider: ollama
+  name: llama3.3:70b
+
+runtime:
+  agent_type: langgraph-chat
+  debug: true
+
+memory:
+  short_term_limit: 10
+  short_term_max: 30
+  long_term_strategy: summarize
+  stores:
+    - name: default_sqlite
+      memory_type: short_term
+      store_config:
+        db_path: ./memory.db
+    - name: default_chroma
+      memory_type: long_term
+      store_config:
+        db_path: ./long_term
+
+skills:
+  enabled: true
+  allowed_roots: [./skills]
+  registry:
+    predict_weather:
+      path: ./skills/predict_weather.md
+      format: markdown
+
+tools:
+  tools:
+    - type: web_search
+      config:
+        provider: opensource
+
+telemetry:
+  enabled: true
+  recorder: jsonl
+  path: ./logs/telemetry.jsonl
+  content_mode: metadata
+  load_plugins: false

@@ -90,7 +90,7 @@ class GenericAgentExecutor(AgentExecutor):
         artifact_name: str,
     ) -> bool:
         try:
-            await updater.add_artifact(parts, name=artifact_name)
+            await updater.add_artifact(parts, name=artifact_name, last_chunk=True)
             await updater.complete()
             return True
         except Exception as exc:

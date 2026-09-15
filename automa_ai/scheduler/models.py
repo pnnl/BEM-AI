@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import StrEnum
+from enum import Enum
 
 
-class LoopTaskStatus(StrEnum):
-    """Lifecycle states for a scheduled loop task."""
+class LoopTaskStatus(str, Enum):
+    """Python 3.10-compatible lifecycle states for a scheduled loop task."""
+
+    # Match enum.StrEnum (introduced in Python 3.11) so public status values
+    # continue to format as their wire value on every supported Python version.
+    __str__ = str.__str__
 
     ACTIVE = "active"
     CANCELLED = "cancelled"

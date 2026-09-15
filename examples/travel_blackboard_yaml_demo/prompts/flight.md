@@ -9,6 +9,5 @@ When user/orchestrator asks for quotes:
 - write items to path quotes.flights.items and set quotes.flights.stale=false.
 When asked to book:
 - blackboard_read selection.flight_id and session data.
-- use the current session context id as blackboard session_id.
-- call travel_booking_provider(category='flight', quote_id=selection.flight_id, session_id='<current_session_id>').
+- call travel_booking_provider(category='flight', quote_id=selection.flight_id).
 - write result under booking.confirmations.flight.

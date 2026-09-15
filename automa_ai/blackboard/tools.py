@@ -30,6 +30,11 @@ class BlackboardRevisionInput(BaseModel):
 
 def build_blackboard_tools(store: BlackboardStore) -> list[StructuredTool]:
     def _resolve_session_id(session_id: str | None) -> str:
+        # Prompts must not expose a runtime session identifier to an LLM.  Accept
+        # the placeholder emitted by older examples as an omitted value so that a
+        # running request still resolves to its actual context ID.
+        if session_id in {"current_session_id", "<current_session_id>"}:
+            session_id = None
         resolved = session_id or get_subagent_context_id()
         if not resolved:
             raise ValueError("session_id is required when no active request context is available.")
@@ -76,19 +81,19 @@ def build_blackboard_tools(store: BlackboardStore) -> list[StructuredTool]:
     return [
         StructuredTool.from_function(
             name="blackboard_read",
-            description="Read the session blackboard document or a specific path. If session_id is omitted, the current request context is used.",
+            description="Read the session blackboard document or a specific path. Omit session_id during an agent request; the active request context is used.",
             func=blackboard_read,
             args_schema=BlackboardReadInput,
         ),
         StructuredTool.from_function(
             name="blackboard_write",
-            description="Apply deterministic write operations to the session blackboard. If session_id is omitted, the current request context is used.",
+            description="Apply deterministic write operations to the session blackboard. Omit session_id during an agent request; the active request context is used.",
             func=blackboard_write,
             args_schema=BlackboardWriteInput,
         ),
         StructuredTool.from_function(
             name="blackboard_get_revision",
-            description="Return the current revision for session blackboard. If session_id is omitted, the current request context is used.",
+            description="Return the current revision for session blackboard. Omit session_id during an agent request; the active request context is used.",
             func=blackboard_get_revision,
             args_schema=BlackboardRevisionInput,
         ),

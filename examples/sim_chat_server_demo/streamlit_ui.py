@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from pathlib import Path
 
 import streamlit as st
@@ -7,9 +8,8 @@ from dotenv import load_dotenv
 
 from automa_ai.client.simple_client import (
     SimpleClient,
-)
-from automa_ai.client.ui_util import extract_stream_text
-
+)  # assuming your file is named simple_client.py
+from automa_ai.client.ui_util import extract_stream_text, natural_delay
 
 base_dir = Path(__file__).resolve().parent
 env_path = base_dir / '.env'
@@ -23,17 +23,29 @@ A2A_SERVER_URL = os.getenv("CHATBOT_SERVER_URL")
 def get_client():
     return SimpleClient(agent_url=A2A_SERVER_URL)
 
-async def send_message_async(user_message: str, context_id: str | None = None):
+# ---------------------------------------------------------------------
+# Create/get a session ID
+# ---------------------------------------------------------------------
+def get_session_id():
+    if "session_id" not in st.session_state:
+        st.session_state["session_id"] = str(uuid.uuid4())
+    return st.session_state["session_id"]
+
+
+async def send_message_async(user_message: str, session_id: str):
     client = get_client()
     response_chunks = []
-    async for chunk in client.send_streaming_message(user_message, context_id):
+    async for chunk in client.send_streaming_message(user_message, session_id):
         response_chunks.append(chunk)
         yield chunk
 
 
 def main():
-    st.set_page_config(page_title="EnergyPlus AI Chat", page_icon="💬", layout="centered")
-    st.title("💬 EnergyPlus AI Chat Interface")
+    st.set_page_config(page_title="Automa AI Chat", page_icon="💬", layout="centered")
+    st.title("💬 Automa AI Chat Interface")
+
+    # Initialize session ID
+    session_id = get_session_id()
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
@@ -57,33 +69,24 @@ def main():
             async def process_stream():
                 nonlocal full_response
                 with st.spinner("🤖 Thinking..."):
-                    async for chunk in send_message_async(prompt, st.session_state.get("context_id")):
-                        if isinstance(chunk, dict) and "result" in chunk:
-                            result = chunk.get("result", {})
-                            context_id = result.get("contextId")
-                            if context_id:
-                                st.session_state["context_id"] = context_id
-
+                    async for chunk in send_message_async(prompt, session_id):
                         update = extract_stream_text(chunk)
-                        if update.state == "input-required":
-                            st.session_state["awaiting_input"] = True
-                            full_response += (
-                                "\n\n🟡 *Agent is waiting for your response...*\n\n"
-                                f"**Response:** {update.text}"
-                            )
-                            message_placeholder.markdown(full_response)
-                            break
-
-                        st.session_state["awaiting_input"] = False
                         if update.text:
-                            full_response = update.text if update.replaces_text else full_response + update.text
+                            if update.replaces_text:
+                                full_response = update.text
+                            else:
+                                await natural_delay(update.text)
+                                full_response += update.text
                             message_placeholder.markdown(full_response + "▌")
+
+                    message_placeholder.markdown(full_response)
 
             asyncio.run(process_stream())
 
         st.session_state["messages"].append(
             {"role": "assistant", "content": full_response}
         )
+
 
 if __name__ == "__main__":
     main()

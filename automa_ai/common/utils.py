@@ -2,6 +2,7 @@ import socket
 import time
 import warnings
 from functools import wraps
+from typing import Any
 
 from automa_ai.common.mcp_registry import MCPServerConfig
 from automa_ai.common.types import ServerConfig
@@ -59,21 +60,90 @@ def map_mcp_config_to_server_config(mcp_config: MCPServerConfig) -> ServerConfig
 
 
 def map_server_config_to_mcp_connection(server_config: ServerConfig) -> dict:
-    """Map server config into a MultiServerMCPClient connection config."""
-    connection = {
-        "url": (
-            f"{server_config.url}/sse"
-            if server_config.transport == "sse"
-            else f"{server_config.url}/mcp"
-        ),
-        "transport": server_config.transport,
+    """Map an HTTP MCP server into the standard FastMCP connection shape."""
+    if server_config.transport == "stdio":
+        raise ValueError(
+            "MCP stdio connections require a command and arguments, which "
+            "MCPServerConfig does not model. Use streamable-http or SSE."
+        )
+    return {
+        "url": f"{server_config.url}/sse"
+        if server_config.transport == "sse"
+        else f"{server_config.url}/mcp",
     }
-    if server_config.transport != "stdio":
-        if server_config.timeout is not None:
-            connection["timeout"] = server_config.timeout
-        if server_config.sse_read_timeout is not None:
-            connection["sse_read_timeout"] = server_config.sse_read_timeout
-    return connection
+
+
+def _mcp_adapter_targets(server_configs: dict[str, ServerConfig]) -> list[object]:
+    """Build native LangChain MCPAdapter targets from AUTOMA-AI server configs.
+
+    FastMCP clients are used for both HTTP transports so configured timeouts are
+    honored. SSE remains a compatibility path because FastMCP no longer infers
+    its deprecated transport from a URL.
+    """
+    from fastmcp import Client
+    from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+
+    targets: list[object] = []
+
+    for name, server_config in server_configs.items():
+        connection = map_server_config_to_mcp_connection(server_config)
+        if server_config.transport == "sse":
+            transport = SSETransport(
+                connection["url"],
+                sse_read_timeout=server_config.sse_read_timeout,
+            )
+            targets.append(Client(transport, timeout=server_config.timeout))
+        else:
+            transport = StreamableHttpTransport(connection["url"])
+            targets.append(Client(transport, timeout=server_config.timeout))
+    return targets
+
+
+class MCPToolSession(list):
+    """List-compatible MCP tools that own their entered adapter contexts."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._adapters: list[Any] = []
+        self._closed = False
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        first_error: BaseException | None = None
+        for adapter in reversed(self._adapters):
+            try:
+                await adapter.__aexit__(None, None, None)
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+        self._adapters.clear()
+        self._closed = True
+        if first_error is not None:
+            raise first_error
+
+
+async def load_mcp_tools(server_configs: dict[str, ServerConfig]) -> MCPToolSession:
+    """Discover tools and retain MCP adapters until the caller closes them."""
+    try:
+        from langchain.mcp import MCPAdapter
+    except ImportError as exc:
+        raise ImportError(
+            "MCP tool integration requires the optional 'mcp' extra. "
+            "Install it with `pip install automa-ai[mcp]`."
+        ) from exc
+
+    tools = MCPToolSession()
+    try:
+        for target in _mcp_adapter_targets(server_configs):
+            adapter = MCPAdapter(target)
+            await adapter.__aenter__()
+            tools._adapters.append(adapter)
+            tools.extend(await adapter.list_tools())
+    except BaseException:
+        await tools.aclose()
+        raise
+    return tools
 
 
 def map_to_url(hostname, port, protocol="http"):
