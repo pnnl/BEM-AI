@@ -53,7 +53,7 @@ AUTOMA-AI supports protocol-first collaboration through Google A2A. Agents can c
 
 ### Blackboard/shared state
 
-The shared blackboard is a key AUTOMA-AI concept. Agents can write structured artifacts to shared state instead of relying only on chat history. This is intended to reduce token pressure, create a clearer source of truth, improve traceability, and make long-running workflows easier to inspect and resume.
+The shared blackboard is a key AUTOMA-AI concept. Agents can write structured artifacts to shared state instead of relying only on chat history. This is intended to reduce token pressure, create a clearer source of truth, improve traceability, and make long-running workflows easier to inspect and resume. Optional approval checkpoints let agents request human review while keeping approve/reject authority in the host application.
 
 ### Memory stores
 

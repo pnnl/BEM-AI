@@ -113,10 +113,7 @@ def resolve_chat_model(
         assert api_key, "You must provide an API key to access Anthropic Claude model"
         key = SecretStr(api_key)
         return ChatAnthropic(
-            model_name=model_name,
-            base_url=base_url,
-            api_key=key,
-            timeout=None
+            model_name=model_name, base_url=base_url, api_key=key, timeout=None
         )
     elif backend == GenericLLM.GEMINI:
         assert os.getenv(
@@ -424,6 +421,7 @@ class AgentFactory:
         blackboard_schema_name = None
         blackboard_schema_version = None
         blackboard_initial_data = None
+        blackboard_approvals_config = None
         if self.blackboard_config:
             bb_cfg = self.blackboard_config
             if not isinstance(bb_cfg, BlackboardConfig):
@@ -452,6 +450,7 @@ class AgentFactory:
                 blackboard_schema_name = bb_cfg.schema_name
                 blackboard_schema_version = bb_cfg.schema_version
                 blackboard_initial_data = bb_cfg.initial_data
+                blackboard_approvals_config = bb_cfg.approvals
 
                 try:
                     schema = BlackboardSchemaRegistry.resolve(
@@ -540,6 +539,7 @@ class AgentFactory:
                 blackboard_schema_version=blackboard_schema_version,
                 blackboard_initial_data=blackboard_initial_data,
                 blackboard_contract=blackboard_contract,
+                blackboard_approvals_config=blackboard_approvals_config,
                 memory_manager=memory_manager,
                 transient_retry_attempts=self.transient_retry_attempts,
                 budget_config=budget_config,

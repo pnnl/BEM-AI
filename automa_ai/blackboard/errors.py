@@ -16,3 +16,11 @@ class BackendNotConfiguredError(BlackboardError):
 
 class DocumentNotFoundError(BlackboardError):
     """Raised when a session blackboard document does not exist."""
+
+
+class ApprovalNotFoundError(BlackboardError):
+    """Raised when an approval identifier is absent from a session document."""
+
+
+class InvalidApprovalTransitionError(BlackboardError):
+    """Raised when an approval state transition is not allowed."""
