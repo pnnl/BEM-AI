@@ -1130,8 +1130,8 @@ class GenericLangGraphChatAgent(BaseAgent):
             and user_id is None
         ):
             raise ValueError(
-                "AgentCoreMemorySaver requires user_id to be set for proper namespacing of memory. "
-                "Please provide a user_id when invoking the agent."
+                "AgentCoreMemorySaver requires user_id as the AgentCore actor_id for "
+                "checkpoint namespacing. Please provide a user_id when invoking the agent."
             )
 
         configurable = {
@@ -1140,6 +1140,8 @@ class GenericLangGraphChatAgent(BaseAgent):
         }
 
         if user_id is not None:
+            # Key name required by AgentCoreMemorySaver; TokenBudgetMiddleware also
+            # reads it as the budget's user scope, so set it for any checkpointer.
             configurable["actor_id"] = user_id
         if task_id is not None:
             configurable["task_id"] = task_id
