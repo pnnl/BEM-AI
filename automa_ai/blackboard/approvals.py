@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from automa_ai.blackboard.models import ApprovalStatus, BlackboardDocument
 from automa_ai.blackboard.store import BlackboardStore
-from automa_ai.config.blackboard import ApprovalConfig
+
+if TYPE_CHECKING:
+    from automa_ai.config.blackboard import ApprovalConfig
 
 
 class ApprovalManager:
@@ -19,8 +21,12 @@ class ApprovalManager:
     def __init__(
         self,
         store: BlackboardStore,
-        config: ApprovalConfig | dict[str, Any] | None = None,
+        config: "ApprovalConfig | dict[str, Any] | None" = None,
     ) -> None:
+        # This import must stay local: importing config.blackboard first reaches
+        # blackboard.__init__, which eagerly exports this manager.
+        from automa_ai.config.blackboard import ApprovalConfig
+
         self.store = store
         self.config = (
             config

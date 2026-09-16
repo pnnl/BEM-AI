@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import subprocess
+import sys
 
 import pytest
 
@@ -274,3 +276,17 @@ def test_blackboard_config_defaults_approvals_off_and_accepts_opt_in() -> None:
     assert not disabled.approvals.enabled
     assert enabled.approvals.enabled
     assert enabled.approvals.default_expiry_seconds == 60
+
+
+def test_config_blackboard_imports_cleanly_in_a_fresh_process() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from automa_ai.config.blackboard import ApprovalConfig",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
