@@ -3,13 +3,27 @@ from __future__ import annotations
 import copy
 import re
 from abc import ABC, abstractmethod
-from datetime import timezone, datetime
+from datetime import timedelta, timezone, datetime
+from collections.abc import Mapping
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
-from automa_ai.blackboard.errors import RevisionConflictError, DocumentNotFoundError
-from automa_ai.blackboard.models import BlackboardDocument, BlackboardPatch, BlackboardEvent, BlackboardBackend
+from automa_ai.blackboard.errors import (
+    ApprovalArtifactChangedError,
+    ApprovalNotFoundError,
+    DocumentNotFoundError,
+    InvalidApprovalTransitionError,
+    RevisionConflictError,
+)
+from automa_ai.blackboard.models import (
+    ApprovalRecord,
+    ApprovalStatus,
+    BlackboardBackend,
+    BlackboardDocument,
+    BlackboardEvent,
+    BlackboardPatch,
+)
 from automa_ai.blackboard.schema import BlackboardSchemaValidator
 
 if TYPE_CHECKING:
@@ -47,7 +61,9 @@ def _container_for_next(next_token: str | int) -> dict[str, Any] | list[Any]:
     return [] if isinstance(next_token, int) else {}
 
 
-def _resolve_parent(data: Any, tokens: list[str | int], create_missing: bool) -> tuple[Any, str | int]:
+def _resolve_parent(
+    data: Any, tokens: list[str | int], create_missing: bool
+) -> tuple[Any, str | int]:
     if not tokens:
         raise ValueError("Path cannot be empty.")
     current = data
@@ -86,6 +102,44 @@ def get_path_value(data: dict[str, Any], path: str | None) -> Any:
                 return None
             current = current[token]
     return current
+
+
+def has_path(data: dict[str, Any], path: str) -> bool:
+    """Return whether a path exists, distinguishing a stored null from absence."""
+    tokens = parse_path(path)
+    if not tokens:
+        return False
+    current: Any = data
+    for token in tokens:
+        if isinstance(token, str):
+            if not isinstance(current, dict) or token not in current:
+                return False
+            current = current[token]
+        else:
+            if not isinstance(current, list) or token >= len(current):
+                return False
+            current = current[token]
+    return True
+
+
+def _same_artifact_value(left: Any, right: Any) -> bool:
+    """Compare JSON-like artifacts without Python's bool/int equivalence.
+
+    Approval snapshots are persisted JSON values. Requiring exact scalar types
+    makes a change such as ``true`` to ``1`` visible even inside nested lists or
+    objects.
+    """
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, Mapping):
+        return set(left) == set(right) and all(
+            _same_artifact_value(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_artifact_value(old, new) for old, new in zip(left, right)
+        )
+    return left == right
 
 
 def _set_path(data: dict[str, Any], path: str, value: Any) -> tuple[Any, Any]:
@@ -153,6 +207,7 @@ def _remove_path(data: dict[str, Any], path: str) -> tuple[Any, Any]:
             parent.pop(key)
     return before, None
 
+
 class BlackboardStoreConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
     backend: BlackboardBackend | str
@@ -164,10 +219,13 @@ class BlackboardStoreConfig(BaseModel):
 
 class BlackboardStoreRegistry:
     """Registry for blackboard store backends."""
+
     _stores: dict[str, type["BlackboardStore"]] = {}
 
     @classmethod
-    def register(cls, backend: str | BlackboardBackend, store_cls: type["BlackboardStore"]):
+    def register(
+        cls, backend: str | BlackboardBackend, store_cls: type["BlackboardStore"]
+    ):
         """Register a blackboard store backend.
 
         Args:
@@ -184,7 +242,9 @@ class BlackboardStoreRegistry:
                 f"store_cls must be a subclass of BlackboardStore, not {store_cls!r}"
             )
 
-        backend_key = backend.value if isinstance(backend, BlackboardBackend) else backend
+        backend_key = (
+            backend.value if isinstance(backend, BlackboardBackend) else backend
+        )
         cls._stores[backend_key] = store_cls
 
     @classmethod
@@ -202,9 +262,13 @@ class BlackboardStoreRegistry:
         """
         from automa_ai.blackboard.errors import BackendNotConfiguredError
 
-        backend_key = backend.value if isinstance(backend, BlackboardBackend) else backend
+        backend_key = (
+            backend.value if isinstance(backend, BlackboardBackend) else backend
+        )
         if backend_key not in cls._stores:
-            raise BackendNotConfiguredError(f"Unknown blackboard backend: {backend_key}")
+            raise BackendNotConfiguredError(
+                f"Unknown blackboard backend: {backend_key}"
+            )
         return cls._stores[backend_key]
 
 
@@ -231,7 +295,10 @@ class BlackboardStore(ABC):
             config = store_config
 
         if isinstance(config, dict):
-            if not hasattr(self.__class__, "_config_class") or self.__class__._config_class is None:
+            if (
+                not hasattr(self.__class__, "_config_class")
+                or self.__class__._config_class is None
+            ):
                 raise AttributeError(
                     f"{self.__class__.__name__} must define a '_config_class' attribute"
                 )
@@ -264,7 +331,14 @@ class BlackboardStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def save(self, doc: BlackboardDocument, expected_revision: int | None = None) -> BlackboardDocument:
+    def save(
+        self, doc: BlackboardDocument, expected_revision: int | None = None
+    ) -> BlackboardDocument:
+        """Persist a document, atomically enforcing expected_revision when given.
+
+        Backends that support concurrent writers must implement this comparison
+        at their storage boundary (for example, with a conditional update).
+        """
         raise NotImplementedError
 
     def apply_patch(
@@ -321,6 +395,182 @@ class BlackboardStore(ABC):
         except DocumentNotFoundError:
             return self.create(session_id, schema_name, schema_version, initial_data)
 
+    def propose_approval(
+        self,
+        session_id: str,
+        artifact_path: str,
+        *,
+        actor: str | None = None,
+        title: str | None = None,
+        note: str | None = None,
+        expiry_seconds: int | None = None,
+        expected_revision: int,
+    ) -> BlackboardDocument:
+        """Create a pending approval for an existing artifact path."""
+        doc = self.load(session_id)
+        self._require_revision(doc, expected_revision)
+        if not has_path(doc.data, artifact_path):
+            raise ValueError(
+                f"Approval artifact path does not exist: {artifact_path!r}."
+            )
+        expires_at = None
+        if expiry_seconds is not None:
+            if expiry_seconds <= 0:
+                raise ValueError("expiry_seconds must be positive when provided.")
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)
+        approval = ApprovalRecord(
+            artifact_path=artifact_path,
+            artifact_revision=doc.revision,
+            # Snapshot the proposed value so unrelated writes do not invalidate
+            # review, while edits to the reviewed artifact do.
+            artifact_snapshot=copy.deepcopy(get_path_value(doc.data, artifact_path)),
+            artifact_snapshot_available=True,
+            title=title,
+            requested_by=actor,
+            request_note=note,
+            expires_at=expires_at,
+        )
+        doc.approvals.append(approval)
+        doc.events.append(
+            BlackboardEvent(
+                actor=actor,
+                op="approval.proposed",
+                path=artifact_path,
+                after=approval.model_dump(mode="json"),
+                note=note,
+            )
+        )
+        return self.save(doc, expected_revision=expected_revision)
+
+    def get_approval(self, session_id: str, approval_id: str) -> ApprovalRecord:
+        """Return one durable approval record by identifier."""
+        doc = self.load(session_id)
+        for approval in doc.approvals:
+            if approval.approval_id == approval_id:
+                return approval
+        raise ApprovalNotFoundError(f"Approval {approval_id!r} was not found.")
+
+    def list_approvals(
+        self,
+        session_id: str,
+        *,
+        status: ApprovalStatus | str | None = None,
+    ) -> list[ApprovalRecord]:
+        """List durable approval records, optionally filtered by status."""
+        approvals = self.load(session_id).approvals
+        if status is None:
+            return list(approvals)
+        resolved_status = ApprovalStatus(status)
+        return [item for item in approvals if item.status is resolved_status]
+
+    def resolve_approval(
+        self,
+        session_id: str,
+        approval_id: str,
+        decision: ApprovalStatus | str,
+        *,
+        reviewer: str,
+        note: str | None = None,
+        expected_revision: int,
+    ) -> BlackboardDocument:
+        """Apply the human-only approved or rejected decision to a pending record."""
+        status = ApprovalStatus(decision)
+        if status not in {ApprovalStatus.APPROVED, ApprovalStatus.REJECTED}:
+            raise ValueError("decision must be 'approved' or 'rejected'.")
+        doc = self.load(session_id)
+        self._require_revision(doc, expected_revision)
+        approval = self._find_approval(doc, approval_id)
+        if approval.status is not ApprovalStatus.PENDING:
+            raise InvalidApprovalTransitionError(
+                f"Cannot resolve approval in state {approval.status.value!r}."
+            )
+        self._assert_approval_actionable(doc, approval)
+        approval.status = status
+        approval.reviewer = reviewer
+        approval.reviewed_at = datetime.now(timezone.utc)
+        approval.review_note = note
+        doc.events.append(
+            BlackboardEvent(
+                actor=reviewer,
+                op=f"approval.{status.value}",
+                path=approval.artifact_path,
+                after=approval.model_dump(mode="json"),
+                note=note,
+            )
+        )
+        return self.save(doc, expected_revision=expected_revision)
+
+    def claim_approved_resume(
+        self,
+        session_id: str,
+        approval_id: str,
+        *,
+        actor: str | None = None,
+        allow_one_time_resume: bool = True,
+        expected_revision: int,
+    ) -> BlackboardDocument:
+        """Consume an approved checkpoint before a workflow continuation."""
+        doc = self.load(session_id)
+        self._require_revision(doc, expected_revision)
+        approval = self._find_approval(doc, approval_id)
+        if approval.status is not ApprovalStatus.APPROVED:
+            raise InvalidApprovalTransitionError(
+                f"Cannot resume approval in state {approval.status.value!r}."
+            )
+        self._assert_approval_actionable(doc, approval)
+        if allow_one_time_resume:
+            # A reusable checkpoint remains approved; default configuration
+            # consumes it once by recording the resumed state instead.
+            approval.status = ApprovalStatus.RESUMED
+            approval.resumed_by = actor
+            approval.resumed_at = datetime.now(timezone.utc)
+        doc.events.append(
+            BlackboardEvent(
+                actor=actor,
+                op="approval.resumed",
+                path=approval.artifact_path,
+                after=approval.model_dump(mode="json"),
+            )
+        )
+        return self.save(doc, expected_revision=expected_revision)
+
+    @staticmethod
+    def _require_revision(doc: BlackboardDocument, expected_revision: int) -> None:
+        """Require callers to explicitly bind an approval mutation to a read."""
+        if doc.revision != expected_revision:
+            raise RevisionConflictError(
+                f"Expected revision {expected_revision}, found {doc.revision}."
+            )
+
+    @staticmethod
+    def _find_approval(doc: BlackboardDocument, approval_id: str) -> ApprovalRecord:
+        for approval in doc.approvals:
+            if approval.approval_id == approval_id:
+                return approval
+        raise ApprovalNotFoundError(f"Approval {approval_id!r} was not found.")
+
+    @staticmethod
+    def _assert_approval_actionable(
+        doc: BlackboardDocument, approval: ApprovalRecord
+    ) -> None:
+        """Reject expiry or changed reviewed content before a decision/resume."""
+        if approval.expires_at is not None and approval.expires_at <= datetime.now(
+            timezone.utc
+        ):
+            raise InvalidApprovalTransitionError("Cannot act on an expired approval.")
+        # Legacy records have no snapshot and remain actionable; new records
+        # always capture one, including a legitimate null artifact value.
+        if approval.artifact_snapshot_available and (
+            not has_path(doc.data, approval.artifact_path)
+            or not _same_artifact_value(
+                get_path_value(doc.data, approval.artifact_path),
+                approval.artifact_snapshot,
+            )
+        ):
+            raise ApprovalArtifactChangedError(
+                "Approval artifact changed after it was proposed; create a new approval."
+            )
+
 
 def bump_revision(doc: BlackboardDocument) -> BlackboardDocument:
     doc.revision += 1
@@ -328,7 +578,9 @@ def bump_revision(doc: BlackboardDocument) -> BlackboardDocument:
     return doc
 
 
-def create_blackboard_store(store_config: dict | BlackboardStoreConfig) -> BlackboardStore:
+def create_blackboard_store(
+    store_config: dict | BlackboardStoreConfig,
+) -> BlackboardStore:
     """Create a blackboard store instance from configuration.
 
     Args:
@@ -362,8 +614,16 @@ def _ensure_builtin_backends_registered():
         # Import and register built-in backends
         from automa_ai.blackboard.backends.local_json import LocalJSONBlackboardStore
         from automa_ai.blackboard.backends.s3_json import S3JSONBlackboardStore
-        from automa_ai.blackboard.backends.dynamodb_json import DynamoDBJSONBlackboardStore
+        from automa_ai.blackboard.backends.dynamodb_json import (
+            DynamoDBJSONBlackboardStore,
+        )
 
-        BlackboardStoreRegistry.register(BlackboardBackend.LOCAL_JSON, LocalJSONBlackboardStore)
-        BlackboardStoreRegistry.register(BlackboardBackend.S3_JSON, S3JSONBlackboardStore)
-        BlackboardStoreRegistry.register(BlackboardBackend.DYNAMODB_JSON, DynamoDBJSONBlackboardStore)
+        BlackboardStoreRegistry.register(
+            BlackboardBackend.LOCAL_JSON, LocalJSONBlackboardStore
+        )
+        BlackboardStoreRegistry.register(
+            BlackboardBackend.S3_JSON, S3JSONBlackboardStore
+        )
+        BlackboardStoreRegistry.register(
+            BlackboardBackend.DYNAMODB_JSON, DynamoDBJSONBlackboardStore
+        )

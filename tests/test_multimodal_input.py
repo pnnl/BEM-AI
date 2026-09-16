@@ -7,10 +7,50 @@ from a2a.server.events import EventQueue
 from a2a.types import Message, Part, Role
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
+from langchain_core.messages import AIMessage
 
 from automa_ai.common.agent_executor import GenericAgentExecutor
 from automa_ai.agents.langgraph_chatagent import GenericLangGraphChatAgent
 from automa_ai.hook import ContextBlock, InputAssembler, TurnInputBuilder, TurnRequest
+
+
+@pytest.mark.asyncio
+async def test_stream_forwards_structured_final_ai_message() -> None:
+    """Claude-style final messages must reach the accumulator and UI stream."""
+
+    class StructuredMessageGraph:
+        async def astream(self, _inputs, _config, *, stream_mode):
+            assert stream_mode == "messages"
+            yield (
+                AIMessage(
+                    content=[
+                        {"type": "thinking", "thinking": "private reasoning"},
+                        {"type": "text", "text": "Visible Claude response."},
+                    ]
+                ),
+                {},
+            )
+
+    agent = GenericLangGraphChatAgent(
+        agent_name="structured-message-test",
+        description="Regression-test agent.",
+        instructions="Respond.",
+        chat_model=None,
+        response_format=None,
+    )
+    agent.graph = StructuredMessageGraph()
+
+    events = [
+        event
+        async for event in agent.stream(
+            "Hello", context_id="session-1", task_id="task-1"
+        )
+    ]
+
+    assert [event["content"] for event in events] == [
+        "Visible Claude response.",
+        "Visible Claude response.",
+    ]
 
 
 def test_input_assembler_keeps_plain_text_without_attachments():

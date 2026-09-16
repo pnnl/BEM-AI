@@ -24,6 +24,7 @@ A blackboard document contains:
 - `revision` (optimistic concurrency)
 - `updated_at`
 - `data` (schema validated)
+- `approvals` (optional durable human decision checkpoints)
 - `events` (append-only audit trail)
 
 ## Schema definition
@@ -125,6 +126,15 @@ When enabled, agent tool registry includes:
 - `blackboard_write(session_id, ops, expected_revision=None, actor=None, note=None)`
 - `blackboard_get_revision(session_id)`
 
+When approvals are enabled, agents additionally receive:
+
+- `blackboard_request_approval(artifact_path, ...)`
+- `blackboard_get_approval(approval_id, ...)`
+
+Agents never receive a tool that approves, rejects, or resumes an approval.
+Those transitions are application-side operations so an agent cannot authorize
+its own work.
+
 Supported write ops:
 - `set`
 - `merge`
@@ -155,3 +165,72 @@ As a result:
 - Changing `initial_data` in configuration after a session has already started will not affect that session’s existing blackboard document.
 
 Design your workflows and migrations with this in mind—for example, use schema versioning and explicit write operations (via `blackboard_write`) to evolve existing session documents rather than relying on changes to `initial_data`.
+
+## Human approval checkpoints
+
+Approval checkpoints are opt-in and are stored beside `data`, so they do not
+require changes to an application's JSON schema. They model a durable state
+machine:
+
+```text
+proposed -> pending -> approved -> resumed
+                    \-> rejected
+```
+
+Enable them in `BlackboardConfig` or YAML:
+
+```yaml
+blackboard:
+  enabled: true
+  approvals:
+    enabled: true
+    default_expiry_seconds: 604800
+    allow_one_time_resume: true
+```
+
+`ApprovalManager` requires `approvals.enabled: true`; direct store methods are
+lower-level primitives for integrations that intentionally manage their own
+configuration.
+
+An agent requests review for an existing artifact path. The authenticated host
+application—not the agent—uses `ApprovalManager` to resolve and consume it:
+
+```python
+from automa_ai.blackboard import ApprovalManager
+
+approvals = ApprovalManager(store, blackboard_config.approvals)
+document = approvals.resolve(
+    session_id,
+    approval_id,
+    "approved",
+    reviewer=current_user_id,
+    expected_revision=revision,
+)
+approvals.resume(
+    session_id,
+    approval_id,
+    actor="workflow",
+    expected_revision=document.revision,
+)
+```
+
+`expected_revision` prevents stale reviewer submissions from overwriting a
+newer decision and is required for every approval mutation. Each proposal also
+captures an artifact snapshot: decisions and resume fail if that artifact later
+changes, while unrelated blackboard writes may proceed. Resolving a non-pending
+or expired request, or resuming anything other than an approved request, raises
+an explicit transition error. The consuming application is responsible for
+enforcing reviewer identity and authorization.
+
+When approvals are enabled, ordinary `blackboard_write` calls also require an
+`expected_revision`. This prevents an unversioned agent write from replacing a
+document that gained an approval or approval audit event after it was read.
+
+Store backends used with multiple concurrent writers must enforce the revision
+comparison atomically at their persistence boundary (for example, DynamoDB
+conditional writes). The approval API deliberately does not attempt to provide
+distributed locking above the selected store backend.
+
+Approval documents created before artifact snapshots were introduced remain
+loadable. They retain their prior behavior and do not receive artifact-drift
+protection until a new approval is proposed.
