@@ -513,6 +513,8 @@ to the coordinator agent. Each entry must provide exactly one card source:
   `agent_card`.
 - `card_path`: Path to a standalone JSON agent card.
 - `agent_card`: Inline A2A 1.0 agent card.
+- `url`: Remote A2A service URL whose card is discovered at
+  `/.well-known/agent-card.json`.
 
 Relative `spec_path` and `card_path` values are resolved from the current YAML
 file's directory.
@@ -564,8 +566,27 @@ subagents:
 ```
 
 Resolved subagent cards must use the A2A 1.0 `supportedInterfaces` shape. The
-loader validates cards loaded from `spec_path`, `card_path`, and inline
-`agent_card` entries before creating runtime `SubAgentSpec` objects.
+loader validates cards loaded from every source before creating runtime
+`SubAgentSpec` objects.
+
+#### Remote subagent card discovery
+
+Use `url` instead of maintaining a local card. The loader requests
+`/.well-known/agent-card.json` beneath that A2A service URL, validates the
+discovered A2A 1.0 card, and uses it for delegation:
+
+```yaml
+subagents:
+  - url: https://agents.example/a2a
+    request_headers:
+      X-Discovery-Key: ${A2A_DISCOVERY_KEY}
+```
+
+Only absolute `http` or `https` URLs are accepted. The URL may also name the
+full `/.well-known/agent-card.json` endpoint. Discovery happens while the YAML
+spec is converted to an agent factory, before the coordinator starts. When a
+card endpoint itself requires authentication, provide `request_headers`; `auth`
+is validated against the discovered card and is used for later A2A delegation.
 
 #### API-key authentication for a remote subagent
 
