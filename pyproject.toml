@@ -91,6 +91,7 @@ build-backend = "hatchling.build"
 [project.entry-points."automa_ai.memory_stores"]
 default_sqlite = "automa_ai.memory.sqlite_memory_store:SQLiteMemoryStore"
 default_chroma = "automa_ai.memory.chroma_memory_store:ChromaVectorMemoryStore"
+agentcore = "automa_ai.memory.agentcore_memory_store:AgentCoreMemoryStore"
 
 [project.entry-points."automa_ai.token_usage_stores"]
 sqlite = "automa_ai.token_management.store:SQLiteTokenUsageStore"
