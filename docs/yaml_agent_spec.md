@@ -733,7 +733,15 @@ blackboard:
     type: object
     additionalProperties: true
   initial_data: {}
+  approvals:
+    enabled: true
+    default_expiry_seconds: 604800
+    allow_one_time_resume: true
 ```
+
+`approvals` is optional and defaults to disabled. When enabled, agents can
+request or inspect approvals for blackboard artifacts, but approval, rejection,
+and resume remain application-side operations.
 
 ### `checkpointer`
 

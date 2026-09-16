@@ -7,6 +7,7 @@ from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     ToolMessage,
@@ -45,6 +46,7 @@ from automa_ai.prompts.prompt_template import RESPONSE_PROMPT
 from automa_ai.skills import SkillManager
 from automa_ai.skills.tools import build_load_skill_tool
 from automa_ai.config.telemetry import TelemetryConfig
+from automa_ai.config.blackboard import ApprovalConfig
 from automa_ai.config.tools import ToolSpec
 from automa_ai.tools import build_langchain_tools
 from automa_ai.tools.base import content_to_safe_text, infer_tool_result_provider
@@ -114,6 +116,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         blackboard_schema_version: str | None = None,
         blackboard_initial_data: dict | None = None,
         blackboard_contract: str | None = None,
+        blackboard_approvals_config: ApprovalConfig | None = None,
         transient_retry_attempts: int = 0,
         budget_config: TokenBudgetConfig | None = None,
         token_usage_store: TokenUsageStore | None = None,
@@ -153,6 +156,7 @@ class GenericLangGraphChatAgent(BaseAgent):
         self.blackboard_schema_version = blackboard_schema_version
         self.blackboard_initial_data = blackboard_initial_data or {}
         self.blackboard_contract = blackboard_contract
+        self.blackboard_approvals_config = blackboard_approvals_config
         self.transient_retry_attempts = max(0, transient_retry_attempts)
         self.budget_config = budget_config
         self.token_usage_store = token_usage_store
@@ -318,7 +322,10 @@ class GenericLangGraphChatAgent(BaseAgent):
             )
 
         if self.blackboard_store:
-            for tool in build_blackboard_tools(self.blackboard_store):
+            for tool in build_blackboard_tools(
+                self.blackboard_store,
+                approvals=self.blackboard_approvals_config,
+            ):
                 if tool.name in used_tool_name:
                     raise ValueError(f"Duplicate tool name '{tool.name}' detected.")
                 used_tool_name.append(tool.name)
@@ -516,9 +523,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                     attributes={
                         "message.role": "user",
                         "message.content": turn.query,
-                        **self._attachment_telemetry_attributes(
-                            turn.attachments
-                        ),
+                        **self._attachment_telemetry_attributes(turn.attachments),
                         **self._event_identity_attributes(
                             session_id=turn.context_id,
                             task_id=turn.task_id,
@@ -642,10 +647,7 @@ class GenericLangGraphChatAgent(BaseAgent):
             )
 
             config = self._build_runnable_config(
-                turn.context_id,
-                turn.user_id,
-                turn.task_id,
-                metadata=metadata
+                turn.context_id, turn.user_id, turn.task_id, metadata=metadata
             )
             logger.info(
                 "Running planner agent stream for session %s %s with input %s",
@@ -711,7 +713,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 human_message_queued = True
 
                             # Process agent chunk
-                            if isinstance(ck, AIMessageChunk):
+                            if isinstance(ck, (AIMessage, AIMessageChunk)):
                                 stream_text = message_accumulator.add_chunk(ck)
                                 # Emit only text routed by the accumulator so
                                 # artifact-marker content is withheld from

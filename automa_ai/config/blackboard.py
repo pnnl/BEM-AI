@@ -7,6 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from automa_ai.blackboard.store import BlackboardStore, BlackboardStoreConfig
 
+
+class ApprovalConfig(BaseModel):
+    """Opt-in settings for durable human approval checkpoints."""
+
+    enabled: bool = False
+    default_expiry_seconds: int | None = Field(default=None, gt=0)
+    allow_one_time_resume: bool = True
+
+
 class BlackboardConfig(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -21,11 +30,12 @@ class BlackboardConfig(BaseModel):
     json_schema: dict[str, Any] | None = Field(default=None, alias="schema")
     schema_description: str | None = None
     initial_data: dict[str, Any] = Field(default_factory=dict)
+    approvals: ApprovalConfig = Field(default_factory=ApprovalConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BlackboardConfig":
         return cls.model_validate(data)
-    
+
     @model_validator(mode="before")
     def migrate_old_format(cls, data):
         if "backend" in data and "store" not in data:
@@ -35,7 +45,7 @@ class BlackboardConfig(BaseModel):
                 "Example: BlackboardConfig(store={'backend': 'local_json', 'base_dir': '...'}). "
                 "The old format will be removed in a future version.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             data["store"] = {
                 "backend": data["backend"],
@@ -43,7 +53,7 @@ class BlackboardConfig(BaseModel):
                 "s3_prefix": data.get("s3_prefix"),
                 "base_dir": data.get("base_dir"),
                 "dynamodb_table_name": data.get("dynamodb_table_name"),
-                "dynamodb_endpoint_url": data.get("dynamodb_endpoint_url")
+                "dynamodb_endpoint_url": data.get("dynamodb_endpoint_url"),
             }
 
         return data
