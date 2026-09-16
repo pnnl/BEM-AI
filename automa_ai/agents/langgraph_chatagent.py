@@ -7,6 +7,7 @@ from typing import Dict, AsyncIterable, Any, List, Callable, Awaitable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     ToolMessage,
@@ -712,7 +713,7 @@ class GenericLangGraphChatAgent(BaseAgent):
                                 human_message_queued = True
 
                             # Process agent chunk
-                            if isinstance(ck, AIMessageChunk):
+                            if isinstance(ck, (AIMessage, AIMessageChunk)):
                                 stream_text = message_accumulator.add_chunk(ck)
                                 # Emit only text routed by the accumulator so
                                 # artifact-marker content is withheld from
