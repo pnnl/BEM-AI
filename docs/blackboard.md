@@ -222,6 +222,10 @@ or expired request, or resuming anything other than an approved request, raises
 an explicit transition error. The consuming application is responsible for
 enforcing reviewer identity and authorization.
 
+When approvals are enabled, ordinary `blackboard_write` calls also require an
+`expected_revision`. This prevents an unversioned agent write from replacing a
+document that gained an approval or approval audit event after it was read.
+
 Store backends used with multiple concurrent writers must enforce the revision
 comparison atomically at their persistence boundary (for example, DynamoDB
 conditional writes). The approval API deliberately does not attempt to provide

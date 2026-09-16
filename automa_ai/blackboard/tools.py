@@ -87,6 +87,10 @@ def build_blackboard_tools(
         note: str | None = None,
     ) -> dict[str, Any]:
         resolved_session_id = _resolve_session_id(session_id)
+        if approvals and approvals.enabled and expected_revision is None:
+            raise ValueError(
+                "expected_revision is required when blackboard approvals are enabled."
+            )
         patch = BlackboardPatch(ops=ops, actor=actor, note=note)
         doc = store.apply_patch(
             session_id=resolved_session_id,

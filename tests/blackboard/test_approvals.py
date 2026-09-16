@@ -151,6 +151,11 @@ def test_agent_approval_tools_are_opt_in_and_cannot_resolve(store, session_id) -
         )["approval"]["status"]
         == "pending"
     )
+    with pytest.raises(ValueError, match="expected_revision is required"):
+        tools["blackboard_write"].func(
+            session_id=session_id,
+            ops=[{"op": "append", "path": "items", "value": "unversioned"}],
+        )
 
 
 def test_approval_list_filters_by_status(store, session_id) -> None:
@@ -189,7 +194,7 @@ def test_approval_manager_requires_explicit_opt_in(store) -> None:
         ApprovalManager(store)
 
 
-def test_approval_rejects_artifact_drift_and_expiry(store, session_id) -> None:
+def test_approval_rejects_artifact_drift(store, session_id) -> None:
     proposed = store.propose_approval(session_id, "items", expected_revision=1)
     approval_id = proposed.approvals[0].approval_id
     store.apply_patch(
@@ -206,19 +211,47 @@ def test_approval_rejects_artifact_drift_and_expiry(store, session_id) -> None:
             expected_revision=3,
         )
 
-    proposed = store.propose_approval(session_id, "items", expected_revision=3)
+
+def test_approval_rejects_expiry(store, session_id) -> None:
+    proposed = store.propose_approval(session_id, "items", expected_revision=1)
     document = store.load(session_id)
     document.approvals[-1].expires_at = datetime.now(timezone.utc) - timedelta(
         seconds=1
     )
-    store.save(document, expected_revision=4)
+    store.save(document, expected_revision=2)
     with pytest.raises(InvalidApprovalTransitionError, match="expired"):
         store.resolve_approval(
             session_id,
             proposed.approvals[-1].approval_id,
             "approved",
             reviewer="reviewer-1",
-            expected_revision=5,
+            expected_revision=3,
+        )
+
+
+def test_approval_detects_nested_boolean_numeric_artifact_drift(
+    store, session_id
+) -> None:
+    store.apply_patch(
+        session_id,
+        BlackboardPatch(
+            ops=[{"op": "set", "path": "items", "value": [{"flag": True}]}]
+        ),
+        expected_revision=1,
+    )
+    proposed = store.propose_approval(session_id, "items", expected_revision=2)
+    store.apply_patch(
+        session_id,
+        BlackboardPatch(ops=[{"op": "set", "path": "items", "value": [{"flag": 1}]}]),
+        expected_revision=3,
+    )
+    with pytest.raises(ApprovalArtifactChangedError):
+        store.resolve_approval(
+            session_id,
+            proposed.approvals[0].approval_id,
+            "approved",
+            reviewer="reviewer-1",
+            expected_revision=4,
         )
 
 

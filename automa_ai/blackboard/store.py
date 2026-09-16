@@ -4,6 +4,7 @@ import copy
 import re
 from abc import ABC, abstractmethod
 from datetime import timedelta, timezone, datetime
+from collections.abc import Mapping
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
@@ -119,6 +120,26 @@ def has_path(data: dict[str, Any], path: str) -> bool:
                 return False
             current = current[token]
     return True
+
+
+def _same_artifact_value(left: Any, right: Any) -> bool:
+    """Compare JSON-like artifacts without Python's bool/int equivalence.
+
+    Approval snapshots are persisted JSON values. Requiring exact scalar types
+    makes a change such as ``true`` to ``1`` visible even inside nested lists or
+    objects.
+    """
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, Mapping):
+        return set(left) == set(right) and all(
+            _same_artifact_value(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_artifact_value(old, new) for old, new in zip(left, right)
+        )
+    return left == right
 
 
 def _set_path(data: dict[str, Any], path: str, value: Any) -> tuple[Any, Any]:
@@ -541,8 +562,10 @@ class BlackboardStore(ABC):
         # always capture one, including a legitimate null artifact value.
         if approval.artifact_snapshot_available and (
             not has_path(doc.data, approval.artifact_path)
-            or get_path_value(doc.data, approval.artifact_path)
-            != approval.artifact_snapshot
+            or not _same_artifact_value(
+                get_path_value(doc.data, approval.artifact_path),
+                approval.artifact_snapshot,
+            )
         ):
             raise ApprovalArtifactChangedError(
                 "Approval artifact changed after it was proposed; create a new approval."
