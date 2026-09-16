@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import AsyncIterable
 from pathlib import Path
@@ -171,7 +172,9 @@ class YamlAgentTool(BaseDefaultTool):
         yaml_path = self._resolve_yaml_path(args.yaml_path)
         spec = YamlAgentSpec.from_yaml_file(yaml_path)
         self._validate_headless_spec(spec, yaml_path=yaml_path)
-        factory = load_agent_factory_from_yaml(spec)
+        # Factory construction can discover a remote subagent card. Keep that
+        # synchronous network I/O off the async tool's event-loop thread.
+        factory = await asyncio.to_thread(load_agent_factory_from_yaml, spec)
         agent = factory()
         context_id = (
             args.context_id or get_subagent_context_id() or f"yaml-agent-{uuid4()}"

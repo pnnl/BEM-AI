@@ -9,6 +9,7 @@ from automa_ai.agents.remote_agent import (
 from automa_ai.config import agent_spec
 from automa_ai.config.tools import ToolSpec
 from automa_ai.tools import build_langchain_tools
+from automa_ai.tools.yaml_agent import tool as yaml_agent_tool_module
 from automa_ai.tools.yaml_agent.tool import YamlAgentTool, YamlAgentToolConfig
 
 
@@ -162,12 +163,18 @@ async def test_yaml_agent_tool_streams_chunks_to_parent_emitter(monkeypatch, tmp
     agent = FakeYamlAgent()
     spec_path = tmp_path / "agent.yaml"
     _write_headless_spec(spec_path)
+    thread_calls = []
 
     def fake_loader(spec):
         assert spec.agent_card["name"] == "FakeYamlAgent"
         return lambda: agent
 
+    async def fake_to_thread(function, *args, **kwargs):
+        thread_calls.append((function, args, kwargs))
+        return function(*args, **kwargs)
+
     monkeypatch.setattr(agent_spec, "load_agent_factory_from_yaml", fake_loader)
+    monkeypatch.setattr(yaml_agent_tool_module.asyncio, "to_thread", fake_to_thread)
     events = []
 
     async def emit(event):
@@ -208,6 +215,11 @@ async def test_yaml_agent_tool_streams_chunks_to_parent_emitter(monkeypatch, tmp
     assert agent.closed is True
     assert [event.content for event in events] == ["working", "done"]
     assert events[-1].metadata["final"] is True
+    assert len(thread_calls) == 1
+    function, arguments, keyword_arguments = thread_calls[0]
+    assert function is fake_loader
+    assert arguments[0].agent_card["name"] == "FakeYamlAgent"
+    assert keyword_arguments == {}
 
 
 @pytest.mark.asyncio
