@@ -215,6 +215,18 @@ approvals.resume(
 ```
 
 `expected_revision` prevents stale reviewer submissions from overwriting a
-newer decision. Resolving a non-pending request or resuming anything other than
-an approved request raises an explicit transition error. The consuming
-application is responsible for enforcing reviewer identity and authorization.
+newer decision and is required for every approval mutation. Each proposal also
+captures an artifact snapshot: decisions and resume fail if that artifact later
+changes, while unrelated blackboard writes may proceed. Resolving a non-pending
+or expired request, or resuming anything other than an approved request, raises
+an explicit transition error. The consuming application is responsible for
+enforcing reviewer identity and authorization.
+
+Store backends used with multiple concurrent writers must enforce the revision
+comparison atomically at their persistence boundary (for example, DynamoDB
+conditional writes). The approval API deliberately does not attempt to provide
+distributed locking above the selected store backend.
+
+Approval documents created before artifact snapshots were introduced remain
+loadable. They retain their prior behavior and do not receive artifact-drift
+protection until a new approval is proposed.

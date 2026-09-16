@@ -24,3 +24,7 @@ class ApprovalNotFoundError(BlackboardError):
 
 class InvalidApprovalTransitionError(BlackboardError):
     """Raised when an approval state transition is not allowed."""
+
+
+class ApprovalArtifactChangedError(BlackboardError):
+    """Raised when a proposed artifact no longer matches its review snapshot."""

@@ -32,7 +32,7 @@ class BlackboardRevisionInput(BaseModel):
 class BlackboardApprovalRequestInput(BaseModel):
     artifact_path: str
     session_id: str | None = None
-    expected_revision: int | None = None
+    expected_revision: int
     actor: str | None = None
     title: str | None = None
     note: str | None = None
@@ -111,8 +111,8 @@ def build_blackboard_tools(
 
     def blackboard_request_approval(
         artifact_path: str,
+        expected_revision: int,
         session_id: str | None = None,
-        expected_revision: int | None = None,
         actor: str | None = None,
         title: str | None = None,
         note: str | None = None,

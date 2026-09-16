@@ -25,7 +25,6 @@ class ApprovalStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     RESUMED = "resumed"
-    CANCELLED = "cancelled"
 
 
 class ApprovalRecord(BaseModel):
@@ -35,6 +34,10 @@ class ApprovalRecord(BaseModel):
     status: ApprovalStatus = ApprovalStatus.PENDING
     artifact_path: str
     artifact_revision: int
+    # Older persisted approvals predate snapshots. The marker distinguishes a
+    # legacy missing snapshot from a newly proposed artifact whose value is null.
+    artifact_snapshot: Any = None
+    artifact_snapshot_available: bool = False
     title: str | None = None
     requested_at: datetime = Field(default_factory=utc_now)
     requested_by: str | None = None

@@ -1,4 +1,5 @@
 from automa_ai.blackboard.errors import (
+    ApprovalArtifactChangedError,
     BlackboardError,
     ApprovalNotFoundError,
     BackendNotConfiguredError,
@@ -28,6 +29,7 @@ from automa_ai.blackboard.approvals import ApprovalManager
 __all__ = [
     "BlackboardError",
     "ApprovalNotFoundError",
+    "ApprovalArtifactChangedError",
     "BackendNotConfiguredError",
     "DocumentNotFoundError",
     "RevisionConflictError",

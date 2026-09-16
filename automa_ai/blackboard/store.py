@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from automa_ai.blackboard.errors import (
+    ApprovalArtifactChangedError,
     ApprovalNotFoundError,
     DocumentNotFoundError,
     InvalidApprovalTransitionError,
@@ -100,6 +101,24 @@ def get_path_value(data: dict[str, Any], path: str | None) -> Any:
                 return None
             current = current[token]
     return current
+
+
+def has_path(data: dict[str, Any], path: str) -> bool:
+    """Return whether a path exists, distinguishing a stored null from absence."""
+    tokens = parse_path(path)
+    if not tokens:
+        return False
+    current: Any = data
+    for token in tokens:
+        if isinstance(token, str):
+            if not isinstance(current, dict) or token not in current:
+                return False
+            current = current[token]
+        else:
+            if not isinstance(current, list) or token >= len(current):
+                return False
+            current = current[token]
+    return True
 
 
 def _set_path(data: dict[str, Any], path: str, value: Any) -> tuple[Any, Any]:
@@ -294,6 +313,11 @@ class BlackboardStore(ABC):
     def save(
         self, doc: BlackboardDocument, expected_revision: int | None = None
     ) -> BlackboardDocument:
+        """Persist a document, atomically enforcing expected_revision when given.
+
+        Backends that support concurrent writers must implement this comparison
+        at their storage boundary (for example, with a conditional update).
+        """
         raise NotImplementedError
 
     def apply_patch(
@@ -359,12 +383,12 @@ class BlackboardStore(ABC):
         title: str | None = None,
         note: str | None = None,
         expiry_seconds: int | None = None,
-        expected_revision: int | None = None,
+        expected_revision: int,
     ) -> BlackboardDocument:
         """Create a pending approval for an existing artifact path."""
         doc = self.load(session_id)
         self._require_revision(doc, expected_revision)
-        if get_path_value(doc.data, artifact_path) is None:
+        if not has_path(doc.data, artifact_path):
             raise ValueError(
                 f"Approval artifact path does not exist: {artifact_path!r}."
             )
@@ -376,6 +400,10 @@ class BlackboardStore(ABC):
         approval = ApprovalRecord(
             artifact_path=artifact_path,
             artifact_revision=doc.revision,
+            # Snapshot the proposed value so unrelated writes do not invalidate
+            # review, while edits to the reviewed artifact do.
+            artifact_snapshot=copy.deepcopy(get_path_value(doc.data, artifact_path)),
+            artifact_snapshot_available=True,
             title=title,
             requested_by=actor,
             request_note=note,
@@ -422,7 +450,7 @@ class BlackboardStore(ABC):
         *,
         reviewer: str,
         note: str | None = None,
-        expected_revision: int | None = None,
+        expected_revision: int,
     ) -> BlackboardDocument:
         """Apply the human-only approved or rejected decision to a pending record."""
         status = ApprovalStatus(decision)
@@ -435,6 +463,7 @@ class BlackboardStore(ABC):
             raise InvalidApprovalTransitionError(
                 f"Cannot resolve approval in state {approval.status.value!r}."
             )
+        self._assert_approval_actionable(doc, approval)
         approval.status = status
         approval.reviewer = reviewer
         approval.reviewed_at = datetime.now(timezone.utc)
@@ -457,7 +486,7 @@ class BlackboardStore(ABC):
         *,
         actor: str | None = None,
         allow_one_time_resume: bool = True,
-        expected_revision: int | None = None,
+        expected_revision: int,
     ) -> BlackboardDocument:
         """Consume an approved checkpoint before a workflow continuation."""
         doc = self.load(session_id)
@@ -467,11 +496,10 @@ class BlackboardStore(ABC):
             raise InvalidApprovalTransitionError(
                 f"Cannot resume approval in state {approval.status.value!r}."
             )
-        if approval.expires_at is not None and approval.expires_at <= datetime.now(
-            timezone.utc
-        ):
-            raise InvalidApprovalTransitionError("Cannot resume an expired approval.")
+        self._assert_approval_actionable(doc, approval)
         if allow_one_time_resume:
+            # A reusable checkpoint remains approved; default configuration
+            # consumes it once by recording the resumed state instead.
             approval.status = ApprovalStatus.RESUMED
             approval.resumed_by = actor
             approval.resumed_at = datetime.now(timezone.utc)
@@ -486,10 +514,9 @@ class BlackboardStore(ABC):
         return self.save(doc, expected_revision=expected_revision)
 
     @staticmethod
-    def _require_revision(
-        doc: BlackboardDocument, expected_revision: int | None
-    ) -> None:
-        if expected_revision is not None and doc.revision != expected_revision:
+    def _require_revision(doc: BlackboardDocument, expected_revision: int) -> None:
+        """Require callers to explicitly bind an approval mutation to a read."""
+        if doc.revision != expected_revision:
             raise RevisionConflictError(
                 f"Expected revision {expected_revision}, found {doc.revision}."
             )
@@ -500,6 +527,26 @@ class BlackboardStore(ABC):
             if approval.approval_id == approval_id:
                 return approval
         raise ApprovalNotFoundError(f"Approval {approval_id!r} was not found.")
+
+    @staticmethod
+    def _assert_approval_actionable(
+        doc: BlackboardDocument, approval: ApprovalRecord
+    ) -> None:
+        """Reject expiry or changed reviewed content before a decision/resume."""
+        if approval.expires_at is not None and approval.expires_at <= datetime.now(
+            timezone.utc
+        ):
+            raise InvalidApprovalTransitionError("Cannot act on an expired approval.")
+        # Legacy records have no snapshot and remain actionable; new records
+        # always capture one, including a legitimate null artifact value.
+        if approval.artifact_snapshot_available and (
+            not has_path(doc.data, approval.artifact_path)
+            or get_path_value(doc.data, approval.artifact_path)
+            != approval.artifact_snapshot
+        ):
+            raise ApprovalArtifactChangedError(
+                "Approval artifact changed after it was proposed; create a new approval."
+            )
 
 
 def bump_revision(doc: BlackboardDocument) -> BlackboardDocument:
