@@ -308,16 +308,16 @@ class AgentCoreMemoryStore(BaseMemoryStore):
         """Search extracted memory records for the given memory type.
 
         session_id/task_id/user_id are namespace-template inputs, not filters.
-        A query string is required. A non-empty ``metadata`` raises rather than
-        being silently ignored; None and {} are accepted as "no filter", because
-        MemoryContextProvider forwards TurnRequest.metadata, which defaults to
-        an empty dict on every turn. Unknown kwargs always raise.
+        A query string is required. ``metadata`` is accepted and ignored, since
+        AgentCore has no metadata filter. Unknown kwargs still raise, because
+        those only appear when a caller overrides
+        DefaultMemoryManager._construct_read_kwargs on purpose.
         """
         if metadata:
-            raise NotImplementedError(
-                f"AgentCoreMemoryStore does not support metadata filtering (got "
-                f"{metadata!r}). session_id, task_id, and user_id are "
-                "namespace-template inputs, not independent filters."
+            logger.debug(
+                "AgentCoreMemoryStore ignores metadata keys %s; AgentCore has no "
+                "metadata filter and identity comes from the namespace template.",
+                sorted(metadata),
             )
         if kwargs:
             raise NotImplementedError(

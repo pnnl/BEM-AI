@@ -291,6 +291,46 @@ def test_batch_putop_bypasses_namespace_validation(monkeypatch) -> None:
         )
 
 
+def test_search_bypasses_namespace_validation(monkeypatch) -> None:
+    from langgraph.store.base import InvalidNamespaceError
+    from langgraph_checkpoint_aws.agentcore.store import (
+        AgentCoreMemoryStore as WrapperStore,
+    )
+
+    calls: list[dict] = []
+
+    def retrieve_memory_records(**kwargs):
+        calls.append(kwargs)
+        return {
+            "memoryRecordSummaries": [
+                {
+                    "memoryRecordId": "rec-1",
+                    "content": {"text": "prefers 90.1"},
+                    "score": 0.9,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        "boto3.client",
+        lambda *a, **kw: SimpleNamespace(
+            retrieve_memory_records=retrieve_memory_records
+        ),
+    )
+
+    wrapper = WrapperStore(memory_id="mem-123", region_name="us-west-2")
+    store = build_store(
+        fake=wrapper, namespaces={MemoryType.LONG_TERM: "/preferences/{actor_id}"}
+    )
+
+    memories = store.read_memories("which code?", user_id="first.last@pnnl.gov")
+
+    assert [m.content for m in memories] == ["prefers 90.1"]
+    assert calls[0]["namespace"] == "/preferences/first.last@pnnl.gov"
+    with pytest.raises(InvalidNamespaceError):
+        wrapper.put(("first.last@pnnl.gov",), "rec-2", {"message": HumanMessage("x")})
+
+
 def test_write_memory_rejects_slash_in_identity_values() -> None:
     """Slashes would create unintended namespace segments."""
     store = build_store()
@@ -420,24 +460,41 @@ def test_read_memories_treats_unusable_scores_as_unscored(bad_score) -> None:
 
 
 def test_read_memories_rejects_unsupported_kwargs() -> None:
-    """Unsupported params are rejected before query processing."""
-    store = build_store()
+    """Unknown kwargs are rejected before query processing.
 
-    with pytest.raises(NotImplementedError, match="metadata filtering"):
-        store.read_memories("q", user_id="user-1", metadata={"tag": "x"})
+    Only genuinely unknown params raise; those appear solely when a caller
+    overrides DefaultMemoryManager._construct_read_kwargs deliberately.
+    """
+    store = build_store()
 
     with pytest.raises(NotImplementedError, match="tenant_id"):
         store.read_memories(None, user_id="user-1", tenant_id="t1")
 
 
-@pytest.mark.parametrize("empty", [None, {}])
-def test_read_memories_accepts_empty_metadata(empty) -> None:
-    """Empty metadata is allowed; only non-empty metadata triggers rejection."""
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        {},
+        {
+            "auth.trusted": True,
+            "subject": "user-1@pnnl.gov",
+            "user_id": "user-1",
+            "groups": [],
+            "scopes": [],
+        },
+    ],
+    ids=["none", "empty", "authenticated-turn"],
+)
+def test_read_memories_ignores_metadata(metadata) -> None:
     fake = FakeAgentCoreStore(
         results={("preferences", "user-1"): [make_item("rec-1", "fact", 0.9)]}
     )
-    memories = build_store(fake=fake).read_memories("q", user_id="user-1", metadata=empty)
+    memories = build_store(fake=fake).read_memories(
+        "q", user_id="user-1", metadata=metadata
+    )
     assert [m.record_id for m in memories] == ["rec-1"]
+    assert len(fake.searches) == 1
 
 
 def test_read_memories_returns_naive_timestamps_for_manager_ranking() -> None:
@@ -603,12 +660,87 @@ async def test_manager_reads_long_term_memories_from_agentcore() -> None:
         "which code?",
         session_id="session-1",
         user_id="user-1",
-        metadata={},  # What MemoryContextProvider forwards from TurnRequest.
+        metadata={},  # A bare, unauthenticated turn.
         memory_types=[MemoryType.LONG_TERM],
         include_short_term=False,
     )
 
     assert [m.content for m in memories] == ["prefers 90.1"]
+
+
+@pytest.mark.asyncio
+async def test_manager_reads_long_term_memories_on_an_authenticated_turn() -> None:
+    fake = FakeAgentCoreStore(
+        results={("preferences", "user-1"): [make_item("rec-1", "prefers 90.1", 0.9)]}
+    )
+    manager = DefaultMemoryManager(
+        long_term_store=build_store(
+            fake=fake, namespaces={"long_term": "/preferences/{actor_id}"}
+        )
+    )
+
+    memories = await manager.retrieve_memories(
+        "which code?",
+        session_id="session-1",
+        user_id="user-1",
+        metadata={
+            "auth.trusted": True,
+            "subject": "user-1@pnnl.gov",
+            "user_id": "user-1",
+            "userId": "user-1",
+            "groups": [],
+            "scopes": [],
+            "telemetry_trace_id": "trace-1",
+        },
+        memory_types=[MemoryType.LONG_TERM],
+        include_short_term=False,
+    )
+
+    assert [m.content for m in memories] == ["prefers 90.1"]
+
+
+@pytest.mark.asyncio
+async def test_manager_ranking_prefers_backend_relevance_over_recency() -> None:
+    now = datetime.now(timezone.utc)
+    fake = FakeAgentCoreStore(
+        results={
+            ("preferences", "user-1"): [
+                # Most relevant, but the older of the two.
+                make_item("rec-old", "highly relevant", 0.95, created_at=now - timedelta(hours=6)),
+                make_item("rec-new", "barely relevant", 0.10, created_at=now),
+            ]
+        }
+    )
+    manager = DefaultMemoryManager(
+        long_term_store=build_store(
+            fake=fake, namespaces={"long_term": "/preferences/{actor_id}"}
+        )
+    )
+
+    memories = await manager.retrieve_memories(
+        "which code?",
+        user_id="user-1",
+        memory_types=[MemoryType.LONG_TERM],
+        include_short_term=False,
+    )
+
+    assert [m.content for m in memories] == ["highly relevant", "barely relevant"]
+
+
+@pytest.mark.parametrize("configured", ["long_term", "short_term"], ids=["lt-only", "st-only"])
+def test_get_memory_stats_tolerates_a_single_store(configured) -> None:
+    """Single-store managers are supported, so stats must not AttributeError."""
+    store = build_store()
+    manager = DefaultMemoryManager(**{f"{configured}_store": store})
+
+    stats = manager.get_memory_stats()
+
+    # AgentCore is query-only: a query-less read returns [], so counts are 0.
+    assert stats == {
+        "short_term_memories": 0,
+        "long_term_memories": 0,
+        "total_memories": 0,
+    }
 
 
 @pytest.mark.asyncio

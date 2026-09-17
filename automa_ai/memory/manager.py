@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -236,9 +237,23 @@ class DefaultMemoryManager:
         return all_memories[:limit]
 
     def get_memory_stats(self) -> Dict[str, Any]:
-        """Get statistics about current memory usage."""
-        short_term_count = len(self.short_term_store.read_memories(limit=1000))
-        long_term_count = len(self.long_term_store.read_memories(limit=1000))
+        """Get statistics about current memory usage.
+
+        Counts are a floor, not a census: an unconfigured store contributes 0,
+        and so do query-only stores (AgentCore), which have no no-query listing
+        path and return [] for the query-less read used here.
+        """
+
+        def _count(store: Optional[BaseMemoryStore]) -> int:
+            """Count a store's memories, treating an absent store as empty.
+
+            Either store may be None — add_memory and manage_memory_size both
+            support single-store managers, so this must not AttributeError.
+            """
+            return len(store.read_memories(limit=1000)) if store is not None else 0
+
+        short_term_count = _count(self.short_term_store)
+        long_term_count = _count(self.long_term_store)
 
         return {
             "short_term_memories": short_term_count,
@@ -329,9 +344,14 @@ class DefaultMemoryManager:
         )
 
     def _rank_memory_relevancy(self, memory: MemoryEntry) -> float:
-        return (
-            memory.importance_score * 0.7 + self.calculate_recency_score(memory) * 0.3
-        )
+        score = (memory.metadata or {}).get("relevance_score")
+        if (
+            not isinstance(score, (int, float))
+            or isinstance(score, bool)
+            or not math.isfinite(score)
+        ):
+            score = memory.importance_score
+        return score * 0.7 + self.calculate_recency_score(memory) * 0.3
 
     @staticmethod
     def calculate_recency_score(memory: MemoryEntry) -> float:
