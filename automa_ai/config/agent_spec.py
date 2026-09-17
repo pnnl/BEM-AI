@@ -246,8 +246,10 @@ class SubAgentYamlSpec(BaseModel):
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
         agent_card = self.resolve_agent_card(base_dir=base_dir)
-        if self.url is not None and self.auth is not None:
-            _validate_discovered_card_auth_origins(
+        if self.url is not None and (
+            self.auth is not None or self.request_headers is not None
+        ):
+            _validate_discovered_card_credential_origins(
                 agent_card,
                 configured_url=self.url,
             )
@@ -284,12 +286,12 @@ def _agent_card_discovery_url(url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
-def _validate_discovered_card_auth_origins(
+def _validate_discovered_card_credential_origins(
     card: dict[str, Any],
     *,
     configured_url: str,
 ) -> None:
-    """Reject discovered cards that would send configured auth off-origin."""
+    """Reject discovered cards that would send configured credentials off-origin."""
     configured_origin = _http_origin(configured_url, label="subagent url")
     interfaces = card["supportedInterfaces"]
     for index, interface in enumerate(interfaces):
@@ -307,7 +309,7 @@ def _validate_discovered_card_auth_origins(
         if interface_origin != configured_origin:
             raise ValueError(
                 "Discovered subagent interface origin must match the configured "
-                "subagent URL when auth is configured."
+                "subagent URL when credentials are configured."
             )
 
 
