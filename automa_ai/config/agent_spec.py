@@ -12,7 +12,9 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Literal, TypeAlias
+from urllib.parse import urlsplit, urlunsplit
 
+import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
@@ -152,6 +154,8 @@ class SubAgentYamlSpec(BaseModel):
     agent_card: dict[str, Any] | None = None
     spec_path: str | None = None
     card_path: str | None = None
+    url: str | None = None
+    discovery_timeout: float = Field(default=10.0, gt=0)
     auth: A2AClientAuthConfig | None = None
     request_headers: dict[str, SecretStr] | None = None
 
@@ -161,10 +165,11 @@ class SubAgentYamlSpec(BaseModel):
             self.agent_card is not None,
             self.spec_path is not None,
             self.card_path is not None,
+            self.url is not None,
         ]
         if sum(sources) != 1:
             raise ValueError(
-                "subagent requires exactly one of 'agent_card', 'spec_path', or 'card_path'."
+                "subagent requires exactly one of 'agent_card', 'spec_path', 'card_path', or 'url'."
             )
         if self.auth is not None and self.request_headers is not None:
             raise ValueError(
@@ -174,8 +179,6 @@ class SubAgentYamlSpec(BaseModel):
 
     def resolve_agent_card(self, *, base_dir: Path) -> dict[str, Any]:
         """Resolve the subagent card from an inline card, YAML spec, or JSON card file."""
-        # TODO: Support remote Agent Card discovery from
-        # /.well-known/agent-card.json for subagents configured by URL.
         if self.agent_card is not None:
             card = deepcopy(self.agent_card)
             _validate_a2a_card(card, label="subagent.agent_card")
@@ -185,22 +188,36 @@ class SubAgentYamlSpec(BaseModel):
             spec_path = _resolve_path(self.spec_path, base_dir=base_dir)
             return YamlAgentSpec.from_yaml_file(spec_path).advertised_a2a_card()
 
+        if self.url is not None:
+            card_url = _agent_card_discovery_url(self.url)
+            try:
+                with httpx.Client(timeout=self.discovery_timeout) as client:
+                    response = client.get(
+                        card_url, headers=self._explicit_request_headers()
+                    )
+                    response.raise_for_status()
+                    card = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise ValueError(
+                    f"Unable to discover remote A2A agent card from {card_url!r}."
+                ) from exc
+            if not isinstance(card, dict):
+                raise ValueError(
+                    "Discovered remote A2A agent card must be a JSON object."
+                )
+            _validate_a2a_card(card, label=f"subagent.url '{card_url}'")
+            return card
+
         assert self.card_path is not None
         card_path = _resolve_path(self.card_path, base_dir=base_dir)
         card = json.loads(card_path.read_text(encoding="utf-8"))
         _validate_a2a_card(card, label=f"subagent.card_path '{card_path}'")
         return card
 
-    def resolve_request_headers(
-        self,
-        agent_card: dict[str, Any],
-    ) -> dict[str, str] | None:
-        """Build either card-derived or explicitly configured request headers."""
-        if self.auth is not None:
-            return self.auth.request_headers(agent_card)
+    def _explicit_request_headers(self) -> dict[str, str] | None:
+        """Return configured headers safe for remote card discovery requests."""
         if self.request_headers is None:
             return None
-
         headers: dict[str, str] = {}
         for name, value in self.request_headers.items():
             try:
@@ -217,9 +234,25 @@ class SubAgentYamlSpec(BaseModel):
             headers[header_name] = header_value
         return headers
 
+    def resolve_request_headers(
+        self,
+        agent_card: dict[str, Any],
+    ) -> dict[str, str] | None:
+        """Build either card-derived or explicitly configured request headers."""
+        if self.auth is not None:
+            return self.auth.request_headers(agent_card)
+        return self._explicit_request_headers()
+
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
         agent_card = self.resolve_agent_card(base_dir=base_dir)
+        if self.url is not None and (
+            self.auth is not None or self.request_headers is not None
+        ):
+            _validate_discovered_card_credential_origins(
+                agent_card,
+                configured_url=self.url,
+            )
         name = self.name or agent_card.get("name")
         description = self.description or agent_card.get("description")
         if not name:
@@ -236,6 +269,63 @@ class SubAgentYamlSpec(BaseModel):
             agent_card=agent_card,
             request_headers=self.resolve_request_headers(agent_card),
         )
+
+
+def _agent_card_discovery_url(url: str) -> str:
+    """Return the canonical card endpoint for an A2A service URL."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("subagent url must be an absolute http(s) URL.")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError(
+            "subagent url must not include credentials, query, or fragment."
+        )
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/.well-known/agent-card.json"):
+        path = f"{path}/.well-known/agent-card.json"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _validate_discovered_card_credential_origins(
+    card: dict[str, Any],
+    *,
+    configured_url: str,
+) -> None:
+    """Reject discovered cards that would send configured credentials off-origin."""
+    configured_origin = _http_origin(configured_url, label="subagent url")
+    interfaces = card["supportedInterfaces"]
+    for index, interface in enumerate(interfaces):
+        if not isinstance(interface, dict):
+            raise ValueError(
+                f"discovered subagent interface {index} must be a mapping."
+            )
+        interface_url = interface.get("url")
+        if not isinstance(interface_url, str):
+            raise ValueError(f"discovered subagent interface {index} URL is required.")
+        interface_origin = _http_origin(
+            interface_url,
+            label=f"discovered subagent interface {index} URL",
+        )
+        if interface_origin != configured_origin:
+            raise ValueError(
+                "Discovered subagent interface origin must match the configured "
+                "subagent URL when credentials are configured."
+            )
+
+
+def _http_origin(url: str, *, label: str) -> tuple[str, str, int]:
+    """Return a normalized HTTP origin for safe endpoint comparisons."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{label} must be an absolute http(s) URL.")
+    if parsed.username or parsed.password:
+        raise ValueError(f"{label} must not include credentials.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} has an invalid port.") from exc
+    default_port = 443 if parsed.scheme == "https" else 80
+    return parsed.scheme.lower(), parsed.hostname.lower(), port or default_port
 
 
 class YamlAgentSpec(BaseModel):
