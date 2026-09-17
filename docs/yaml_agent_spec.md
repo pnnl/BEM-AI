@@ -587,6 +587,9 @@ full `/.well-known/agent-card.json` endpoint. Discovery happens while the YAML
 spec is converted to an agent factory, before the coordinator starts. When a
 card endpoint itself requires authentication, provide `request_headers`; `auth`
 is validated against the discovered card and is used for later A2A delegation.
+For a URL-discovered card using `auth`, every advertised A2A interface must
+share the configured URL's origin; this prevents a discovery response from
+redirecting the configured API key to another host.
 
 #### API-key authentication for a remote subagent
 

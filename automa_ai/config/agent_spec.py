@@ -246,6 +246,11 @@ class SubAgentYamlSpec(BaseModel):
     def to_subagent_spec(self, *, base_dir: Path) -> SubAgentSpec:
         """Convert the YAML subagent entry into the runtime delegation spec."""
         agent_card = self.resolve_agent_card(base_dir=base_dir)
+        if self.url is not None and self.auth is not None:
+            _validate_discovered_card_auth_origins(
+                agent_card,
+                configured_url=self.url,
+            )
         name = self.name or agent_card.get("name")
         description = self.description or agent_card.get("description")
         if not name:
@@ -277,6 +282,48 @@ def _agent_card_discovery_url(url: str) -> str:
     if not path.endswith("/.well-known/agent-card.json"):
         path = f"{path}/.well-known/agent-card.json"
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _validate_discovered_card_auth_origins(
+    card: dict[str, Any],
+    *,
+    configured_url: str,
+) -> None:
+    """Reject discovered cards that would send configured auth off-origin."""
+    configured_origin = _http_origin(configured_url, label="subagent url")
+    interfaces = card["supportedInterfaces"]
+    for index, interface in enumerate(interfaces):
+        if not isinstance(interface, dict):
+            raise ValueError(
+                f"discovered subagent interface {index} must be a mapping."
+            )
+        interface_url = interface.get("url")
+        if not isinstance(interface_url, str):
+            raise ValueError(f"discovered subagent interface {index} URL is required.")
+        interface_origin = _http_origin(
+            interface_url,
+            label=f"discovered subagent interface {index} URL",
+        )
+        if interface_origin != configured_origin:
+            raise ValueError(
+                "Discovered subagent interface origin must match the configured "
+                "subagent URL when auth is configured."
+            )
+
+
+def _http_origin(url: str, *, label: str) -> tuple[str, str, int]:
+    """Return a normalized HTTP origin for safe endpoint comparisons."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{label} must be an absolute http(s) URL.")
+    if parsed.username or parsed.password:
+        raise ValueError(f"{label} must not include credentials.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} has an invalid port.") from exc
+    default_port = 443 if parsed.scheme == "https" else 80
+    return parsed.scheme.lower(), parsed.hostname.lower(), port or default_port
 
 
 class YamlAgentSpec(BaseModel):
