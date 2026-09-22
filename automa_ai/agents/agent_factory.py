@@ -58,26 +58,30 @@ def resolve_chat_model(
     api_key: str | None = None,
     api_version: str | None = None,
     model_max_retries: int | None = None,
+    model_temperature: float | None = 0,
 ):
+    temperature_kwargs: dict[str, float] = (
+        {} if model_temperature is None else {"temperature": model_temperature}
+    )
     if backend == GenericLLM.OLLAMA:
-        return ChatOllama(model=model_name, base_url=base_url, temperature=0)
+        return ChatOllama(model=model_name, base_url=base_url, **temperature_kwargs)
     elif backend == GenericLLM.BEDROCK:
         aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
         aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         aws_region = os.getenv("AWS_REGION")
+        bedrock_kwargs: dict[str, Any] = {
+            "model": model_name,
+            "region_name": aws_region,
+            **temperature_kwargs,
+        }
         if aws_access_key_id is None or aws_secret_access_key is None:
             logger.warning(
                 "AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY are not set"
             )
-            return ChatBedrockConverse(
-                model=model_name, region_name=aws_region, temperature=0
-            )
-        return ChatBedrockConverse(
-            model=model_name,
-            region_name=aws_region,
-            aws_access_key_id=SecretStr(aws_access_key_id),
-            aws_secret_access_key=SecretStr(aws_secret_access_key),
-        )
+        else:
+            bedrock_kwargs["aws_access_key_id"] = SecretStr(aws_access_key_id)
+            bedrock_kwargs["aws_secret_access_key"] = SecretStr(aws_secret_access_key)
+        return ChatBedrockConverse(**bedrock_kwargs)
     elif backend == GenericLLM.OPENAI:
         temp_key = os.getenv("OPENAI_API_KEY")
         assert (
@@ -106,8 +110,8 @@ def resolve_chat_model(
             model=model_name,
             base_url=base_url,
             api_key=SecretStr(api_key),
-            temperature=0,
             streaming=True,
+            **temperature_kwargs,
         )
     elif backend == GenericLLM.CLAUDE:
         assert api_key, "You must provide an API key to access Anthropic Claude model"
@@ -131,11 +135,11 @@ def resolve_chat_model(
                 ) from exc
         return ChatGoogleGenerativeAI(
             model=model_name,
-            temperature=0,
             timeout=None,
             max_retries=max_retries,
             max_tokens=None,
             streaming=streaming,
+            **temperature_kwargs,
         )
     else:
         raise ValueError(f"Unsupported model backend: {backend}")
@@ -296,6 +300,7 @@ class AgentFactory:
                             }
         retriever: BaseRetriever | dict | None = None Default None, knowledge base retrieval function.
         middleware: List[AgentMiddleware] | None Default None, extra LangChain middleware appended after the token budget stack
+        model_temperature: float | None Default 0, sampling temperature; None omits it for models that reject the field
         debug: bool determine whether debug mode should be enabled or not.
     """
 
@@ -327,6 +332,7 @@ class AgentFactory:
         api_key: str | None = None,
         api_version: str | None = None,
         model_max_retries: int | None = None,
+        model_temperature: float | None = 0,
         transient_retry_attempts: int = 0,
         debug: bool = False,
     ):
@@ -367,6 +373,7 @@ class AgentFactory:
         self.api_key = api_key
         self.api_version = api_version
         self.model_max_retries = model_max_retries
+        self.model_temperature = model_temperature
         self.transient_retry_attempts = transient_retry_attempts
         self.debug = debug
 
@@ -390,6 +397,7 @@ class AgentFactory:
             self.api_key,
             self.api_version,
             self.model_max_retries,
+            model_temperature=self.model_temperature,
         )
 
         mcp_servers = None

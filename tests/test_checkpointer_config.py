@@ -353,7 +353,7 @@ def test_agent_factory_passes_checkpointer_to_langgraph_chat(monkeypatch) -> Non
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(agent_factory, "load_tool_plugins", lambda: None)
-    monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args: object())
+    monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args, **kwargs: object())
     monkeypatch.setattr(
         agent_factory,
         "_build_checkpointer",
@@ -403,7 +403,7 @@ def test_agent_factory_builds_turn_input_builder_from_hook_config(monkeypatch) -
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(agent_factory, "load_tool_plugins", lambda: None)
-    monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args: object())
+    monkeypatch.setattr(agent_factory, "resolve_chat_model", lambda *args, **kwargs: object())
     monkeypatch.setattr(
         agent_factory,
         "_build_checkpointer",
