@@ -105,6 +105,7 @@ def resolve_chat_model(
                 api_version=api_version,
                 azure_deployment=model_name,
                 streaming=streaming,
+                **temperature_kwargs,
             )
         return ChatOpenAI(
             model=model_name,
