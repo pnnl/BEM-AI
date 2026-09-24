@@ -16,6 +16,7 @@ from automa_ai.telemetry.records import (
     SpanStartRecord,
     SpanStatus,
 )
+from automa_ai.telemetry.redaction import ENVELOPE_MARKER_KEY
 
 _ISO_TIMESTAMP_PATTERN = re.compile(
     r"^(?P<base>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})"
@@ -23,10 +24,7 @@ _ISO_TIMESTAMP_PATTERN = re.compile(
     r"(?P<tz>Z|[+-]\d{2}:?\d{2})?$"
 )
 
-_ENVELOPE_REQUIRED_KEYS = frozenset({"length", "sha256"})
-_ENVELOPE_KEYS = frozenset({"content", "length", "sha256", "truncated"})
 _ENVELOPE_METADATA_KEYS = ("length", "sha256", "truncated")
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class _WithheldPayload:
@@ -388,17 +386,12 @@ def otel_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_sanitized_envelope(value: Any) -> bool:
-    """Detect a `redaction.sanitize_text` envelope without matching real payloads."""
-    if not isinstance(value, Mapping):
-        return False
-    keys = set(value)
-    if not _ENVELOPE_REQUIRED_KEYS <= keys or not keys <= _ENVELOPE_KEYS:
-        return False
-    length = value.get("length")
-    sha256 = value.get("sha256")
-    if isinstance(length, bool) or not isinstance(length, int):
-        return False
-    return isinstance(sha256, str) and _SHA256_PATTERN.match(sha256) is not None
+    """Detect a `redaction.sanitize_text` envelope by its explicit marker.
+
+    Matching on shape alone (`length` + `sha256`) misclassified real payloads
+    with those keys and dropped them, so only the marker counts.
+    """
+    return isinstance(value, Mapping) and value.get(ENVELOPE_MARKER_KEY) is True
 
 
 def _unwrap_payload(value: Any) -> Any:

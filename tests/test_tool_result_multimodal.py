@@ -302,4 +302,4 @@ def test_non_binary_data_fields_are_not_globally_sanitized():
     data = sanitized["tool.result"]["data"]
     assert sanitized["tool.result"]["type"] == "json"
     assert data["page"] == 1
-    assert set(data["status"]) == {"length", "sha256"}
+    assert set(data["status"]) == {"automa.envelope", "length", "sha256"}

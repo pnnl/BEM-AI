@@ -1123,7 +1123,7 @@ def test_nested_payload_strings_are_sanitized_in_metadata_mode() -> None:
     )
 
     arguments = sanitized["tool.arguments"]
-    assert set(arguments["query"]) == {"length", "sha256"}
+    assert set(arguments["query"]) == {"automa.envelope", "length", "sha256"}
     assert arguments["limit"] == 5
     assert arguments["api_key"] == "[REDACTED]"
 
@@ -1146,6 +1146,18 @@ def test_nested_payload_strings_keep_content_in_full_mode() -> None:
     )
 
     assert sanitized["tool.arguments"]["query"]["content"] == "hvac"
+
+
+def test_otel_attributes_keep_real_payloads_shaped_like_envelopes() -> None:
+    real = {"length": 5, "sha256": "a" * 64}
+
+    encoded = otel_encoder.otel_attributes(
+        {"file.info": real, "file.meta": {"checksum": real}}
+    )
+
+    assert json.loads(encoded["file.info"]) == real
+    assert json.loads(encoded["file.meta"]) == {"checksum": real}
+    assert "file.info.length" not in encoded
 
 
 def test_content_hash_uses_canonical_mapping_form() -> None:

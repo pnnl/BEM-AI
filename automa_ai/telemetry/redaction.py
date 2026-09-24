@@ -34,6 +34,9 @@ SAFE_METADATA_KEYS = frozenset(
 )
 PAYLOAD_VALUE_KEYS = frozenset({"base64"})
 PAYLOAD_STRUCTURE_KEYS = frozenset({"role", "type"})
+# Marks dicts produced by `sanitize_text` so encoders can tell a redaction
+# envelope apart from a real payload that happens to have `length`/`sha256`.
+ENVELOPE_MARKER_KEY = "automa.envelope"
 SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._~+/=-]{12,})"
 )
@@ -66,6 +69,7 @@ def sanitize_text(
     """Sanitize a single text payload according to the configured privacy mode."""
     text = "" if value is None else str(value)
     sanitized: dict[str, Any] = {
+        ENVELOPE_MARKER_KEY: True,
         "length": len(text),
         "sha256": content_hash(text),
     }

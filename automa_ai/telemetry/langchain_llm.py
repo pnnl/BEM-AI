@@ -301,10 +301,10 @@ def _prefer_complete_usage(
 
 def _messages_payload(messages: list[list[BaseMessage]]) -> list[Any]:
     """Build a flat role/content message list for the prompt telemetry payload."""
-    # LangChain passes one inner list per prompt, but invoke/stream/batch() all
-    # start one run per prompt, so there is only one in practice. Exporting it
-    # flat lets Langfuse render a chat instead of nested JSON. Extra prompts 
-    # from a direct multi-prompt `generate()` are dropped.
+    # LangChain's callback manager starts one run per prompt and passes each
+    # handler a single-group list, even for a multi-prompt `generate()`, so
+    # messages[0] is the whole prompt for this run. Exporting it flat lets
+    # Langfuse render a chat instead of nested JSON.
     if not messages:
         return []
     return [_message_dict(message) for message in messages[0]]
