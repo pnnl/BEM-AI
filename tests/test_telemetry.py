@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import asyncio
 import contextvars
+import json
 import threading
 from types import SimpleNamespace
 from uuid import uuid4
@@ -21,11 +21,11 @@ from automa_ai.telemetry import (
     current_span_id,
     current_trace_id,
     list_telemetry_recorders,
+    otel_encoder,
     register_telemetry_recorder,
     wrap_langchain_tool,
 )
 from automa_ai.telemetry import otel as otel_module
-from automa_ai.telemetry import otel_encoder
 from automa_ai.telemetry import registry as telemetry_registry
 from automa_ai.telemetry.recorders import JsonlRecorder
 from automa_ai.telemetry.records import (
@@ -334,41 +334,40 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
         }
     )
 
-    with pytest.raises(RuntimeError):
-        with telemetry.span("agent.turn", kind="server"):
+    with pytest.raises(RuntimeError), telemetry.span("agent.turn", kind="server"):
+        telemetry.event(
+            "message",
+            attributes={
+                "message.role": "user",
+                "message.content": "hello",
+            },
+        )
+        telemetry.event(
+            "model.usage",
+            attributes={
+                "model.name": "gpt-4o",
+                "model.provider": "openai",
+                "model.usage.input_tokens": 11,
+                "model.usage.output_tokens": 4,
+                "model.usage.total_tokens": 15,
+            },
+        )
+        with telemetry.span("tool.call", attributes={"tool.name": "demo_tool"}):
             telemetry.event(
-                "message",
+                "tool.input",
                 attributes={
-                    "message.role": "user",
-                    "message.content": "hello",
+                    "tool.name": "demo_tool",
+                    "tool.arguments": {"query": "hvac"},
                 },
             )
             telemetry.event(
-                "model.usage",
+                "tool.output",
                 attributes={
-                    "model.name": "gpt-4o",
-                    "model.provider": "openai",
-                    "model.usage.input_tokens": 11,
-                    "model.usage.output_tokens": 4,
-                    "model.usage.total_tokens": 15,
+                    "tool.name": "demo_tool",
+                    "tool.result": {"ok": True},
                 },
             )
-            with telemetry.span("tool.call", attributes={"tool.name": "demo_tool"}):
-                telemetry.event(
-                    "tool.input",
-                    attributes={
-                        "tool.name": "demo_tool",
-                        "tool.arguments": {"query": "hvac"},
-                    },
-                )
-                telemetry.event(
-                    "tool.output",
-                    attributes={
-                        "tool.name": "demo_tool",
-                        "tool.result": {"ok": True},
-                    },
-                )
-                raise RuntimeError("tool failed")
+            raise RuntimeError("tool failed")
 
     telemetry.flush()
     spans = exporter.get_finished_spans()
@@ -394,17 +393,13 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     )
     assert agent_span.events[0].name == "message"
     assert agent_span.events[0].attributes["message.role"] == "user"
-    assert agent_span.events[0].attributes["message.content"] == (
-        '{"length": 5, "sha256": '
-        '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e730'
-        '43362938b9824"}'
+    assert "message.content" not in agent_span.events[0].attributes
+    assert agent_span.events[0].attributes["message.content.length"] == 5
+    assert agent_span.events[0].attributes["message.content.sha256"] == (
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
     )
-    assert agent_span.attributes["input.value"] == agent_span.events[0].attributes[
-        "message.content"
-    ]
-    assert agent_span.attributes["gen_ai.prompt"] == agent_span.events[0].attributes[
-        "message.content"
-    ]
+    assert "input.value" not in agent_span.attributes
+    assert "gen_ai.prompt" not in agent_span.attributes
     assert agent_span.events[1].name == "model.usage"
     assert agent_span.events[1].attributes["gen_ai.request.model"] == "gpt-4o"
     assert agent_span.events[1].attributes["gen_ai.provider.name"] == "openai"
@@ -421,12 +416,10 @@ def test_otel_recorder_exports_spans_events_and_status(monkeypatch) -> None:
     assert agent_span.attributes["gen_ai.usage.total_tokens"] == 15
     assert tool_span.events[0].name == "tool.input"
     assert tool_span.events[1].name == "tool.output"
-    assert tool_span.attributes["input.value"] == tool_span.events[0].attributes[
-        "tool.arguments"
-    ]
-    assert tool_span.attributes["output.value"] == tool_span.events[1].attributes[
-        "tool.result"
-    ]
+    assert "tool.arguments" not in tool_span.events[0].attributes
+    assert "input.value" not in tool_span.attributes
+    assert tool_span.events[1].attributes["tool.result"] == '{"ok": true}'
+    assert tool_span.attributes["output.value"] == '{"ok": true}'
     assert agent_span.resource.attributes["service.name"] == "test-service"
 
 
@@ -1099,9 +1092,8 @@ def test_exception_message_is_sanitized_in_metadata_mode(tmp_path) -> None:
         }
     )
 
-    with pytest.raises(RuntimeError):
-        with telemetry.span("agent.turn"):
-            raise RuntimeError("Authorization: Bearer abcdefghijklmnop")
+    with pytest.raises(RuntimeError), telemetry.span("agent.turn"):
+        raise RuntimeError("Authorization: Bearer abcdefghijklmnop")
 
     telemetry.flush()
     records = _read_jsonl(path)
@@ -1109,6 +1101,51 @@ def test_exception_message_is_sanitized_in_metadata_mode(tmp_path) -> None:
     assert message["length"] > 0
     assert message["sha256"]
     assert "content" not in message
+
+
+def test_nested_payload_strings_are_sanitized_in_metadata_mode() -> None:
+    from automa_ai.telemetry.redaction import sanitize_mapping
+
+    sanitized = sanitize_mapping(
+        {
+            "tool.arguments": {"query": "hvac", "limit": 5, "api_key": "sk-x"},
+            "message.content": [{"type": "text", "text": "secret"}],
+            "gen_ai.prompt": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"name": "lookup", "arguments": {"email": "test@pnnl.gov"}}
+                    ],
+                }
+            ],
+        },
+        mode="metadata",
+    )
+
+    arguments = sanitized["tool.arguments"]
+    assert set(arguments["query"]) == {"length", "sha256"}
+    assert arguments["limit"] == 5
+    assert arguments["api_key"] == "[REDACTED]"
+
+    block = sanitized["message.content"][0]
+    assert block["type"] == "text"
+    assert "content" not in block["text"]
+
+    message = sanitized["gen_ai.prompt"][0]
+    assert message["role"] == "assistant"
+    call = message["tool_calls"][0]
+    assert "content" not in call["name"]
+    assert "content" not in call["arguments"]["email"]
+
+
+def test_nested_payload_strings_keep_content_in_full_mode() -> None:
+    from automa_ai.telemetry.redaction import sanitize_mapping
+
+    sanitized = sanitize_mapping(
+        {"tool.arguments": {"query": "hvac"}}, mode="full"
+    )
+
+    assert sanitized["tool.arguments"]["query"]["content"] == "hvac"
 
 
 def test_content_hash_uses_canonical_mapping_form() -> None:
