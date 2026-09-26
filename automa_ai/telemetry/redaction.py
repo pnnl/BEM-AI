@@ -33,6 +33,10 @@ SAFE_METADATA_KEYS = frozenset(
     }
 )
 PAYLOAD_VALUE_KEYS = frozenset({"base64"})
+PAYLOAD_STRUCTURE_KEYS = frozenset({"role", "type"})
+# Marks dicts produced by `sanitize_text` so encoders can tell a redaction
+# envelope apart from a real payload that happens to have `length`/`sha256`.
+ENVELOPE_MARKER_KEY = "automa.envelope"
 SECRET_VALUE_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._~+/=-]{12,})"
 )
@@ -65,6 +69,7 @@ def sanitize_text(
     """Sanitize a single text payload according to the configured privacy mode."""
     text = "" if value is None else str(value)
     sanitized: dict[str, Any] = {
+        ENVELOPE_MARKER_KEY: True,
         "length": len(text),
         "sha256": content_hash(text),
     }
@@ -91,9 +96,12 @@ def sanitize_value(
     mode: str = "metadata",
     max_chars: int = 4000,
 ) -> Any:
-    """Recursively sanitize payload-like values while preserving scalar metadata."""
+    """Recursively sanitize a value found under a payload key.
+    """
     if isinstance(value, Mapping):
-        return sanitize_mapping(value, mode=mode, max_chars=max_chars)
+        return sanitize_mapping(
+            value, mode=mode, max_chars=max_chars, in_payload=True
+        )
     if isinstance(value, str):
         return sanitize_text(value, mode=mode, max_chars=max_chars)
     if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
@@ -106,6 +114,7 @@ def sanitize_mapping(
     *,
     mode: str = "metadata",
     max_chars: int = 4000,
+    in_payload: bool = False,
 ) -> dict[str, Any]:
     """Sanitize one telemetry attributes mapping.
 
@@ -114,6 +123,10 @@ def sanitize_mapping(
       "[REDACTED]";
     - payload-like keys get length/hash metadata by default;
     - ordinary string metadata such as `agent.name` stays readable.
+
+    `in_payload` marks a mapping nested under a payload key. Then every key is
+    treated as payload except `PAYLOAD_STRUCTURE_KEYS`; the secret, token-count
+    and binary checks above still apply first.
     """
     if not payload:
         return {}
@@ -144,7 +157,10 @@ def sanitize_mapping(
         if key_text in SAFE_METADATA_KEYS:
             sanitized[key_text] = value
             continue
-        if PAYLOAD_KEY_PATTERN.search(key_text):
+        if in_payload and key_text in PAYLOAD_STRUCTURE_KEYS:
+            sanitized[key_text] = value
+            continue
+        if in_payload or PAYLOAD_KEY_PATTERN.search(key_text):
             sanitized[key_text] = sanitize_value(value, mode=mode, max_chars=max_chars)
         elif isinstance(value, Mapping):
             sanitized[key_text] = sanitize_mapping(

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 import json
 import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from automa_ai.telemetry.records import (
@@ -15,12 +16,27 @@ from automa_ai.telemetry.records import (
     SpanStartRecord,
     SpanStatus,
 )
+from automa_ai.telemetry.redaction import ENVELOPE_MARKER_KEY
 
 _ISO_TIMESTAMP_PATTERN = re.compile(
     r"^(?P<base>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})"
     r"(?:\.(?P<fraction>\d+))?"
     r"(?P<tz>Z|[+-]\d{2}:?\d{2})?$"
 )
+
+_ENVELOPE_METADATA_KEYS = ("length", "sha256", "truncated")
+
+
+class _WithheldPayload:
+    """Sentinel for content the redaction policy chose not to export."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<withheld>"
+
+
+_WITHHELD = _WithheldPayload()
 
 
 @dataclass(frozen=True)
@@ -152,7 +168,10 @@ def span_attributes_from_event(
         # The callback learns output/model fields only when LangChain finishes
         # the run. Promote the event payload onto the open LLM span so
         # span-oriented backends can render model output without parsing events.
-        output = attributes.get("output.value") or attributes.get("gen_ai.completion")
+        
+        output = attributes.get("output.value")
+        if output is None:
+            output = attributes.get("gen_ai.completion")
         result = {}
         if output is not None:
             result["output.value"] = output
@@ -344,12 +363,61 @@ def _span_name(original_name: str, attributes: dict[str, Any]) -> str:
 
 
 def otel_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
+    """Encode automa-ai attributes as otel attributes.
+    """
     result: dict[str, Any] = {}
+    envelope_meta: dict[str, Any] = {}
     for key, value in attributes.items():
         if value is None:
             continue
-        result[str(key)] = _otel_attribute_value(value)
+        key_text = str(key)
+        if _is_sanitized_envelope(value):
+            for name in _ENVELOPE_METADATA_KEYS:
+                if name in value:
+                    envelope_meta[f"{key_text}.{name}"] = value[name]
+        unwrapped = _unwrap_payload(value)
+        if unwrapped is _WITHHELD:
+            continue
+        result[key_text] = _otel_attribute_value(unwrapped)
+    # Fill envelope metadata only where the main pass did not already write an explicit attribute
+    for meta_key, meta_value in envelope_meta.items():
+        result.setdefault(meta_key, meta_value)
     return result
+
+
+def _is_sanitized_envelope(value: Any) -> bool:
+    """Detect a `redaction.sanitize_text` envelope by its explicit marker.
+
+    Matching on shape alone (`length` + `sha256`) misclassified real payloads
+    with those keys and dropped them, so only the marker counts.
+    """
+    return isinstance(value, Mapping) and value.get(ENVELOPE_MARKER_KEY) is True
+
+
+def _unwrap_payload(value: Any) -> Any:
+    """Recursively replace redaction envelopes with the content they wrap.
+    """
+    if _is_sanitized_envelope(value):
+        return value.get("content", _WITHHELD)
+    if isinstance(value, Mapping):
+        unwrapped_map = {}
+        for key, item in value.items():
+            item_value = _unwrap_payload(item)
+            if item_value is not _WITHHELD:
+                unwrapped_map[str(key)] = item_value
+        if value and not unwrapped_map:
+            return _WITHHELD
+        return unwrapped_map
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        unwrapped_list = [
+            item
+            for item in (_unwrap_payload(entry) for entry in value)
+            if item is not _WITHHELD
+        ]
+        if value and not unwrapped_list:
+            return _WITHHELD
+        return unwrapped_list
+    return value
 
 
 def _otel_attribute_value(value: Any) -> Any:

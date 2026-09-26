@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +11,12 @@ from langchain_core.messages import BaseMessage
 from langchain_core.messages.ai import add_usage
 
 from automa_ai.telemetry.facade import SpanScope, Telemetry
+
+_ROLE_ALIASES = {
+    "human": "user",
+    "ai": "assistant",
+    "function": "tool",
+}
 
 
 class AutomaLLMCallbackHandler(AsyncCallbackHandler):
@@ -55,7 +61,7 @@ class AutomaLLMCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             invocation_params=kwargs.get("invocation_params"),
         )
-        attributes["gen_ai.prompt"] = _messages_json(messages)
+        attributes["gen_ai.prompt"] = _messages_payload(messages)
         attributes["input.value"] = attributes["gen_ai.prompt"]
         self._start_span(run_id, attributes)
 
@@ -79,7 +85,9 @@ class AutomaLLMCallbackHandler(AsyncCallbackHandler):
             metadata=metadata,
             invocation_params=kwargs.get("invocation_params"),
         )
-        attributes["gen_ai.prompt"] = json.dumps(prompts, default=str)
+        # Pass the list itself, not a JSON string, so each prompt is truncated
+        # individually and the encoded payload stays valid JSON.
+        attributes["gen_ai.prompt"] = list(prompts)
         attributes["input.value"] = attributes["gen_ai.prompt"]
         self._start_span(run_id, attributes)
 
@@ -291,26 +299,41 @@ def _prefer_complete_usage(
     return response_usage
 
 
-def _messages_json(messages: list[list[BaseMessage]]) -> str:
-    """Serialize LangChain chat batches into a compact role/content JSON payload."""
-    return json.dumps(
-        [
-            [_message_dict(message) for message in message_group]
-            for message_group in messages
-        ],
-        default=str,
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+def _messages_payload(messages: list[list[BaseMessage]]) -> list[Any]:
+    """Build a flat role/content message list for the prompt telemetry payload."""
+    # LangChain's callback manager starts one run per prompt and passes each
+    # handler a single-group list, even for a multi-prompt `generate()`, so
+    # messages[0] is the whole prompt for this run. Exporting it flat lets
+    # Langfuse render a chat instead of nested JSON.
+    if not messages:
+        return []
+    return [_message_dict(message) for message in messages[0]]
 
 
 def _message_dict(message: BaseMessage) -> dict[str, Any]:
     """Return the message fields useful for prompt observability."""
     role = getattr(message, "type", None) or message.__class__.__name__
-    return {
-        "role": role,
+    payload: dict[str, Any] = {
+        "role": _ROLE_ALIASES.get(str(role).lower(), str(role)),
         "content": _content_to_text(getattr(message, "content", None)),
     }
+    # Tool calls live beside `content` in LangChain's message shape, but they are not part of the prompt text.
+    tool_calls = getattr(message, "tool_calls", None)
+    if tool_calls:
+        payload["tool_calls"] = [
+            {
+                "name": call.get("name"),
+                "arguments": call.get("args"),
+                "id": call.get("id"),
+            }
+            for call in tool_calls
+            if isinstance(call, Mapping)
+        ]
+    for field in ("name", "tool_call_id"):
+        value = getattr(message, field, None)
+        if value:
+            payload[field] = value
+    return payload
 
 
 def _response_text(response: Any) -> str | None:
